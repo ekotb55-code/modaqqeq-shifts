@@ -378,3 +378,18 @@ img { max-width: 100%; }
 .machine-card { border-radius: 22px; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
 .mc-head { display: flex; align-items: center; gap: 10px; border-radius: 16px; padding: 8px 12px; }
 .mc-total { background: #fff; color: #0F5C9E; border-radius: 999px; padding: 4px 12px; font-weight: 800; font-size: 14px; white-space: nowrap; }
+
+.photo-slot { width: 100%; border-radius: 16px; position: relative; overflow: hidden; }
+.photo-slot.ps-empty { height: 92px; border: 2px dashed currentColor; background: rgba(255,255,255,.55); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; opacity: .9; }
+.photo-slot.ps-empty.light { background: rgba(255,255,255,.14); }
+.photo-slot.ps-empty:hover { opacity: 1; }
+.photo-slot.has { height: 150px; background: #fff; border: 3px solid #B6F000; }
+.photo-slot.has img { width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; display: block; }
+.ps-ok { position: absolute; top: 8px; right: 8px; background: #B6F000; color: #1B1B2F; font-size: 12px; font-weight: 800; border-radius: 999px; padding: 2px 10px; }
+.ps-actions { position: absolute; bottom: 8px; left: 8px; right: 8px; display: flex; gap: 6px; justify-content: center; }
+.ps-actions button { display: inline-flex; align-items: center; gap: 4px; border: 0; border-radius: 999px; background: rgba(20,22,40,.78); color: #fff; font-family: inherit; font-size: 12px; font-weight: 700; padding: 6px 12px; cursor: pointer; }
+.mc-accounts { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+.mc-acc { background: #fff; border-radius: 16px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.mc-in { display: flex; align-items: center; gap: 6px; border: 2px solid #DCE3F5; border-radius: 14px; padding: 2px 12px 2px 10px; }
+.mc-in:focus-within { border-color: var(--blue); }
+.mc-in input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; height: 44px; font-size: 20px; font-weight: 800; text-align: center; font-family: inherit; }

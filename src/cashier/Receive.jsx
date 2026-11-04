@@ -140,7 +140,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
                 {walletKeys.map((w) => (
                   <WalletField key={w.key} k={w.key} label={w.label} value={wallets[w.key]} onChange={(v) => setWallets({ ...wallets, [w.key]: v })}
                     hint="الرصيد اللي في المحفظة دلوقتي" warn={last && num(wallets[w.key]) !== prevWallets[w.key] ? `اتعدّل · كان ${fmt(prevWallets[w.key])}` : null}
-                    onPhoto={() => addWalletPhoto(w.key)} hasPhoto={!!wphotos[w.key]} />
+                    onPhoto={() => addWalletPhoto(w.key)} photo={wphotos[w.key]} />
                 ))}
               </section>
             )}

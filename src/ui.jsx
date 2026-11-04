@@ -276,10 +276,10 @@ export function WalletMark({ k, size = 44 }) {
 }
 
 // A wallet balance field: coloured card, name, hint and a big clear input.
-export function WalletField({ k, label, hint, value, onChange, ariaLabel, warn, onPhoto, hasPhoto }) {
+export function WalletField({ k, label, hint, value, onChange, ariaLabel, warn, onPhoto, photo }) {
   const look = WALLET_LOOK[k] || WALLET_LOOK.insta;
   return (
-    <label className="wallet-field" style={{ background: look.bg }}>
+    <div className="wallet-field" style={{ background: look.bg }}>
       <span className="wf-head">
         <WalletMark k={k} size={42} />
         <span className="stack" style={{ gap: 0, minWidth: 0 }}>
@@ -289,17 +289,12 @@ export function WalletField({ k, label, hint, value, onChange, ariaLabel, warn, 
       </span>
       {hint && <span className="wf-hint">{hint}</span>}
       {warn && <span className="wf-warn">{warn}</span>}
-      <span className="wf-in">
+      <label className="wf-in">
         <input inputMode="decimal" aria-label={ariaLabel || `رصيد ${label}`} value={value} onChange={(e) => onChange(e.target.value)} onFocus={(e) => e.target.select()} placeholder="اكتب الرصيد" />
         <span className="small" style={{ color: look.ink, fontWeight: 700 }}>ج</span>
-        {onPhoto && (
-          <button type="button" className={'cam' + (hasPhoto ? ' ok' : '')} aria-label={`صورة رصيد ${label}`} onClick={(e) => { e.preventDefault(); onPhoto(); }} style={{ width: 42, height: 42, background: hasPhoto ? undefined : look.soft, color: look.ink }}>
-            <Icon d={hasPhoto ? 'check' : 'cam'} />
-          </button>
-        )}
-      </span>
-      {onPhoto && <span className="wf-hint" style={{ fontSize: 12 }}>{hasPhoto ? '✓ الصورة اترفعت · المحاسب هيراجعها' : 'صوّر شاشة المحفظة بالرصيد'}</span>}
-    </label>
+      </label>
+      {onPhoto && <PhotoSlot data={photo} onPick={onPhoto} label="صوّر شاشة المحفظة بالرصيد" tone="#fff" light />}
+    </div>
   );
 }
 
@@ -317,5 +312,29 @@ export function MachineMark({ name, size = 40 }) {
     <span aria-hidden="true" style={{ width: size, height: size, borderRadius: 999, background: '#fff', color: look.mark, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 3px 10px rgba(0,0,0,.15)' }}>
       <Icon d={/فيزا|visa|ماستر|master|ميزة|meeza/i.test(name) ? 'card' : 'up'} size={size * 0.5} stroke={2.6} />
     </span>
+  );
+}
+
+// Photo box under an amount: dashed "take a photo" box, or the preview with change / view.
+export function PhotoSlot({ data, onPick, label = 'صوّر الشاشة', tone = '#6B6F8A', light }) {
+  const [view, setView] = useState(false);
+  if (!data) {
+    return (
+      <button type="button" className={'photo-slot ps-empty' + (light ? ' light' : '')} onClick={onPick} style={{ color: tone }}>
+        <Icon d="cam" size={22} />
+        <span>{label}</span>
+      </button>
+    );
+  }
+  return (
+    <div className="photo-slot has">
+      <img src={data} alt="الصورة اللي اترفعت" onClick={() => setView(true)} />
+      <span className="ps-ok">✓ اترفعت</span>
+      <span className="ps-actions">
+        <button type="button" onClick={() => setView(true)}><Icon d="eye" size={15} />شوفها</button>
+        <button type="button" onClick={onPick}><Icon d="cam" size={15} />غيّرها</button>
+      </span>
+      {view && <PhotoView src={data} onClose={() => setView(false)} />}
+    </div>
   );
 }

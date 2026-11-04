@@ -1,4 +1,4 @@
-import { Avatar, Icon, MachineMark, machineLook } from '../ui.jsx';
+import { Avatar, Icon, MachineMark, PhotoSlot, machineLook } from '../ui.jsx';
 import { BILL_BG, FACES, fmt, num } from '../lib';
 
 export function Topbar({ shopPub, profile, steps, onLogout, posUrl, onPin, onPhoto, regLabel }) {
@@ -87,22 +87,21 @@ export function MachineRows({ machines, values, setValues, photos, onPhoto }) {
               </span>
               {g.items.length > 1 && <span className="mc-total">إجمالي {fmt(total)} ج</span>}
             </div>
-            {g.items.map((i) => {
-              const m = machines[i];
-              const has = !!photos[i];
-              return (
-                <div key={i} className="m-row" style={{ background: '#fff' }}>
-                  <span className="lbl">
-                    <span className="small"><b>{m.account}</b></span>
-                    <span className="tiny" style={{ color: has ? '#3D6B00' : 'var(--muted)', fontWeight: 600 }}>{has ? '✓ الصورة اترفعت' : 'صوّر شاشة المكنة'}</span>
-                  </span>
-                  <input inputMode="decimal" aria-label={`رصيد ${m.machine} ${m.account}`} value={values[i] ?? ''} onChange={(e) => { const v = [...values]; v[i] = e.target.value; setValues(v); }} onFocus={(e) => e.target.select()} style={{ border: '2px solid #DCE3F5' }} />
-                  <button type="button" className={'cam' + (has ? ' ok' : '')} aria-label={`صورة شاشة ${m.machine} ${m.account}`} onClick={() => onPhoto(i)}>
-                    <Icon d={has ? 'check' : 'cam'} />
-                  </button>
-                </div>
-              );
-            })}
+            <div className="mc-accounts">
+              {g.items.map((i) => {
+                const m = machines[i];
+                return (
+                  <div key={i} className="mc-acc">
+                    <span className="small" style={{ fontWeight: 700 }}>{m.account}</span>
+                    <label className="mc-in">
+                      <input inputMode="decimal" aria-label={`رصيد ${m.machine} ${m.account}`} value={values[i] ?? ''} onChange={(e) => { const v = [...values]; v[i] = e.target.value; setValues(v); }} onFocus={(e) => e.target.select()} placeholder="الرصيد" />
+                      <span className="small muted">ج</span>
+                    </label>
+                    <PhotoSlot data={photos[i]} onPick={() => onPhoto(i)} label="صوّر شاشة المكنة" />
+                  </div>
+                );
+              })}
+            </div>
           </div>
         );
       })}
