@@ -17,7 +17,7 @@ const shop = { id: 's1', name: 'مخبوزات لوفان', posUrl: 'https://x',
   shopExpenses: ['مياه', 'كهربا'], incomeReasons: ['سداد آجل'], staff: ['أحمد'], suppliers: ['مطاحن النيل'] };
 const pub = { name: 'مخبوزات لوفان', logo: './levain-logo.png' };
 const profile = { id: 'u1', name: 'شوقي محمد', color: '#A07CFF' };
-const shift = { id: 'sh1', status: 'open', cashierName: 'شوقي محمد', openedAtLocal: new Date(Date.now() - 4 * 3600e3).toISOString(), receive: { drawerTotal: 1500, side: 5000, wallets: { insta: 300, vf: 0 }, walletModes: { insta: 'shop', vf: 'owner' }, machines: [{ machine: 'فوري', account: 'الحساب الرئيسي', value: 3250 }, { machine: 'فوري', account: 'كاش أوت', value: 0 }, { machine: 'فيزا', account: 'الرصيد', value: 0, ratePct: 2, rateFrom: 'cashier' }], prevCashier: 'محمود سعيد' },
+const shift = { id: 'sh1', status: 'open', cashierName: 'شوقي محمد', openedAtLocal: new Date(Date.now() - 4 * 3600e3).toISOString(), receive: { drawerTotal: 1500, side: 5000, wallets: { insta: 300, vf: 0 }, machines: [{ machine: 'فوري', account: 'الحساب الرئيسي', value: 3250 }, { machine: 'فوري', account: 'كاش أوت', value: 0 }, { machine: 'فيزا', account: 'الرصيد', value: 0, ratePct: 2, rateFrom: 'cashier' }], prevCashier: 'محمود سعيد' },
   handover: { drawerTotal: 2400, side: 2500, machines: [{ machine: 'فوري', account: 'الحساب الرئيسي', value: 2900 }, { machine: 'فوري', account: 'كاش أوت', value: 0 }, { machine: 'فيزا', account: 'الرصيد', value: 700 }] } };
 const entries = [
   { id: 'e1', type: 'expense', src: 'side', amount: 2500, kindLabel: 'مورد', sub: 'مطاحن النيل', kind: 'supplier', invoice: 'invoice', createdAtLocal: new Date().toISOString() },

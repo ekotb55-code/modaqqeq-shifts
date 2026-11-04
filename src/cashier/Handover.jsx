@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, useToast } from '../ui.jsx';
-import { MAIN_REG, WALLETS, billsTotal, computeShift, durationStr, emptyBills, fmt, lastKey, num, openKey, pickImage, timeStr } from '../lib';
+import { MAIN_REG, WALLETS, walletModeOf, walletModesOf, billsTotal, computeShift, durationStr, emptyBills, fmt, lastKey, num, openKey, pickImage, timeStr } from '../lib';
 import { newTransfer } from './Transfers.jsx';
 import { Bills, MachineRows, SideBox } from './parts.jsx';
 
@@ -43,12 +43,14 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
   const preview = filled ? computeShift({ ...shift, handover: { machines: machines.map((m, i) => ({ ...m, value: String(mvals[i]).trim() === '' ? null : num(mvals[i]) })) } }, entries, shop) : null;
   const feeGroups = preview ? preview.machineGroups.filter((g) => g.affects && g.sales && g.rateFrom === 'cashier' && g.fee) : [];
   const expSide = calc.side.expected;
-  const modes = shift.receive?.walletModes || null;
-  const modeOf = (k) => (modes ? modes[k] || 'owner' : 'legacy');
+  // The shop's current setting decides; a wallet that wasn't "shop" at receive also needs its opening balance.
+  const modeOf = (k) => walletModeOf(shop, k);
+  const needsOpen = (k) => shift.receive?.walletModes?.[k] !== 'shop';
   const walletKeys = WALLETS.filter((w) => (shop.wallets || ['insta', 'vf']).includes(w.key) || num(shift.receive?.wallets?.[w.key]) || calc.safes[w.key]?.lines.length);
   const shopWallets = walletKeys.filter((w) => modeOf(w.key) === 'shop');
   const ownerWallets = walletKeys.filter((w) => modeOf(w.key) !== 'shop');
   const [wtyped, setWtyped] = useState(() => Object.fromEntries(shopWallets.map((w) => [w.key, ''])));
+  const [wopen, setWopen] = useState(() => Object.fromEntries(shopWallets.filter((w) => needsOpen(w.key)).map((w) => [w.key, shift.receive?.wallets?.[w.key] !== undefined ? String(num(shift.receive.wallets[w.key])) : ''])));
   const walletsClose = Object.fromEntries(walletKeys.map((w) => [w.key, modeOf(w.key) === 'shop' ? num(wtyped[w.key]) : calc.safes[w.key].expected]));
   const sideDiff = side === '' ? 0 : Math.round((num(side) - expSide) * 100) / 100;
   const sideOk = side !== '' && Math.abs(sideDiff) < 0.01;
@@ -67,6 +69,8 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
     if (!sideOk) { toast(`الجانبي لازم يبقى ${fmt(expSide)} ج · ظبطه الأول`, 'err'); return; }
     const wMissing = shopWallets.find((w) => String(wtyped[w.key] ?? '').trim() === '');
     if (wMissing) { toast(`اكتب رصيد ${wMissing.label} دلوقتي`, 'err'); return; }
+    const oMissing = shopWallets.find((w) => needsOpen(w.key) && String(wopen[w.key] ?? '').trim() === '');
+    if (oMissing) { toast(`اكتب رصيد ${oMissing.label} أول الوردية`, 'err'); return; }
     const missing = mvals.findIndex((v) => String(v).trim() === '');
     if (missing >= 0) { toast(`اكتب رصيد ${machines[missing].machine} · ${machines[missing].account}`, 'err'); return; }
     setBusy(true);
@@ -77,6 +81,8 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
       machines: machines.map((m, i) => ({ ...m, value: num(mvals[i]), photo: !!photos[i] })),
       keepDrawer, keepSide, sideExpected: expSide, sideFix: sideFix || null, wallets: walletsClose,
       walletsTyped: Object.fromEntries(shopWallets.map((w) => [w.key, num(wtyped[w.key])])),
+      walletModes: walletModesOf(shop),
+      walletsOpenFix: Object.fromEntries(shopWallets.filter((w) => needsOpen(w.key)).map((w) => [w.key, num(wopen[w.key])])),
     };
     try {
       const b = writeBatch(db);
@@ -156,10 +162,18 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
               <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />رصيد المحافظ دلوقتي</h2>
               <span className="tiny muted">افتح المحفظة واكتب الرصيد اللي فيها.</span>
               {shopWallets.map((w) => (
-                <label key={w.key} className="m-row" style={{ padding: '6px 6px 6px 14px' }}>
-                  <span className="lbl"><span className="small"><b>{w.label}</b></span><span className="tiny muted">استلمت {fmt(calc.safes[w.key].open)}</span></span>
-                  <input inputMode="decimal" aria-label={`رصيد ${w.label} دلوقتي`} value={wtyped[w.key] ?? ''} onChange={(e) => setWtyped({ ...wtyped, [w.key]: e.target.value })} onFocus={(e) => e.target.select()} />
-                </label>
+                <div key={w.key} className="stack" style={{ gap: 6 }}>
+                  {needsOpen(w.key) && (
+                    <label className="m-row" style={{ padding: '6px 6px 6px 14px' }}>
+                      <span className="lbl"><span className="small"><b>{w.label}</b> · أول الوردية</span><span className="tiny muted">كان فيها كام لما استلمت؟</span></span>
+                      <input inputMode="decimal" aria-label={`رصيد ${w.label} أول الوردية`} value={wopen[w.key] ?? ''} onChange={(e) => setWopen({ ...wopen, [w.key]: e.target.value })} onFocus={(e) => e.target.select()} />
+                    </label>
+                  )}
+                  <label className="m-row" style={{ padding: '6px 6px 6px 14px' }}>
+                    <span className="lbl"><span className="small"><b>{w.label}</b>{needsOpen(w.key) ? ' · دلوقتي' : ''}</span><span className="tiny muted">{needsOpen(w.key) ? 'الرصيد اللي فيها دلوقتي' : `استلمت ${fmt(calc.safes[w.key].open)}`}</span></span>
+                    <input inputMode="decimal" aria-label={`رصيد ${w.label} دلوقتي`} value={wtyped[w.key] ?? ''} onChange={(e) => setWtyped({ ...wtyped, [w.key]: e.target.value })} onFocus={(e) => e.target.select()} />
+                  </label>
+                </div>
               ))}
             </section>
           )}

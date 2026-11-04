@@ -313,7 +313,11 @@ export function computeShift(shift, entries, shop, sales = null) {
     if (k === 'drawer') open = num(rcv.drawerTotal);
     else if (k === 'side') open = num(rcv.side);
     else if (k.startsWith('m:')) open = num(rm(rcv.machines, k)?.value);
-    else open = rcv.walletModes?.[k] === 'owner' ? 0 : num(rcv.wallets?.[k]);
+    else {
+      const wm = hnd?.walletModes?.[k] || rcv.walletModes?.[k];
+      const fix = hnd?.walletsOpenFix?.[k];
+      open = wm === 'owner' ? 0 : fix !== undefined && fix !== null ? num(fix) : num(rcv.wallets?.[k]);
+    }
     safes[k] = { key: k, label: safeLabel(k, shop), open, lines: [], inn: 0, out: 0 };
   });
   const add = (k, label, amount, t) => {
@@ -371,7 +375,7 @@ export function computeShift(shift, entries, shop, sales = null) {
   const walletInfo = [];
   WALLETS.forEach((w) => {
     const x = safes[w.key];
-    const mode = rcv.walletModes?.[w.key] || 'legacy';
+    const mode = hnd?.walletModes?.[w.key] || rcv.walletModes?.[w.key] || 'legacy';
     x.mode = mode;
     x.expected = r2(x.open + x.inn - x.out);
     x.sales = null;
