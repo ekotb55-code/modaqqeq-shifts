@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { collection, doc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Avatar, Icon, useToast } from '../ui.jsx';
-import { AVATAR_BG, DEFAULT_SHOP, RATE_FROM, WALLETS, ROLE_LABEL, SETTLE, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, createAccount, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, num, pickImage } from '../lib';
+import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, newExpenseType, RATE_FROM, WALLETS, ROLE_LABEL, SETTLE, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, createAccount, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, num, pickImage } from '../lib';
 
 export default function Setup({ profile, shops }) {
   const toast = useToast();
@@ -134,13 +134,65 @@ function MachinesEditor({ list, onChange }) {
   );
 }
 
+const EXPENSE_SUGGESTIONS = [
+  ['سحب المالك', 'مين سحب؟'],
+  ['مشتريات', 'اتشترى إيه؟'],
+  ['باقي لعميل', '', { needNote: true }],
+  ['مواصلات توصيل', ''],
+];
+
+function ExpenseTypesEditor({ custom, hidden, onCustom, onHidden }) {
+  const upd = (id, patch) => onCustom(custom.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  const have = (label) => custom.some((c) => c.label.trim() === label);
+  return (
+    <section className="card tint-orange" style={{ gap: 14 }}>
+      <div className="stack" style={{ gap: 2 }}>
+        <h2 className="h2">أنواع المصروفات</h2>
+        <span className="tiny muted">دي الاختيارات اللي بتظهر للكاشير لما يسجّل مصروف. اقفل اللي مش محتاجه، وضيف أنواع خاصة بالمحل.</span>
+      </div>
+      <div className="stack">
+        <span className="small muted">الأنواع الأساسية</span>
+        <div className="chips">
+          {BUILTIN_EXPENSE_TYPES.map((t) => {
+            const on = !hidden.includes(t.id);
+            return <button key={t.id} type="button" className={'chip sm' + (on ? ' on' : '')} aria-pressed={on} onClick={() => onHidden(on ? [...hidden, t.id] : hidden.filter((x) => x !== t.id))}>{on ? '✓ ' : ''}{t.label}</button>;
+          })}
+        </div>
+      </div>
+      <div className="stack">
+        <span className="small muted">أنواع خاصة بالمحل</span>
+        {custom.map((c) => (
+          <div key={c.id} style={{ background: '#fff', borderRadius: 22, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <label className="field" style={{ flex: '1 1 160px' }}>اسم النوع<input className="input" value={c.label} placeholder="مثلًا سحب المالك" onChange={(e) => upd(c.id, { label: e.target.value })} /></label>
+              <label className="field" style={{ flex: '1 1 160px' }}>السؤال (اختياري)<input className="input" value={c.q} placeholder="مثلًا مين سحب؟" onChange={(e) => upd(c.id, { q: e.target.value })} /></label>
+              <button type="button" className="icon-btn" aria-label={`امسح ${c.label || 'النوع'}`} onClick={() => onCustom(custom.filter((x) => x.id !== c.id))}><Icon d="trash" size={18} /></button>
+            </div>
+            {c.q && <TagList title="الاختيارات اللي تحت السؤال" items={c.subs || []} onChange={(v) => upd(c.id, { subs: v })} placeholder="مثلًا أ. سامح" />}
+            <div className="chips">
+              <button type="button" className={'chip sm' + (c.needNote ? ' on' : '')} onClick={() => upd(c.id, { needNote: !c.needNote })}>{c.needNote ? '✓ ' : ''}لازم يكتب ملاحظة</button>
+              <button type="button" className={'chip sm' + (c.needPhoto ? ' on' : '')} onClick={() => upd(c.id, { needPhoto: !c.needPhoto })}>{c.needPhoto ? '✓ ' : ''}لازم يصوّر إيصال</button>
+            </div>
+          </div>
+        ))}
+        <div className="chips">
+          {EXPENSE_SUGGESTIONS.filter(([l]) => !have(l)).map(([l, q, extra]) => (
+            <button key={l} type="button" className="chip sm" onClick={() => onCustom([...custom, newExpenseType(l, q, extra)])}>+ {l}</button>
+          ))}
+          <button type="button" className="chip sm on" onClick={() => onCustom([...custom, newExpenseType()])}>+ نوع جديد</button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function ShopEditor({ shop }) {
   const toast = useToast();
   const [pub, setPub] = useState(null);
   const [f, setF] = useState(() => ({
     name: shop.name || '', posUrl: shop.posUrl || '', walletName: shop.walletName || '',
     machineList: machineListOf(shop), wallets: shop.wallets || ['insta', 'vf'], suppliers: shop.suppliers || [], staff: shop.staff || [],
-    shopExpenses: shop.shopExpenses || [], incomeReasons: shop.incomeReasons || [], advanceDays: shop.advanceDays || [],
+    shopExpenses: shop.shopExpenses || [], customExpenseTypes: shop.customExpenseTypes || [], hiddenExpenseTypes: shop.hiddenExpenseTypes || [], incomeReasons: shop.incomeReasons || [], advanceDays: shop.advanceDays || [],
   }));
   const [dirty, setDirty] = useState(false);
   const set = (k, v) => { setF((x) => ({ ...x, [k]: v })); setDirty(true); };
@@ -205,11 +257,13 @@ function ShopEditor({ shop }) {
 
       <MachinesEditor list={f.machineList} onChange={(v) => set('machineList', v)} />
 
+      <ExpenseTypesEditor custom={f.customExpenseTypes} hidden={f.hiddenExpenseTypes} onCustom={(v) => set('customExpenseTypes', v)} onHidden={(v) => set('hiddenExpenseTypes', v)} />
+
       <section className="card tint-violet" style={{ gap: 18 }}>
         <h2 className="h2">القوايم</h2>
         <TagList title="الموردين" items={f.suppliers} onChange={(v) => set('suppliers', v)} placeholder="اسم المورد" />
         <TagList title="الموظفين (للسلف واليوميات)" items={f.staff} onChange={(v) => set('staff', v)} placeholder="اسم الموظف" />
-        <TagList title="أنواع مصاريف المحل" items={f.shopExpenses} onChange={(v) => set('shopExpenses', v)} placeholder="مثلًا كهربا" />
+        <TagList title="اختيارات «مصروف محل»" items={f.shopExpenses} onChange={(v) => set('shopExpenses', v)} placeholder="مثلًا كهربا" />
         <TagList title="أسباب الإيراد" items={f.incomeReasons} onChange={(v) => set('incomeReasons', v)} placeholder="مثلًا سداد آجل" />
         <div className="stack">
           <strong className="small">أيام السلف <span className="muted" style={{ fontWeight: 400 }}>(لو مفيش أيام متعلمة، السلف مسموحة كل يوم)</span></strong>

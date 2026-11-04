@@ -43,7 +43,9 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
     { id: 'wage', label: 'يومية / مرتب', icon: 'cash', q: 'لمين؟', subs: staff, allowNew: 'اسم تاني' },
     { id: 'refund', label: 'مرتجع لعميل', icon: 'undo', q: '', subs: [] },
     { id: 'other', label: 'حاجة تانية', icon: 'dots', q: '', subs: [] },
-  ]; }, [shop]);
+  ].filter((k) => !(shop.hiddenExpenseTypes || []).includes(k.id)).concat((shop.customExpenseTypes || []).filter((c) => c.label).map((c) => ({
+    id: 'c:' + c.id, label: c.label, icon: 'cash', q: c.q || '', subs: c.subs || [], allowNew: c.q ? 'تاني' : null, custom: true, needNote: !!c.needNote, needPhoto: !!c.needPhoto,
+  }))); }, [shop]);
 
   const [src, setSrc] = useState('');
   const [kind, setKind] = useState('');
@@ -69,7 +71,7 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
   const today = new Date().getDay();
   const advanceDays = shop.advanceDays || [];
   const advanceBlocked = type === 'expense' && kind === 'advance' && advanceDays.length > 0 && !advanceDays.includes(today);
-  const needsPhoto = type === 'transfer' || (type === 'expense' && kind === 'supplier' && invoice === 'invoice');
+  const needsPhoto = type === 'transfer' || (type === 'expense' && ((kind === 'supplier' && invoice === 'invoice') || kd.needPhoto));
 
   const subValue = sub === '__new' ? custom.trim() : sub;
   const reasonValue = reason === '__new' ? custom.trim() : reason;
@@ -86,11 +88,12 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
     if (advanceBlocked) return 'النهارده مش يوم سلف';
     if (type === 'expense' && kd.subs !== undefined && kd.q && !subValue) return kd.q;
     if (type === 'expense' && ['refund', 'other'].includes(kind) && !note.trim()) return kind === 'refund' ? 'اكتب رقم فاتورة البيع' : 'اكتب المصروف ده إيه';
+    if (type === 'expense' && kd.needNote && !note.trim()) return 'اكتب ملاحظة';
     if (type === 'income' && !reasonValue) return 'اختار سبب الإيراد';
     if (type === 'topup' && !machine) return 'اختار المكنة';
     if (type === 'liquidate' && !liqTo) return 'اختار الفلوس رايحة فين';
     if (type === 'liquidate' && liqTo === src) return 'اختار خزنة تانية';
-    if (needsPhoto && !photo) return type === 'transfer' ? 'لازم ترفع صورة التحويل' : 'صوّر الفاتورة';
+    if (needsPhoto && !photo) return type === 'transfer' ? 'لازم ترفع صورة التحويل' : kind === 'supplier' ? 'صوّر الفاتورة' : 'صوّر الإيصال';
     return null;
   };
 
@@ -190,6 +193,11 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
               <button type="button" className={'chip' + (invoice === 'supply' ? ' on' : '')} style={{ flex: '1 1 200px', height: 58 }} onClick={() => { setInvoice('supply'); setPhoto(null); }}>توريد من غير فاتورة</button>
             </div>
           )}
+          {kd.custom && (
+            <label className="field">{kd.needNote ? 'ملاحظة' : 'ملاحظة (اختياري)'}
+              <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="اكتب تفاصيل لو فيه" />
+            </label>
+          )}
           {['refund', 'other'].includes(kind) && (
             <label className="field">{kind === 'refund' ? 'رقم فاتورة البيع' : 'اكتب المصروف ده إيه'}
               <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={kind === 'refund' ? 'مثلًا 10452' : 'مثلًا تصليح التلاجة'} />
@@ -253,7 +261,7 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
             </div>
           ) : (
             <button type="button" onClick={takePhoto} style={{ height: 80, borderRadius: 24, border: '2px dashed var(--violet)', background: '#F7F3FF', fontSize: 15, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-              <Icon d="cam" size={24} stroke={2} />{type === 'transfer' ? 'ارفع صورة التحويل (إجباري)' : 'صوّر الفاتورة'}
+              <Icon d="cam" size={24} stroke={2} />{type === 'transfer' ? 'ارفع صورة التحويل (إجباري)' : kind === 'supplier' ? 'صوّر الفاتورة' : 'صوّر الإيصال (إجباري)'}
             </button>
           )}
         </div>

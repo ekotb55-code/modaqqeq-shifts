@@ -46,6 +46,16 @@ export function flattenMachines(list) {
   });
 }
 
+export const BUILTIN_EXPENSE_TYPES = [
+  { id: 'supplier', label: 'مورد', icon: 'truck' },
+  { id: 'advance', label: 'سلفة موظف', icon: 'person' },
+  { id: 'shop', label: 'مصروف محل', icon: 'shop' },
+  { id: 'wage', label: 'يومية / مرتب', icon: 'cash' },
+  { id: 'refund', label: 'مرتجع لعميل', icon: 'undo' },
+  { id: 'other', label: 'حاجة تانية', icon: 'dots' },
+];
+export const newExpenseType = (label = '', q = '', extra = {}) => ({ id: Math.random().toString(36).slice(2, 9), label, q, subs: [], needNote: false, needPhoto: false, ...extra });
+
 export const WEEKDAYS = ['الأحد', 'الاتنين', 'التلات', 'الأربع', 'الخميس', 'الجمعة', 'السبت'];
 
 export const ENTRY_TYPES = {
