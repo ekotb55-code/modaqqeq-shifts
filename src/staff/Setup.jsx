@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { collection, doc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Avatar, Icon, useToast } from '../ui.jsx';
-import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, REG_KIND, newRegister, newExpenseType, RATE_FROM, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, createAccount, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, num, pickImage } from '../lib';
+import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, REG_KIND, allOpen, newRegister, newExpenseType, RATE_FROM, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, createAccount, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, num, pickImage } from '../lib';
 
 export default function Setup({ profile, shops }) {
   const toast = useToast();
@@ -10,7 +10,6 @@ export default function Setup({ profile, shops }) {
   const [view, setView] = useState('shops');
   const shop = shops.find((s) => s.id === sel) || null;
 
-  useEffect(() => { if (!sel && shops.length) setSel(shops[0].id); }, [shops, sel]);
 
   const newShop = async () => {
     const name = window.prompt('اسم المحل الجديد');
@@ -34,18 +33,22 @@ export default function Setup({ profile, shops }) {
         </div>
       </div>
       {view === 'staff' ? <StaffAccounts shops={shops} profile={profile} /> : (
-        <div className="row">
-          <aside className="side" style={{ flex: '1 1 260px', maxWidth: 340 }}>
-            <button type="button" className="btn full" onClick={newShop}><Icon d="plus" />محل جديد</button>
-            {shops.map((s) => (
-              <button key={s.id} type="button" className={'q-item' + (sel === s.id ? ' on' : '')} onClick={() => setSel(s.id)}>
-                <span className="spread"><strong>{s.name}</strong></span>
-                <span className="tiny muted">{s.openShift ? `وردية شغالة · ${s.openShift.cashierName}` : 'مفيش وردية مفتوحة'}</span>
-              </button>
-            ))}
-            {shops.length === 0 && <div className="card empty">ابدأ بإضافة أول محل</div>}
-          </aside>
-          <div className="grow">{shop ? <ShopEditor key={shop.id} shop={shop} /> : null}</div>
+        <div className="stack" style={{ gap: 16 }}>
+          <div className="shop-tabs" role="tablist" aria-label="المحلات">
+            {shops.map((s) => {
+              const open = allOpen(s);
+              return (
+                <button key={s.id} type="button" role="tab" aria-selected={sel === s.id} className={'shop-tab' + (sel === s.id ? ' on' : '')} onClick={() => setSel(sel === s.id ? null : s.id)}>
+                  <strong>{s.name}</strong>
+                  <span className="tiny">{open.length ? `شغّال · ${open.map((o) => o.cashierName).join('، ')}` : 'مفيش وردية مفتوحة'}</span>
+                </button>
+              );
+            })}
+            <button type="button" className="shop-tab add" onClick={newShop}><Icon d="plus" />محل جديد</button>
+          </div>
+          {shop ? <ShopEditor key={shop.id} shop={shop} /> : (
+            <div className="card empty" style={{ minHeight: 220, justifyContent: 'center' }}>{shops.length ? 'اختار محل من فوق علشان تعدّل إعداداته' : 'ابدأ بإضافة أول محل'}</div>
+          )}
         </div>
       )}
     </div>

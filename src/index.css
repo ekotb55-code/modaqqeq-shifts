@@ -411,3 +411,12 @@ img { max-width: 100%; }
 .assets-grid > * > .photo-slot { margin-top: auto; }
 @media (max-width: 1100px) { .assets-grid { --cols: 2 !important; } }
 @media (max-width: 700px) { .assets-grid { --cols: 1 !important; } }
+
+.shop-tabs { display: flex; gap: 10px; overflow-x: auto; padding: 4px 2px 8px; scrollbar-width: thin; }
+.shop-tab { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 170px; padding: 12px 18px; border-radius: 22px; border: 2px solid transparent; background: #fff; color: var(--ink); font-family: inherit; cursor: pointer; text-align: right; box-shadow: 0 2px 10px rgba(30,40,90,.06); }
+.shop-tab strong { font-size: 17px; }
+.shop-tab .tiny { color: var(--muted); }
+.shop-tab:hover { border-color: #C9D6FF; }
+.shop-tab.on { background: var(--blue); color: #fff; border-color: var(--blue); }
+.shop-tab.on .tiny { color: rgba(255,255,255,.85); }
+.shop-tab.add { flex-direction: row; align-items: center; gap: 8px; min-width: 0; background: var(--blue-soft, #E6EEFF); color: var(--blue); font-weight: 800; font-size: 16px; }
