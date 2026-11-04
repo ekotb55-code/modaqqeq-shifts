@@ -45,8 +45,8 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
     { id: 'other', label: 'حاجة تانية', icon: 'dots', q: '', subs: [] },
   ]; }, [shop]);
 
-  const [src, setSrc] = useState(type === 'income' ? 'side' : 'drawer');
-  const [kind, setKind] = useState('supplier');
+  const [src, setSrc] = useState('');
+  const [kind, setKind] = useState('');
   const [sub, setSub] = useState('');
   const [custom, setCustom] = useState('');
   const [invoice, setInvoice] = useState('invoice');
@@ -64,7 +64,7 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
   const [photo, setPhoto] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  const kd = kinds.find((k) => k.id === kind);
+  const kd = kinds.find((k) => k.id === kind) || { id: '', label: '', q: '', subs: [] };
   const reasons = shop.incomeReasons || [];
   const today = new Date().getDay();
   const advanceDays = shop.advanceDays || [];
@@ -80,6 +80,8 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
   };
 
   const validate = () => {
+    if (['expense', 'income', 'topup', 'withdraw', 'liquidate'].includes(type) && !src) return type === 'income' ? 'اختار الفلوس داخلة فين' : 'اختار الفلوس طالعة منين';
+    if (type === 'expense' && !kind) return 'اختار نوع المصروف';
     if (num(amount) <= 0) return 'اكتب المبلغ';
     if (advanceBlocked) return 'النهارده مش يوم سلف';
     if (type === 'expense' && kd.subs !== undefined && kd.q && !subValue) return kd.q;
@@ -137,7 +139,13 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
           <SafePick safes={cashSafes} value={src} onPick={setSrc} balances={balances} />
         </div>
       )}
-      {['expense', 'liquidate'].includes(type) && (
+      {type === 'expense' && (
+        <div className="stack">
+          <span className="small muted">الفلوس طالعة منين؟</span>
+          <SafePick safes={cashSafes} value={src} onPick={setSrc} balances={balances} />
+        </div>
+      )}
+      {type === 'liquidate' && (
         <div className="stack">
           <span className="small muted">الفلوس طالعة من أنهي خزنة؟</span>
           <SafePick safes={allSafes} value={src} onPick={(k) => { setSrc(k); if (k === liqTo) setLiqTo(''); }} balances={balances} />
