@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { collection, doc, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Icon, useToast } from '../ui.jsx';
+import { Icon, useToast, WalletField } from '../ui.jsx';
 import { MAIN_REG, WALLETS, walletModeOf, walletModesOf, billsTotal, emptyBills, fmt, lastOf, num, openKey, pickImage, regName, timeStr, todayKey } from '../lib';
 import { Bills, MachineRows, SideBox } from './parts.jsx';
 
@@ -128,10 +128,8 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
               <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />رصيد المحافظ</h2>
               <span className="tiny muted">المحافظ اللي تبع المحل: اكتب الرصيد اللي فيها دلوقتي. لو مختلف عن اللي مكتوب عدّله.</span>
               {walletKeys.map((w) => (
-                <label key={w.key} className="m-row" style={{ padding: '6px 6px 6px 14px' }}>
-                  <span className="lbl"><span className="small"><b>{w.label}</b></span>{last && num(wallets[w.key]) !== prevWallets[w.key] && <span className="tiny" style={{ color: '#9B1C1C', fontWeight: 600 }}>اتعدّل · كان {fmt(prevWallets[w.key])}</span>}</span>
-                  <input inputMode="decimal" aria-label={`رصيد ${w.label}`} value={wallets[w.key]} onChange={(e) => setWallets({ ...wallets, [w.key]: e.target.value })} onFocus={(e) => e.target.select()} />
-                </label>
+                <WalletField key={w.key} k={w.key} label={w.label} value={wallets[w.key]} onChange={(v) => setWallets({ ...wallets, [w.key]: v })}
+                  hint="الرصيد اللي في المحفظة دلوقتي" warn={last && num(wallets[w.key]) !== prevWallets[w.key] ? `اتعدّل · كان ${fmt(prevWallets[w.key])}` : null} />
               ))}
             </section>
           )}

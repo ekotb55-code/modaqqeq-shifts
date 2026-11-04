@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Icon, useToast } from '../ui.jsx';
+import { Icon, useToast, WalletField, WalletMark } from '../ui.jsx';
 import { MAIN_REG, WALLETS, walletModeOf, walletModesOf, billsTotal, computeShift, durationStr, emptyBills, fmt, lastKey, num, openKey, pickImage, timeStr } from '../lib';
 import { newTransfer } from './Transfers.jsx';
 import { Bills, MachineRows, SideBox } from './parts.jsx';
@@ -131,7 +131,7 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
               <h2 className="h2"><span className="dot" style={{ background: 'var(--orange)' }} />عدّ درج الكاشير</h2>
               <span className="big-num">{fmt(drawerTotal)}<small> ج</small></span>
             </div>
-            <Bills bills={bills} setBills={setBills} />
+            <Bills bills={bills} setBills={setBills} noSteppers />
           </section>
           <section className="card tint-violet" style={{ gap: 14 }}>
             <h2 className="h2">الفلوس هتروح فين؟</h2>
@@ -162,17 +162,11 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
               <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />رصيد المحافظ دلوقتي</h2>
               <span className="tiny muted">افتح المحفظة واكتب الرصيد اللي فيها.</span>
               {shopWallets.map((w) => (
-                <div key={w.key} className="stack" style={{ gap: 6 }}>
+                <div key={w.key} className="stack" style={{ gap: 8 }}>
                   {needsOpen(w.key) && (
-                    <label className="m-row" style={{ padding: '6px 6px 6px 14px' }}>
-                      <span className="lbl"><span className="small"><b>{w.label}</b> · أول الوردية</span><span className="tiny muted">كان فيها كام لما استلمت؟</span></span>
-                      <input inputMode="decimal" aria-label={`رصيد ${w.label} أول الوردية`} value={wopen[w.key] ?? ''} onChange={(e) => setWopen({ ...wopen, [w.key]: e.target.value })} onFocus={(e) => e.target.select()} />
-                    </label>
+                    <WalletField k={w.key} label={`${w.label} · أول الوردية`} hint="كان فيها كام لما استلمت؟" value={wopen[w.key] ?? ''} onChange={(v) => setWopen({ ...wopen, [w.key]: v })} ariaLabel={`رصيد ${w.label} أول الوردية`} />
                   )}
-                  <label className="m-row" style={{ padding: '6px 6px 6px 14px' }}>
-                    <span className="lbl"><span className="small"><b>{w.label}</b>{needsOpen(w.key) ? ' · دلوقتي' : ''}</span><span className="tiny muted">{needsOpen(w.key) ? 'الرصيد اللي فيها دلوقتي' : `استلمت ${fmt(calc.safes[w.key].open)}`}</span></span>
-                    <input inputMode="decimal" aria-label={`رصيد ${w.label} دلوقتي`} value={wtyped[w.key] ?? ''} onChange={(e) => setWtyped({ ...wtyped, [w.key]: e.target.value })} onFocus={(e) => e.target.select()} />
-                  </label>
+                  <WalletField k={w.key} label={w.label} hint={needsOpen(w.key) ? 'الرصيد اللي فيها دلوقتي' : `استلمت ${fmt(calc.safes[w.key].open)} · اكتب اللي فيها دلوقتي`} value={wtyped[w.key] ?? ''} onChange={(v) => setWtyped({ ...wtyped, [w.key]: v })} ariaLabel={`رصيد ${w.label} دلوقتي`} />
                 </div>
               ))}
             </section>
@@ -183,7 +177,8 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
               {ownerWallets.filter((w) => calc.safes[w.key]?.inn).map((w) => {
                 const x = calc.safes[w.key];
                 return (
-                  <div key={w.key} className="m-row" style={{ padding: '10px 14px' }}>
+                  <div key={w.key} className="m-row" style={{ padding: '8px 14px 8px 8px' }}>
+                    <WalletMark k={w.key} size={40} />
                     <span className="lbl"><span className="small"><b>{w.label}</b></span><span className="tiny muted">{x.lines.length} تحويل · بتروح لصاحب المحل</span></span>
                     <strong style={{ fontSize: 18 }}>{fmt(x.inn)}</strong>
                   </div>

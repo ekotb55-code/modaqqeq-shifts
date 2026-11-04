@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Avatar, Icon, Modal, NetMeter, useToast } from '../ui.jsx';
+import { Avatar, Icon, Modal, NetMeter, WALLET_LOOK, WalletMark, useToast } from '../ui.jsx';
 import { ENTRY_TYPES, SRC_LABEL, WALLETS, durationStr, firstName, fmt, liveBalances, machineTotals, num, walletModeOf, registersOf, safeLabel, shopSafes, timeStr } from '../lib';
 import { Incoming, SendModal } from './Transfers.jsx';
 import EntryModal from './EntryModal.jsx';
@@ -37,8 +37,8 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
   const counters = [
     { label: 'طالع من الدرج', value: out('drawer'), dot: '#fff', cls: 'c-orange' },
     !shop.noSide && { label: 'طالع من الجانبي', value: out('side'), dot: '#fff', cls: 'c-yellow' },
-    wallets.includes('insta') && { label: 'انستاباي', value: sum((e) => e.type === 'transfer' && e.wallet === 'insta'), dot: '#fff', cls: 'c-violet' },
-    wallets.includes('vf') && { label: 'فودافون كاش', value: sum((e) => e.type === 'transfer' && e.wallet === 'vf'), dot: '#fff', cls: 'c-pink' },
+    wallets.includes('insta') && { label: 'انستاباي', value: sum((e) => e.type === 'transfer' && e.wallet === 'insta'), dot: '#fff', cls: 'c-violet', w: 'insta' },
+    wallets.includes('vf') && { label: 'فودافون كاش', value: sum((e) => e.type === 'transfer' && e.wallet === 'vf'), dot: '#fff', cls: 'c-pink', w: 'vf' },
   ].filter(Boolean);
   const tiles = [
     ops && { t: 'expense', label: 'مصروف', icon: 'up' },
@@ -80,7 +80,7 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
         </section>
         <div className="counters">
           {counters.map((c) => (
-            <div key={c.label} className={'counter ' + c.cls}>
+            <div key={c.label} className={'counter ' + c.cls + (c.w ? ' brand' : '')} style={c.w ? { background: WALLET_LOOK[c.w].bg, color: '#fff' } : undefined}>
               <span className="small muted" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span className="dot" style={{ background: c.dot, width: 10, height: 10 }} />{c.label}</span>
               <span className="v">{fmt(c.value)}<span className="small muted" style={{ fontWeight: 500 }}> ج</span></span>
             </div>
@@ -147,10 +147,20 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
         <div className="safes-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
           {shopSafes(shop).filter((x) => x.key !== 'drawer').flatMap((x) => {
             const card = (
-              <div key={x.key} style={{ background: x.color, borderRadius: 20, padding: '12px 14px' }}>
-                <div className="small" style={{ fontWeight: 600 }}>{x.label}{x.kind === 'wallet' ? <span className="tiny" style={{ fontWeight: 500 }}> · {x.mode === 'owner' ? 'تحويلات لصاحب المحل' : 'رصيد'}</span> : null}</div>
-                <div style={{ fontSize: 24, fontWeight: 800 }}>{fmt(balances[x.key] ?? 0)}<span className="small" style={{ fontWeight: 500 }}> ج</span></div>
-              </div>
+              x.kind === 'wallet' ? (
+                <div key={x.key} style={{ background: WALLET_LOOK[x.key]?.bg || x.color, color: '#fff', borderRadius: 20, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <WalletMark k={x.key} size={40} />
+                  <span className="stack" style={{ gap: 0 }}>
+                    <span className="small" style={{ fontWeight: 700 }}>{x.label} <span className="tiny" style={{ fontWeight: 500, opacity: 0.9 }}>· {x.mode === 'owner' ? 'تحويلات لصاحب المحل' : 'رصيد'}</span></span>
+                    <span style={{ fontSize: 24, fontWeight: 800 }}>{fmt(balances[x.key] ?? 0)}<span className="small" style={{ fontWeight: 500 }}> ج</span></span>
+                  </span>
+                </div>
+              ) : (
+                <div key={x.key} style={{ background: x.color, borderRadius: 20, padding: '12px 14px' }}>
+                  <div className="small" style={{ fontWeight: 600 }}>{x.label}</div>
+                  <div style={{ fontSize: 24, fontWeight: 800 }}>{fmt(balances[x.key] ?? 0)}<span className="small" style={{ fontWeight: 500 }}> ج</span></div>
+                </div>
+              )
             );
             const t = machineTotals(shop, balances).find((g) => g.after === x.key);
             return t ? [card, (

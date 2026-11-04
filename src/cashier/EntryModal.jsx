@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Icon, Modal, useToast } from '../ui.jsx';
+import { Icon, Modal, useToast, WALLET_LOOK, WalletMark } from '../ui.jsx';
 import { ENTRY_TYPES, OWNER, SRC_LABEL, WALLETS, WEEKDAYS, walletModeOf, fmt, num, pickImage, safeLabel, shopSafes } from '../lib';
 
 const META = {
@@ -235,7 +235,15 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
         <div className="stack">
           <span className="small muted">العميل حوّل على</span>
           <div className="chips">
-            {enabledWallets.map((w) => <Chip key={w.key} on={wallet === w.key} onClick={() => setWallet(w.key)}>{w.label}</Chip>)}
+            {enabledWallets.map((w) => {
+              const on = wallet === w.key;
+              return (
+                <button key={w.key} type="button" className={'wallet-chip' + (on ? ' on' : '')} aria-pressed={on} onClick={() => setWallet(w.key)}
+                  style={{ background: on ? WALLET_LOOK[w.key]?.bg : WALLET_LOOK[w.key]?.soft, color: on ? '#fff' : WALLET_LOOK[w.key]?.ink }}>
+                  <WalletMark k={w.key} size={36} />{w.label}{on ? ' ✓' : ''}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
