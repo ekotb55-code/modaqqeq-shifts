@@ -355,3 +355,12 @@ img { max-width: 100%; }
 .wallet-chip { display: inline-flex; align-items: center; gap: 8px; height: 52px; padding: 0 16px 0 8px; border-radius: 999px; border: 2px solid transparent; font-weight: 700; font-family: inherit; font-size: 15px; cursor: pointer; }
 .wallet-chip.on { color: #fff; }
 .counter.brand .muted { color: rgba(255,255,255,.9) !important; }
+
+.zoom-frame { position: relative; border-radius: 18px; background: #fff; border: 3px solid #DCE3F5; box-shadow: inset 0 0 0 6px #F4F6FC; overflow: hidden; }
+.zoom-frame.big { border-color: #fff; box-shadow: 0 20px 60px rgba(0,0,0,.4); }
+.zoom-box { width: 100%; height: 100%; overflow: hidden; display: flex; align-items: center; justify-content: center; touch-action: none; user-select: none; }
+.zoom-box img { max-width: 100%; max-height: 100%; object-fit: contain; transform-origin: center; transition: transform .08s linear; pointer-events: none; }
+.zoom-ctl { position: absolute; bottom: 10px; left: 10px; display: flex; align-items: center; gap: 4px; background: rgba(20,22,40,.78); color: #fff; border-radius: 999px; padding: 4px; font-size: 13px; font-weight: 700; }
+.zoom-ctl span { min-width: 44px; text-align: center; }
+.zoom-ctl button { width: 34px; height: 34px; border-radius: 999px; border: 0; background: rgba(255,255,255,.16); color: #fff; font-size: 20px; font-weight: 800; cursor: pointer; font-family: inherit; }
+.zoom-ctl button:disabled { opacity: .35; cursor: default; }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Avatar, CopyBtn, Icon, PhotoView, useToast } from '../ui.jsx';
+import { Avatar, CopyBtn, Icon, PhotoView, ZoomImage, useToast } from '../ui.jsx';
 import { BILL_BG, FACES, SRC_LABEL, shopForRegister, computeShift, diffText, durationStr, fmt, minutesBetween, num, safeLabel, timeStr, toDate, dateStr } from '../lib';
 import Statements from './Statements.jsx';
 import { DeletedList, entryTitle } from '../cashier/Dash.jsx';
@@ -125,9 +125,13 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
   const toggleMove = (m) => setDoc(doc(db, 'reviews', shift.id), { shopId: shift.shopId, autoPosted: { [m.id]: !autoPosted[m.id] } }, { merge: true }).catch(() => toast('مش قادرين نحفظ', 'err'));
   const leftEntries = entries.filter((e) => !e.posted).length;
   const leftMoves = moves.filter((m) => !autoPosted[m.id]).length;
+  const [typedDiff, setTypedDiff] = useState('');
+  const expectAbs = sum.diff === null ? null : Math.round(Math.abs(sum.diff) * 100) / 100;
+  const typedOk = expectAbs !== null && typedDiff.trim() !== '' && Math.round(num(typedDiff) * 100) / 100 === expectAbs;
   const blockers = [
     leftMoves + leftEntries > 0 && `فاضل ${leftMoves + leftEntries} حركة ما اتعلّمش عليها`,
     unchecked > 0 && `فاضل ${unchecked} صورة ما اتراجعتش`,
+    sum.diff !== null && !typedOk && (typedDiff.trim() === '' ? `اكتب ${sum.diff < 0 ? 'العجز' : sum.diff > 0 ? 'الزيادة' : 'النتيجة'} بإيدك` : 'الرقم اللي كتبته مش زي النتيجة'),
   ].filter(Boolean);
 
   const close = async () => {
@@ -313,13 +317,14 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
             <h2 className="h2">الصور <span className="tiny muted" style={{ fontWeight: 500 }}>· اتأكد إن الرقم اللي في الصورة هو اللي الكاشير كتبه</span></h2>
             {unchecked > 0 ? <span className="badge warn">فاضل {unchecked} صورة</span> : <span className="badge ok">✓ كل الصور اتراجعت</span>}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
             {photos.map((p) => {
               const ok = p.check === 'ok', bad = p.check === 'bad';
               const typed = photoTyped(p);
               return (
                 <div key={p.id} style={{ background: 'var(--bg)', borderRadius: 20, padding: 10, display: 'flex', flexDirection: 'column', gap: 8, border: `2px solid ${ok ? 'var(--lime)' : bad ? 'var(--red)' : 'transparent'}` }}>
-                  <img src={p.data} alt={p.label} onClick={() => setView(p.data)} style={{ width: '100%', height: 150, objectFit: 'cover', borderRadius: 14, cursor: 'zoom-in', background: '#fff' }} />
+                  <ZoomImage src={p.data} alt={p.label} height={340} />
+                  <button type="button" className="link" style={{ alignSelf: 'flex-start', fontSize: 13 }} onClick={() => setView(p.data)}>افتحها كبيرة</button>
                   <span className="small"><b>{{ transfer: 'تحويل', invoice: 'فاتورة', machine: p.stage === 'receive' ? 'مكنة · استلام' : 'مكنة · تسليم' }[p.kind]}</b> · {p.label}</span>
                   {typed !== null && <span className="small">الكاشير كتب: <b>{fmt(typed)}</b></span>}
                   {p.kind === 'transfer' && shop?.walletName && <span className="tiny muted">لازم يكون المستلم: {shop.walletName}</span>}
@@ -351,6 +356,12 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
             <span style={{ lineHeight: 1.7 }}>
               {sum.diff === null ? 'اكتب رقم المبيعات علشان النتيجة تطلع.' : sum.diff < 0 ? `العجز ${fmt(-sum.diff)} ج هيتسجل على ${shift.cashierName} في سجل العجز، ويستنى تأكيد إنه اتخصم.` : sum.diff > 0 ? `الزيادة ${fmt(sum.diff)} ج هتتسجل باسم ${shift.cashierName} في سجل الزيادات.` : 'الوردية مضبوطة، مفيش عجز ولا زيادة.'}
             </span>
+            {sum.diff !== null && (
+              <label className="field">{sum.diff < 0 ? 'اكتب العجز بإيدك' : sum.diff > 0 ? 'اكتب الزيادة بإيدك' : 'اكتب النتيجة بإيدك (0 لو مضبوطة)'}
+                <input className="input" inputMode="decimal" value={typedDiff} onChange={(e) => setTypedDiff(e.target.value)} placeholder="المبلغ" style={{ fontSize: 22, fontWeight: 800, textAlign: 'center', borderColor: typedDiff === '' ? undefined : typedOk ? 'var(--lime)' : 'var(--red)' }} />
+                {typedDiff !== '' && <span className={'badge ' + (typedOk ? 'ok' : 'bad')}>{typedOk ? '✓ مطابق للنتيجة' : 'مش مطابق، راجع تاني'}</span>}
+              </label>
+            )}
             {blockers.map((b) => <span key={b} className="badge warn" style={{ whiteSpace: 'normal' }}>{b}</span>)}
             <button type="button" className="btn blue full" onClick={close} disabled={busy || sales === '' || blockers.length > 0}><Icon d="check" />تقفيل الوردية وإرسال التقرير</button>
             <span className="tiny muted">التقرير بيوصل للمدير والأونر في صفحة التقارير.</span>

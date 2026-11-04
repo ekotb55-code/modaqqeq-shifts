@@ -1,6 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import './index.css';
-import { ToastProvider } from './ui.jsx';
+import { ToastProvider, ZoomImage, PhotoView } from './ui.jsx';
 import { Topbar } from './cashier/parts.jsx';
 import Dash from './cashier/Dash.jsx';
 import Receive from './cashier/Receive.jsx';
@@ -42,6 +42,7 @@ else if (v === 'expense') body = <EntryModal type="expense" shop={shop} shift={s
 else if (v === 'receive') body = <Receive shop={shop} profile={profile} onStarted={() => {}} />;
 else if (v === 'handover') body = <Handover shop={shop} shift={{ ...shift, handover: null }} entries={entries} profile={profile} onBack={() => {}} onDone={() => {}} />;
 else if (v === 'review') body = <div className="wrap"><ShiftDetail shift={{ ...shift, status: 'submitted', shopId: 's1', handover: { ...(shift.handover || {}), keepDrawer: 'stay', drawerTotal: 2400, bills: { 200: 10, 100: 4 }, walletsTyped: { insta: 100 }, walletModes: { insta: 'shop', vf: 'owner' } } }} shop={shop} profile={{ ...profile, role: 'accountant' }} canReview /></div>;
+else if (v === 'zoom') body = <div className="wrap"><div style={{ width: 320 }}><ZoomImage src="./modaqqeq-logo.png" height={340} /></div><PhotoView src={location.hash ? './modaqqeq-logo.png' : null} onClose={() => {}} /></div>;
 else if (v === 'statements') body = <div className="wrap"><Statements c={computeShift(shift, entries, shop, 4000)} shift={shift} shop={shop} /></div>;
 else body = <Dash shop={shop} shift={shift} entries={entries} incoming={v === 'inc' ? inc : []} deleted={[{ id: 'd1', type: 'expense', kind: 'delivery', kindLabel: 'قبض دليفري', sub: 'أحمد', src: 'drawer', amount: 50, deleted: true, deletedByName: 'شوقي محمد', deleteReason: 'اتسجلت مرتين', createdAtLocal: new Date().toISOString(), deletedAtLocal: Date.now() }]} profile={profile} onHandover={() => {}} onReceive={() => {}} />;
 createRoot(document.getElementById('root')).render(<ToastProvider>{v !== 'login' && <Topbar shopPub={pub} profile={profile} steps={steps} onLogout={() => {}} posUrl={shop.posUrl} onPin={() => {}} onPhoto={() => {}} />}{body}</ToastProvider>);

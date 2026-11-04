@@ -183,11 +183,46 @@ export function Modal({ title, color, icon, onClose, children, width }) {
   );
 }
 
+// Zoomable photo: buttons, mouse wheel, double-click and drag to move around.
+export function ZoomImage({ src, alt = 'صورة', height = 320, big = false }) {
+  const [z, setZ] = useState(1);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const drag = useRef(null);
+  const set = (nz) => { const v = Math.min(6, Math.max(1, Math.round(nz * 100) / 100)); setZ(v); if (v === 1) setPos({ x: 0, y: 0 }); };
+  const onWheel = (e) => { e.preventDefault(); set(z * (e.deltaY < 0 ? 1.2 : 1 / 1.2)); };
+  const boxRef = useRef(null);
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return undefined;
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  });
+  const down = (e) => { if (z === 1) return; drag.current = { x: e.clientX - pos.x, y: e.clientY - pos.y }; e.currentTarget.setPointerCapture?.(e.pointerId); };
+  const move = (e) => { if (drag.current) setPos({ x: e.clientX - drag.current.x, y: e.clientY - drag.current.y }); };
+  const up = () => { drag.current = null; };
+  return (
+    <div className={'zoom-frame' + (big ? ' big' : '')} style={{ height }}>
+      <div ref={boxRef} className="zoom-box" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onDoubleClick={() => set(z > 1 ? 1 : 2.5)} style={{ cursor: z > 1 ? 'grab' : 'zoom-in' }}>
+        <img src={src} alt={alt} draggable={false} style={{ transform: `translate(${pos.x}px, ${pos.y}px) scale(${z})` }} />
+      </div>
+      <div className="zoom-ctl" onClick={(e) => e.stopPropagation()}>
+        <button type="button" aria-label="تكبير" onClick={() => set(z * 1.4)}>+</button>
+        <span>{Math.round(z * 100)}%</span>
+        <button type="button" aria-label="تصغير" onClick={() => set(z / 1.4)} disabled={z <= 1}>−</button>
+        {z > 1 && <button type="button" aria-label="رجّع الحجم" onClick={() => set(1)} style={{ fontSize: 12, width: 'auto', padding: '0 8px' }}>1:1</button>}
+      </div>
+    </div>
+  );
+}
+
 export function PhotoView({ src, onClose }) {
   if (!src) return null;
   return (
-    <div className="overlay" style={{ alignItems: 'center' }} onClick={onClose}>
-      <img src={src} alt="صورة" style={{ maxHeight: '90vh', borderRadius: 20, background: '#fff' }} />
+    <div className="overlay" style={{ alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(1000px, 100%)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <ZoomImage src={src} height="min(82vh, 900px)" big />
+        <button type="button" className="btn soft" style={{ alignSelf: 'center' }} onClick={onClose}>قفل</button>
+      </div>
     </div>
   );
 }
