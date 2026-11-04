@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Avatar, CopyBtn, Icon, PhotoView, useToast } from '../ui.jsx';
-import { SRC_LABEL, computeShift, diffText, durationStr, fmt, minutesBetween, num, safeLabel, timeStr, toDate, dateStr } from '../lib';
+import { SRC_LABEL, shopForRegister, computeShift, diffText, durationStr, fmt, minutesBetween, num, safeLabel, timeStr, toDate, dateStr } from '../lib';
 import Statements from './Statements.jsx';
 import { DeletedList, entryTitle } from '../cashier/Dash.jsx';
 
@@ -52,7 +52,7 @@ export default function Review({ profile, shops }) {
             return (
               <button key={s.id} type="button" className={'q-item' + (selId === s.id ? ' on' : '')} onClick={() => setSelId(s.id)}>
                 <span className="spread"><strong>{shopName(s.shopId)}</strong><span className={'badge ' + st.cls}>{st.label}</span></span>
-                <span className="small muted">{s.cashierName} · من {timeStr(s.openedAt || s.openedAtLocal)}{s.submittedAt ? ` لـ ${timeStr(s.submittedAt)}` : ''}</span>
+                <span className="small muted">{s.cashierName}{s.registerName && s.register !== 'main' ? ` · ${s.registerName}` : ''} · من {timeStr(s.openedAt || s.openedAtLocal)}{s.submittedAt ? ` لـ ${timeStr(s.submittedAt)}` : ''}</span>
                 <span className="tiny muted">{dateStr(s.openedAt || s.openedAtLocal)}</span>
               </button>
             );
@@ -66,7 +66,8 @@ export default function Review({ profile, shops }) {
   );
 }
 
-export function ShiftDetail({ shift, shop, profile, canReview }) {
+export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
+  const shop = shopForRegister(fullShop, shift.register);
   const toast = useToast();
   const [allEntries, setEntries] = useState([]);
   const [allPhotos, setPhotos] = useState([]);
@@ -75,6 +76,7 @@ export function ShiftDetail({ shift, shop, profile, canReview }) {
   const deletedIds = new Set(deletedEntries.map((e) => e.id));
   const photos = allPhotos.filter((p) => !p.entryId || !deletedIds.has(p.entryId));
   const [review, setReview] = useState(null);
+  const [xfers, setXfers] = useState([]);
   const [sales, setSales] = useState('');
   const [view, setView] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -87,7 +89,9 @@ export function ShiftDetail({ shift, shop, profile, canReview }) {
       setReview(r);
       if (r && r.sales !== null && r.sales !== undefined) setSales((cur) => (cur === '' ? String(r.sales) : cur));
     }, () => {});
-    return () => { a(); b(); c(); };
+    const d = onSnapshot(query(collection(db, 'transfers'), where('shopId', '==', shift.shopId), where('fromShiftId', '==', shift.id)),
+      (q) => setXfers(q.docs.map((x) => ({ id: x.id, ...x.data() }))), () => {});
+    return () => { a(); b(); c(); d(); };
   }, [shift.id]);
 
   const sum = computeShift(shift, entries, shop, sales === '' ? null : num(sales));
@@ -176,7 +180,7 @@ export function ShiftDetail({ shift, shop, profile, canReview }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {shop?.logo ? <img src={shop.logo} alt="" style={{ height: 48, width: 'auto', maxWidth: 140, objectFit: 'contain' }} /> : <Avatar name={shop?.name} size={48} color="#FFC99A" />}
           <div className="stack" style={{ gap: 2 }}>
-            <h1 style={{ fontSize: 20, fontWeight: 700 }}>{shop?.name} · {shift.cashierName}</h1>
+            <h1 style={{ fontSize: 20, fontWeight: 700 }}>{shop?.name} · {shift.cashierName}{shift.registerName && shift.register !== 'main' ? <span className="badge info" style={{ marginInlineStart: 8, verticalAlign: 'middle' }}>{shift.registerName}</span> : null}</h1>
             <span className="small muted">{dateStr(shift.openedAt || shift.openedAtLocal)} · {timeStr(shift.openedAt || shift.openedAtLocal)} ← {shift.submittedAt ? timeStr(shift.submittedAt) : 'لسه شغالة'} · {durationStr(shift.openedAt || shift.openedAtLocal, shift.submittedAt)}</span>
           </div>
         </div>
@@ -243,6 +247,23 @@ export function ShiftDetail({ shift, shop, profile, canReview }) {
           );
         })}
       </section>
+
+      {xfers.filter((t) => t.status !== 'cancelled').length > 0 && (
+        <section className="card" style={{ gap: 6 }}>
+          <h2 className="h2">فلوس اتبعتت لكاشير تاني</h2>
+          {xfers.filter((t) => t.status !== 'cancelled').map((t) => (
+            <div key={t.id} className="list-row">
+              <span className="stack" style={{ gap: 1, flex: '1 1 220px' }}>
+                <strong>{t.kind === 'handover' ? 'تسليم آخر الوردية' : t.kind === 'float' ? 'فكة' : 'فلوس'} ← {t.toRegName}</strong>
+                <span className="tiny muted">{timeStr(t.createdAt || t.createdAtLocal)}{t.note ? ` · ${t.note}` : ''}</span>
+              </span>
+              <strong>{fmt(t.amount)} ج</strong>
+              {t.status === 'pending' ? <span className="badge warn">لسه ما اتأكدش</span>
+                : <span className={'badge ' + (t.acceptedDiff ? 'bad' : 'ok')}>{t.toName} استلم {fmt(t.acceptedAmount)}{t.acceptedDiff ? ` · فرق ${fmt(t.acceptedDiff)}` : ' ✓'}</span>}
+            </div>
+          ))}
+        </section>
+      )}
 
       {deletedEntries.length > 0 && (
         <section className="card" style={{ gap: 0, background: '#FFF1F1' }}>

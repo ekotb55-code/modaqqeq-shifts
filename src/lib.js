@@ -57,6 +57,39 @@ export const BUILTIN_EXPENSE_TYPES = [
 ];
 export const newExpenseType = (label = '', q = '', extra = {}) => ({ id: Math.random().toString(36).slice(2, 9), label, q, subs: [], needNote: false, needPhoto: false, ...extra });
 
+// Extra registers in the same shop (sub cashier / delivery). The main register is the shop itself.
+export const MAIN_REG = 'main';
+export const REG_KIND = { sub: 'كاشير فرعي', delivery: 'دليفري' };
+export function newRegister(kind = 'sub') {
+  return { id: Math.random().toString(36).slice(2, 9), kind, name: kind === 'delivery' ? 'درج الدليفري' : 'كاشير فرعي', active: true, hasSide: kind !== 'delivery', ops: kind !== 'delivery', wallets: [], machineIds: [] };
+}
+export const registersOf = (shop) => (shop?.registers || []).filter((r) => r.active !== false && String(r.name || '').trim());
+export const regOf = (shop, id) => (!id || id === MAIN_REG ? null : (shop?.registers || []).find((r) => r.id === id) || null);
+export const regName = (shop, id) => (regOf(shop, id)?.name || 'الكاشير الأساسي');
+// The shop as one register sees it: only its own wallets, machines and side drawer.
+export function shopForRegister(shop, regId) {
+  if (!shop) return shop;
+  const r = regOf(shop, regId);
+  if (!r) {
+    // Machines that belong to a sub register are not on the main drawer.
+    const taken = new Set(registersOf(shop).flatMap((x) => x.machineIds || []));
+    return taken.size ? { ...shop, machines: (shop.machines || []).filter((m) => !taken.has(m.machineId)) } : shop;
+  }
+  const ids = r.machineIds || [];
+  return { ...shop, register: r, wallets: r.wallets || [], machines: (shop.machines || []).filter((m) => ids.includes(m.machineId)), noSide: !r.hasSide, noOps: !r.ops };
+}
+// Which register's open shift / last handover lives where on the shop doc.
+export const openOf = (shop, regId) => (!regId || regId === MAIN_REG ? shop?.openShift : shop?.openShifts?.[regId]) || null;
+export const lastOf = (shop, regId) => (!regId || regId === MAIN_REG ? shop?.lastHandover : shop?.lastHandovers?.[regId]) || null;
+export const openKey = (regId) => (!regId || regId === MAIN_REG ? 'openShift' : `openShifts.${regId}`);
+export const lastKey = (regId) => (!regId || regId === MAIN_REG ? 'lastHandover' : `lastHandovers.${regId}`);
+export function allOpen(shop) {
+  const list = [];
+  if (shop?.openShift) list.push({ reg: MAIN_REG, ...shop.openShift });
+  Object.entries(shop?.openShifts || {}).forEach(([reg, o]) => { if (o) list.push({ reg, ...o }); });
+  return list;
+}
+
 export const WEEKDAYS = ['الأحد', 'الاتنين', 'التلات', 'الأربع', 'الخميس', 'الجمعة', 'السبت'];
 
 export const ENTRY_TYPES = {
@@ -67,6 +100,8 @@ export const ENTRY_TYPES = {
   move: { label: 'نقل بين الدرجين', color: '#4CC3FF', sign: 0 },
   liquidate: { label: 'تسييل / تحويل', color: '#4CC3FF', sign: 0 },
   withdraw: { label: 'سحب لصاحب المحل', color: '#FF7EB0', sign: -1 },
+  xfer_out: { label: 'فلوس لكاشير تاني', color: '#4CC3FF', sign: -1 },
+  xfer_in: { label: 'فلوس من كاشير تاني', color: '#B6F000', sign: 1 },
 };
 
 export const SRC_LABEL = { drawer: 'درج الكاشير', side: 'الدرج الجانبي', insta: 'انستاباي', vf: 'فودافون كاش', 'out:owner': 'صاحب المحل' };
@@ -195,7 +230,7 @@ export function shopSafes(shop) {
   const wallets = shop?.wallets || ['insta', 'vf'];
   return [
     { key: 'drawer', label: 'درج الكاشير', kind: 'cash', color: '#FF7A1A' },
-    { key: 'side', label: 'الدرج الجانبي', kind: 'cash', color: '#B6F000' },
+    ...(shop?.noSide ? [] : [{ key: 'side', label: 'الدرج الجانبي', kind: 'cash', color: '#B6F000' }]),
     ...WALLETS.filter((w) => wallets.includes(w.key)).map((w) => ({ ...w, kind: 'wallet', color: w.key === 'insta' ? '#A07CFF' : '#FF4D6D' })),
     ...(shop?.machines || []).map((m) => ({ key: machineKey(m), label: `${m.machine} · ${m.account}`, kind: 'machine', color: '#FFC800', m })),
   ];
@@ -205,6 +240,7 @@ export function safeLabel(key, shop) {
   if (key === 'out:expense') return 'مصروف';
   if (key === 'in:income') return 'إيراد';
   if (key === 'in:customer') return 'عميل';
+  if (key === 'out:reg' || key === 'in:reg') return 'كاشير تاني';
   if (key === 'drawer') return 'درج الكاشير';
   if (key === 'side') return 'الدرج الجانبي';
   const w = WALLETS.find((x) => x.key === key);
@@ -232,6 +268,8 @@ export function flows(e, shop) {
     }
     case 'withdraw': return [{ from: e.src, to: OWNER, a }];
     case 'liquidate': return [{ from: e.src, to: e.to, a }];
+    case 'xfer_out': return [{ from: e.src || 'drawer', to: 'out:reg', a }];
+    case 'xfer_in': return [{ from: 'in:reg', to: e.src || 'drawer', a }];
     default: return [];
   }
 }
@@ -263,7 +301,7 @@ export function computeShift(shift, entries, shop, sales = null) {
     if (amount >= 0) safes[k].inn += amount; else safes[k].out -= amount;
   };
 
-  let income = 0, expenses = 0, transfers = 0, insta = 0, vf = 0, topups = 0, withdraws = 0, liquidations = 0;
+  let income = 0, expenses = 0, transfers = 0, insta = 0, vf = 0, topups = 0, withdraws = 0, liquidations = 0, xferIn = 0, xferOut = 0;
   entries.forEach((e) => {
     const a = num(e.amount);
     if (e.type === 'expense') expenses += a;
@@ -272,6 +310,8 @@ export function computeShift(shift, entries, shop, sales = null) {
     if (e.type === 'topup') topups += a;
     if (e.type === 'withdraw' || (e.type === 'liquidate' && e.to === OWNER)) withdraws += a;
     if (e.type === 'liquidate') liquidations += a;
+    if (e.type === 'xfer_in') xferIn += a;
+    if (e.type === 'xfer_out') xferOut += a;
     flows(e, shop).forEach((f) => {
       const t = e.createdAt || e.createdAtLocal;
       add(f.from, `${opLabel(e)} → ${safeLabel(f.to, shop)}`, -f.a, t);
@@ -323,7 +363,7 @@ export function computeShift(shift, entries, shop, sales = null) {
   return {
     safes, machines, drawer, side, sales: salesN, hasSales, machineCash: r2(machineCash),
     drawerDiff, sideDiff, diff,
-    income, expenses, transfers, insta, vf, topups, withdraws, liquidations, recvCash, handCash, outCash,
+    income, expenses, transfers, insta, vf, topups, withdraws, liquidations, xferIn, xferOut, recvCash, handCash, outCash,
     expected: drawer.expected === null ? null : r2(drawer.expected + side.expected),
   };
 }
@@ -336,6 +376,8 @@ function opLabel(e) {
   if (e.type === 'move') return 'نقل';
   if (e.type === 'withdraw') return 'سحب';
   if (e.type === 'liquidate') return ['تسييل / تحويل', e.note].filter(Boolean).join(' · ');
+  if (e.type === 'xfer_out') return `فلوس لـ ${e.toName || 'كاشير تاني'}`;
+  if (e.type === 'xfer_in') return `فلوس من ${e.fromName || 'كاشير تاني'}`;
   return e.type;
 }
 

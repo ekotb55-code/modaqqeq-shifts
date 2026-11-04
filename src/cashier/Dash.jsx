@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Avatar, Icon, Modal, NetMeter, useToast } from '../ui.jsx';
-import { ENTRY_TYPES, SRC_LABEL, durationStr, firstName, fmt, liveBalances, num, safeLabel, shopSafes, timeStr } from '../lib';
+import { ENTRY_TYPES, SRC_LABEL, WALLETS, durationStr, firstName, fmt, liveBalances, num, registersOf, safeLabel, shopSafes, timeStr } from '../lib';
+import { Incoming, SendModal } from './Transfers.jsx';
 import EntryModal from './EntryModal.jsx';
 
 export function entryTitle(e) {
@@ -13,10 +14,12 @@ export function entryTitle(e) {
   if (e.type === 'move') return (e.to || 'side') === 'side' ? 'نقل من الدرج للجانبي' : 'نقل من الجانبي للدرج';
   if (e.type === 'withdraw') return ['سحب لصاحب المحل', e.note].filter(Boolean).join(' · ');
   if (e.type === 'liquidate') return [`تسييل/تحويل ${e.fromLabel || ''} ← ${e.toLabel || ''}`, e.note].filter(Boolean).join(' · ');
+  if (e.type === 'xfer_out') return [`فلوس لـ ${e.toName || 'كاشير تاني'}`, e.note].filter(Boolean).join(' · ');
+  if (e.type === 'xfer_in') return [`استلام من ${e.fromName || 'كاشير تاني'}`, e.diffFromSent ? `(اتبعت ${fmt(e.sentAmount)})` : ''].filter(Boolean).join(' ');
   return e.type;
 }
 
-export default function Dash({ shop, shift, entries, deleted = [], profile, onHandover, onReceive }) {
+export default function Dash({ shop, shift, entries, deleted = [], incoming = [], outgoing = [], profile, onHandover, onReceive }) {
   const [modal, setModal] = useState(null);
   const [del, setDel] = useState(null);
   const [showDeleted, setShowDeleted] = useState(false);
@@ -27,24 +30,28 @@ export default function Dash({ shop, shift, entries, deleted = [], profile, onHa
   const balances = liveBalances(shift, entries, shop);
   const byType = (t) => entries.filter((e) => e.type === t);
   const subOf = (arr) => (arr.length ? `${arr.length} عمليات · ${fmt(arr.reduce((a, e) => a + num(e.amount), 0))} ج` : 'لسه مفيش النهارده');
-  const out = (src) => sum((e) => (['expense', 'topup', 'withdraw'].includes(e.type) || (e.type === 'liquidate' && e.to !== 'drawer' && e.to !== 'side')) && e.src === src);
+  const out = (src) => sum((e) => (['expense', 'topup', 'withdraw', 'xfer_out'].includes(e.type) || (e.type === 'liquidate' && e.to !== 'drawer' && e.to !== 'side')) && e.src === src);
 
+  const wallets = WALLETS.filter((w) => (shop.wallets || ['insta', 'vf']).includes(w.key)).map((w) => w.key);
+  const ops = !shop.noOps;
   const counters = [
     { label: 'طالع من الدرج', value: out('drawer'), dot: '#fff', cls: 'c-orange' },
-    { label: 'طالع من الجانبي', value: out('side'), dot: '#fff', cls: 'c-yellow' },
-    { label: 'انستاباي', value: sum((e) => e.type === 'transfer' && e.wallet === 'insta'), dot: '#fff', cls: 'c-violet' },
-    { label: 'فودافون كاش', value: sum((e) => e.type === 'transfer' && e.wallet === 'vf'), dot: '#fff', cls: 'c-pink' },
-  ];
+    !shop.noSide && { label: 'طالع من الجانبي', value: out('side'), dot: '#fff', cls: 'c-yellow' },
+    wallets.includes('insta') && { label: 'انستاباي', value: sum((e) => e.type === 'transfer' && e.wallet === 'insta'), dot: '#fff', cls: 'c-violet' },
+    wallets.includes('vf') && { label: 'فودافون كاش', value: sum((e) => e.type === 'transfer' && e.wallet === 'vf'), dot: '#fff', cls: 'c-pink' },
+  ].filter(Boolean);
   const tiles = [
-    { t: 'expense', label: 'مصروف', icon: 'up' },
-    { t: 'income', label: 'إيراد', icon: 'down' },
-    { t: 'transfer', label: 'تحويل محفظة', icon: 'phone' },
-  ];
+    ops && { t: 'expense', label: 'مصروف', icon: 'up' },
+    ops && { t: 'income', label: 'إيراد', icon: 'down' },
+    wallets.length > 0 && { t: 'transfer', label: 'تحويل محفظة', icon: 'phone' },
+  ].filter(Boolean);
   const extras = [
-    { t: 'topup', label: 'شحن رصيد مكنة', icon: 'bolt' },
-    { t: 'liquidate', label: 'تسييل وتحويل بين الخزن', icon: 'swap' },
-    { t: 'move', label: 'نقل بين الدرجين', icon: 'swap' },
-  ];
+    registersOf(shop).length > 0 && { t: 'xfer', label: 'فلوس / فكة لكاشير تاني', icon: 'swap', color: '#4CC3FF' },
+    ops && (shop.machines || []).length > 0 && { t: 'topup', label: 'شحن رصيد مكنة', icon: 'bolt' },
+    ops && { t: 'liquidate', label: 'تسييل وتحويل بين الخزن', icon: 'swap' },
+    !shop.noSide && { t: 'move', label: 'نقل بين الدرجين', icon: 'swap' },
+  ].filter(Boolean);
+  const pendingIds = new Set(outgoing.map((t) => t.id));
   const opened = shift.openedAt || shift.openedAtLocal;
 
   return (
@@ -81,7 +88,9 @@ export default function Dash({ shop, shift, entries, deleted = [], profile, onHa
         </div>
       </div>
 
-      <div className="tiles">
+      <Incoming list={incoming} shop={shop} shift={shift} profile={profile} />
+
+      {tiles.length > 0 && <div className="tiles" style={tiles.length < 3 ? { gridTemplateColumns: `repeat(${tiles.length}, 1fr)` } : undefined}>
         {tiles.map((x) => (
           <button key={x.t} type="button" className="tile" style={{ background: ENTRY_TYPES[x.t].color }} onClick={() => setModal(x.t)}>
             <span className="spread">
@@ -91,33 +100,33 @@ export default function Dash({ shop, shift, entries, deleted = [], profile, onHa
             <span className="stack" style={{ gap: 2 }}><span className="t">{x.label}</span><span style={{ fontSize: 15, fontWeight: 500 }}>{subOf(byType(x.t))}</span></span>
           </button>
         ))}
-      </div>
+      </div>}
 
       <div className="row">
-        <section className="card tint-blue" style={{ flex: '1 1 300px' }}>
+        {extras.length > 0 && <section className="card tint-blue" style={{ flex: '1 1 300px' }}>
           <h2 style={{ fontSize: 17, fontWeight: 700 }}>حاجات تانية</h2>
           {extras.map((x) => (
             <button key={x.t} type="button" className="extra" onClick={() => setModal(x.t)}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 12 }}><span className="circ" style={{ background: ENTRY_TYPES[x.t].color }}><Icon d={x.icon} /></span>{x.label}</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 12 }}><span className="circ" style={{ background: x.color || ENTRY_TYPES[x.t].color }}><Icon d={x.icon} /></span>{x.label}</span>
               <Icon d="chevron" size={18} />
             </button>
           ))}
-        </section>
+        </section>}
         <section className="card" style={{ flex: '2 1 460px', gap: 0 }}>
           <h2 style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}>عمليات النهارده</h2>
           {entries.length === 0 && <div className="empty">لسه مسجلتش أي عملية</div>}
           {entries.map((e) => (
             <div key={e.id} className="feed-row">
               <span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-                <span className="feed-ic" style={{ background: ENTRY_TYPES[e.type]?.color }}><Icon d={{ expense: 'up', income: 'down', transfer: 'phone', topup: 'bolt', move: 'swap', withdraw: 'person', liquidate: 'swap' }[e.type]} size={18} /></span>
+                <span className="feed-ic" style={{ background: ENTRY_TYPES[e.type]?.color }}><Icon d={{ expense: 'up', income: 'down', transfer: 'phone', topup: 'bolt', move: 'swap', withdraw: 'person', liquidate: 'swap', xfer_out: 'swap', xfer_in: 'down' }[e.type]} size={18} /></span>
                 <span className="stack" style={{ gap: 0, minWidth: 0 }}>
                   <span style={{ fontSize: 15, fontWeight: 600 }}>{entryTitle(e)}</span>
-                  <span className="tiny muted">{timeStr(e.createdAt || e.createdAtLocal)} · {SRC_LABEL[e.src] || SRC_LABEL[e.wallet] || safeLabel(e.src, shop)}{e.hasPendingWrites ? ' · لسه بيترفع' : ''}</span>
+                  <span className="tiny muted">{timeStr(e.createdAt || e.createdAtLocal)} · {SRC_LABEL[e.src] || SRC_LABEL[e.wallet] || safeLabel(e.src, shop)}{e.hasPendingWrites ? ' · لسه بيترفع' : ''}{e.type === 'xfer_out' ? (pendingIds.has(e.transferId) ? ' · مستني تأكيد' : ' · ✓ اتأكد') : ''}</span>
                 </span>
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 17, fontWeight: 700, whiteSpace: 'nowrap' }}>{ENTRY_TYPES[e.type]?.sign < 0 ? '−' : ENTRY_TYPES[e.type]?.sign > 0 ? '+' : ''}{fmt(e.amount)}</span>
-                {shift.status === 'open' && <button type="button" className="icon-btn del-btn" aria-label={`امسح ${entryTitle(e)}`} title="امسح العملية" onClick={() => setDel(e)}><Icon d="trash" size={17} /></button>}
+                {shift.status === 'open' && e.type !== 'xfer_in' && (e.type !== 'xfer_out' || pendingIds.has(e.transferId)) && <button type="button" className="icon-btn del-btn" aria-label={`امسح ${entryTitle(e)}`} title="امسح العملية" onClick={() => setDel(e)}><Icon d="trash" size={17} /></button>}
               </span>
             </div>
           ))}
@@ -133,7 +142,7 @@ export default function Dash({ shop, shift, entries, deleted = [], profile, onHa
         </section>
       </div>
 
-      <section className="card">
+      {shopSafes(shop).some((x) => x.key !== 'drawer') && <section className="card">
         <div className="spread"><h2 style={{ fontSize: 17, fontWeight: 700 }}>أرصدة الخزن دلوقتي</h2><span className="tiny muted">بتتحدث مع كل عملية</span></div>
         <div className="safes-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
           {shopSafes(shop).filter((x) => x.key !== 'drawer').map((x) => (
@@ -143,10 +152,11 @@ export default function Dash({ shop, shift, entries, deleted = [], profile, onHa
             </div>
           ))}
         </div>
-      </section>
+      </section>}
 
       {del && <DeleteModal entry={del} shift={shift} profile={profile} onClose={() => setDel(null)} />}
-      {modal && <EntryModal type={modal} shop={shop} shift={shift} profile={profile} balances={balances} onClose={() => setModal(null)} />}
+      {modal === 'xfer' && <SendModal shop={shop} shift={shift} profile={profile} balances={balances} onClose={() => setModal(null)} />}
+      {modal && modal !== 'xfer' && <EntryModal type={modal} shop={shop} shift={shift} profile={profile} balances={balances} onClose={() => setModal(null)} />}
     </div>
   );
 }
@@ -172,10 +182,13 @@ function DeleteModal({ entry, shift, profile, onClose }) {
   const toast = useToast();
   const [reason, setReason] = useState('');
   const go = () => {
-    updateDoc(doc(db, 'shifts', shift.id, 'entries', entry.id), {
+    const b = writeBatch(db);
+    b.update(doc(db, 'shifts', shift.id, 'entries', entry.id), {
       deleted: true, deletedAt: serverTimestamp(), deletedAtLocal: Date.now(),
       deletedBy: profile.id, deletedByName: profile.name, deleteReason: reason.trim(),
-    }).catch((err) => { console.error(err); toast('مش قادرين نمسحها، جرّب تاني', 'err'); });
+    });
+    if (entry.type === 'xfer_out' && entry.transferId) b.update(doc(db, 'transfers', entry.transferId), { status: 'cancelled', cancelledAt: serverTimestamp() });
+    b.commit().catch((err) => { console.error(err); toast('مش قادرين نمسحها، جرّب تاني', 'err'); });
     toast('العملية اتمسحت واتحطت في المحذوفات');
     onClose();
   };

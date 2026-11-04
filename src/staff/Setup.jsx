@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { collection, doc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Avatar, Icon, useToast } from '../ui.jsx';
-import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, newExpenseType, RATE_FROM, WALLETS, ROLE_LABEL, SETTLE, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, createAccount, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, num, pickImage } from '../lib';
+import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, REG_KIND, newRegister, newExpenseType, RATE_FROM, WALLETS, ROLE_LABEL, SETTLE, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, createAccount, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, num, pickImage } from '../lib';
 
 export default function Setup({ profile, shops }) {
   const toast = useToast();
@@ -193,6 +193,7 @@ function ShopEditor({ shop }) {
     name: shop.name || '', posUrl: shop.posUrl || '', walletName: shop.walletName || '',
     machineList: machineListOf(shop), wallets: shop.wallets || ['insta', 'vf'], suppliers: shop.suppliers || [], staff: shop.staff || [],
     shopExpenses: shop.shopExpenses || [], customExpenseTypes: shop.customExpenseTypes || [], hiddenExpenseTypes: shop.hiddenExpenseTypes || [], incomeReasons: shop.incomeReasons || [], advanceDays: shop.advanceDays || [],
+    registers: shop.registers || [],
   }));
   const [dirty, setDirty] = useState(false);
   const set = (k, v) => { setF((x) => ({ ...x, [k]: v })); setDirty(true); };
@@ -202,7 +203,8 @@ function ShopEditor({ shop }) {
   const save = async () => {
     try {
       const machineList = f.machineList.filter((m) => m.name.trim()).map((m) => ({ ...m, name: m.name.trim(), ratePct: num(m.ratePct), accounts: m.accounts.map((a) => a.trim()).filter(Boolean) }));
-      await updateDoc(doc(db, 'shops', shop.id), { ...f, machineList, machines: flattenMachines(machineList), name: f.name.trim() });
+      const registers = f.registers.filter((r) => r.name.trim()).map((r) => ({ ...r, name: r.name.trim() }));
+      await updateDoc(doc(db, 'shops', shop.id), { ...f, registers, machineList, machines: flattenMachines(machineList), name: f.name.trim() });
       await setDoc(doc(db, 'shopsPublic', shop.id), { name: f.name.trim() }, { merge: true });
       setDirty(false);
       toast('اتحفظ');
@@ -257,6 +259,8 @@ function ShopEditor({ shop }) {
 
       <MachinesEditor list={f.machineList} onChange={(v) => set('machineList', v)} />
 
+      <RegistersEditor list={f.registers} machines={f.machineList} wallets={f.wallets} openShifts={shop.openShifts || {}} onChange={(v) => set('registers', v)} />
+
       <ExpenseTypesEditor custom={f.customExpenseTypes} hidden={f.hiddenExpenseTypes} onCustom={(v) => set('customExpenseTypes', v)} onHidden={(v) => set('hiddenExpenseTypes', v)} />
 
       <section className="card tint-violet" style={{ gap: 18 }}>
@@ -279,6 +283,74 @@ function ShopEditor({ shop }) {
         <button type="button" className="btn" onClick={save} disabled={!dirty} style={{ boxShadow: 'var(--shadow-lg)' }}><Icon d="check" />{dirty ? 'حفظ التعديلات' : 'كله محفوظ'}</button>
       </div>
     </div>
+  );
+}
+
+function RegistersEditor({ list, machines, wallets, openShifts, onChange }) {
+  const upd = (i, patch) => onChange(list.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const toggle = (arr, v) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
+  const activeMachines = machines.filter((m) => m.active && m.name.trim());
+  return (
+    <section className="card tint-lime" style={{ gap: 14 }}>
+      <div className="stack" style={{ gap: 2 }}>
+        <h2 className="h2">الأدراج في المحل</h2>
+        <span className="tiny muted" style={{ lineHeight: 1.7 }}>
+          الكاشير الأساسي موجود دايمًا. لو فيه كاشير فرعي أو دليفري شغّال في نفس الوقت، ضيفه هنا. أي كاشير يقدر يشتغل على أي درج، وبيختار الدرج وهو بيستلم.
+          الفرعي والدليفري بياخدوا الفكة من الأساسي وبيسلّموله فلوسهم في الآخر، والأساسي بيأكد.
+        </span>
+      </div>
+      {list.map((r, i) => {
+        const busy = !!openShifts[r.id];
+        return (
+          <div key={r.id} className="stack" style={{ background: '#fff', borderRadius: 22, padding: 14, gap: 12, opacity: r.active === false ? 0.6 : 1 }}>
+            <div className="row" style={{ gap: 10, alignItems: 'center' }}>
+              <input className="input" style={{ flex: '1 1 200px' }} value={r.name} onChange={(e) => upd(i, { name: e.target.value })} placeholder="اسم الدرج: مثلًا كاشير 2 أو درج الدليفري" aria-label="اسم الدرج" />
+              <div className="chips">
+                {Object.entries(REG_KIND).map(([k, label]) => (
+                  <button key={k} type="button" className={'chip sm' + (r.kind === k ? ' on' : '')} onClick={() => upd(i, k === 'delivery' ? { kind: k, hasSide: false, ops: false } : { kind: k })}>{label}</button>
+                ))}
+              </div>
+            </div>
+            <div className="chips">
+              <button type="button" className={'chip sm' + (r.hasSide ? ' on' : '')} aria-pressed={!!r.hasSide} onClick={() => upd(i, { hasSide: !r.hasSide })}>{r.hasSide ? '✓ ' : ''}عنده درج جانبي</button>
+              <button type="button" className={'chip sm' + (r.ops ? ' on' : '')} aria-pressed={!!r.ops} onClick={() => upd(i, { ops: !r.ops })}>{r.ops ? '✓ ' : ''}بيسجّل مصروفات وإيرادات</button>
+            </div>
+            {wallets.length > 0 && (
+              <div className="stack" style={{ gap: 6 }}>
+                <span className="small muted">محافظ خاصة بيه</span>
+                <div className="chips">
+                  {WALLETS.filter((w) => wallets.includes(w.key)).map((w) => {
+                    const on = (r.wallets || []).includes(w.key);
+                    return <button key={w.key} type="button" className={'chip sm' + (on ? ' on' : '')} aria-pressed={on} onClick={() => upd(i, { wallets: toggle(r.wallets || [], w.key) })}>{on ? '✓ ' : ''}{w.label}</button>;
+                  })}
+                </div>
+              </div>
+            )}
+            {activeMachines.length > 0 && (
+              <div className="stack" style={{ gap: 6 }}>
+                <span className="small muted">مكن عليه (فيزا وغيره) · المكنة اللي تتعلم هنا بتتشال من الأساسي</span>
+                <div className="chips">
+                  {activeMachines.map((m) => {
+                    const on = (r.machineIds || []).includes(m.id);
+                    return <button key={m.id} type="button" className={'chip sm' + (on ? ' on' : '')} aria-pressed={on} onClick={() => upd(i, { machineIds: toggle(r.machineIds || [], m.id) })}>{on ? '✓ ' : ''}{m.name}</button>;
+                  })}
+                </div>
+              </div>
+            )}
+            <div className="spread">
+              <span className="tiny muted">{busy ? `شغّال دلوقتي: ${openShifts[r.id].cashierName}` : ''}</span>
+              {busy ? <span className="tiny muted">مينفعش توقفه وهو شغّال</span> : (
+                <button type="button" className="link" onClick={() => upd(i, { active: r.active === false })}>{r.active === false ? 'فعّله تاني' : 'وقّفه'}</button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+      <div className="chips">
+        <button type="button" className="btn soft sm" onClick={() => onChange([...list, newRegister('sub')])}><Icon d="plus" />كاشير فرعي</button>
+        <button type="button" className="btn soft sm" onClick={() => onChange([...list, newRegister('delivery')])}><Icon d="plus" />درج دليفري</button>
+      </div>
+    </section>
   );
 }
 

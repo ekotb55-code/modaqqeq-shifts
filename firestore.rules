@@ -31,7 +31,7 @@ service cloud.firestore {
       allow read: if isAdmin() || inShop(shopId);
       allow create, delete: if isAdmin();
       allow update: if isAdmin()
-        || (inShop(shopId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['openShift', 'lastHandover']));
+        || (inShop(shopId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['openShift', 'lastHandover', 'openShifts', 'lastHandovers']));
     }
 
     match /users/{uid} {
@@ -71,6 +71,21 @@ service cloud.firestore {
       allow read: if signedIn() && (resource == null || staffOf(resource.data.shopId));
       allow create: if reviewerOf(request.resource.data.shopId);
       allow update: if reviewerOf(resource.data.shopId);
+      allow delete: if isAdmin();
+    }
+
+    // Money between two registers of the same shop (float, sub cashier handing over). Receiver confirms.
+    match /transfers/{id} {
+      allow read: if isAdmin() || inShop(resource.data.shopId);
+      allow create: if inShop(request.resource.data.shopId)
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.status == 'pending';
+      allow update: if reviewerOf(resource.data.shopId)
+        || (inShop(resource.data.shopId) && resource.data.status == 'pending'
+            && ((request.resource.data.status == 'accepted' && request.resource.data.toUid == request.auth.uid
+                 && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'toUid', 'toName', 'toShiftId', 'acceptedAmount', 'acceptedDiff', 'acceptedAt']))
+             || (request.resource.data.status == 'cancelled' && resource.data.fromUid == request.auth.uid
+                 && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'cancelledAt']))));
       allow delete: if isAdmin();
     }
 

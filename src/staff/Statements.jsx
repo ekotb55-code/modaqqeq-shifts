@@ -51,13 +51,13 @@ export default function Statements({ c, shift, shop, showDrawer = true }) {
             {!c.hasSales && <span className="tiny muted" style={{ marginTop: 6 }}>اكتب رقم المبيعات علشان الخزنة تتقفل.</span>}
           </SafeCard>
         )}
-        <SafeCard title="خزنة الجانبي" tint="tint-lime" badge={c.sideDiff !== null && <span className={'badge ' + (Math.abs(c.sideDiff) > 0.009 ? 'bad' : 'ok')}>{Math.abs(c.sideDiff) > 0.009 ? `فرق ${fmt(c.sideDiff)}` : '✓ مظبوط'}</span>}>
+        {!shop?.noSide && <SafeCard title="خزنة الجانبي" tint="tint-lime" badge={c.sideDiff !== null && <span className={'badge ' + (Math.abs(c.sideDiff) > 0.009 ? 'bad' : 'ok')}>{Math.abs(c.sideDiff) > 0.009 ? `فرق ${fmt(c.sideDiff)}` : '✓ مظبوط'}</span>}>
           <Line label="بداية المدة (الاستلام)" amount={c.side.open} />
           {c.side.lines.map((l, i) => <Line key={i} {...l} />)}
           <Line label="المفروض يتسلّم" amount={c.side.expected} strong />
           <Line label="اتسلّم فعلًا" amount={c.side.close} strong />
           {shift.handover?.sideFix && <span className="badge bad" style={{ whiteSpace: 'normal', marginTop: 6 }}>كان {shift.handover.sideFix.diff < 0 ? 'ناقص' : 'زيادة'} {fmt(Math.abs(shift.handover.sideFix.diff))} ج واتظبط من درج الكاشير</span>}
-        </SafeCard>
+        </SafeCard>}
       </div>
 
       <div className="row" style={{ gap: 16 }}>

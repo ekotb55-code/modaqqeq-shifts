@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, Modal, useToast } from '../ui.jsx';
-import { ENTRY_TYPES, OWNER, SRC_LABEL, WEEKDAYS, fmt, num, pickImage, safeLabel, shopSafes } from '../lib';
+import { ENTRY_TYPES, OWNER, SRC_LABEL, WALLETS, WEEKDAYS, fmt, num, pickImage, safeLabel, shopSafes } from '../lib';
 
 const META = {
   expense: { title: 'مصروف جديد', icon: 'up' },
@@ -14,7 +14,7 @@ const META = {
   withdraw: { title: 'سحب لصاحب المحل', icon: 'person' },
 };
 
-function SafePick({ safes, value, onPick, balances, exclude }) {
+export function SafePick({ safes, value, onPick, balances, exclude }) {
   return (
     <div className="chips">
       {safes.filter((x) => x.key !== exclude).map((x) => {
@@ -54,7 +54,8 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
   const [custom, setCustom] = useState('');
   const [invoice, setInvoice] = useState('invoice');
   const [reason, setReason] = useState('');
-  const [wallet, setWallet] = useState('insta');
+  const enabledWallets = WALLETS.filter((w) => (shop.wallets || ['insta', 'vf']).includes(w.key));
+  const [wallet, setWallet] = useState(enabledWallets[0]?.key || 'insta');
   const [machine, setMachine] = useState('');
   const [moveTo, setMoveTo] = useState('side');
   const [liqTo, setLiqTo] = useState('');
@@ -222,8 +223,7 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
         <div className="stack">
           <span className="small muted">العميل حوّل على</span>
           <div className="chips">
-            <Chip on={wallet === 'insta'} onClick={() => setWallet('insta')}>انستاباي</Chip>
-            <Chip on={wallet === 'vf'} onClick={() => setWallet('vf')}>فودافون كاش</Chip>
+            {enabledWallets.map((w) => <Chip key={w.key} on={wallet === w.key} onClick={() => setWallet(w.key)}>{w.label}</Chip>)}
           </div>
         </div>
       )}

@@ -3,7 +3,8 @@ import { signOut, updatePassword } from 'firebase/auth';
 import { collection, doc, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Icon, Avatar, Modal, Spinner, useToast } from '../ui.jsx';
-import { DEFAULT_SHOP, cashierPassword, firstName, pickImage, timeStr } from '../lib';
+import { DEFAULT_SHOP, MAIN_REG, allOpen, cashierPassword, firstName, openOf, pickImage, regName, registersOf, shopForRegister, timeStr } from '../lib';
+import { usePendingTransfers } from './Transfers.jsx';
 import { Topbar } from './parts.jsx';
 import Receive from './Receive.jsx';
 import Dash from './Dash.jsx';
@@ -29,6 +30,8 @@ export default function CashierApp({ profile }) {
   const [done, setDone] = useState(null);
   const [askLogout, setAskLogout] = useState(false);
   const [pinOpen, setPinOpen] = useState(false);
+  const [pickReg, setPickReg] = useState(null);
+  const pending = usePendingTransfers(shopId);
 
   useEffect(() => {
     if (!shopId) return undefined;
@@ -37,9 +40,12 @@ export default function CashierApp({ profile }) {
     return () => { a(); b(); };
   }, [shopId]);
 
-  const open = shop?.openShift;
-  const mine = open && open.cashierUid === profile.id;
-  const shiftId = mine ? open.id : null;
+  const regs = registersOf(shop);
+  const mineOpen = allOpen(shop).find((o) => o.cashierUid === profile.id) || null;
+  const reg = mineOpen ? mineOpen.reg : regs.length ? pickReg : MAIN_REG;
+  const open = reg ? openOf(shop, reg) : null;
+  const mine = !!mineOpen;
+  const shiftId = mine ? mineOpen.id : null;
 
   useEffect(() => {
     if (!shiftId) { setShift(null); setEntries([]); return undefined; }
@@ -67,20 +73,24 @@ export default function CashierApp({ profile }) {
   if (!shopId) return <NoShop />;
   if (shop === undefined) return <Spinner text="بنحمّل المحل…" />;
   if (shop === null) return <NoShop />;
+  const rshop = reg ? shopForRegister(shop, reg) : shop;
+  const incoming = mine ? pending.filter((t) => t.toReg === reg && t.fromShiftId !== shiftId) : [];
+  const outgoing = mine ? pending.filter((t) => t.fromShiftId === shiftId) : [];
 
   const me = { ...profile, photo: pub?.photos?.[profile.id] || profile.photo };
   const active = entries.filter((e) => !e.deleted);
   const deleted = entries.filter((e) => e.deleted);
-  const top = <Topbar shopPub={pub} profile={me} onPhoto={() => changeMyPhoto(shopId, profile, toast)} steps={open && !mine && !done ? null : steps} onLogout={logout} posUrl={shop.posUrl} onPin={() => setPinOpen(true)} />;
+  const top = <Topbar shopPub={pub} profile={me} regLabel={reg && reg !== MAIN_REG ? regName(shop, reg) : (regs.length && reg ? regName(shop, reg) : null)} onPhoto={() => changeMyPhoto(shopId, profile, toast)} steps={(open && !mine && !done) || !reg ? null : steps} onLogout={logout} posUrl={shop.posUrl} onPin={() => setPinOpen(true)} />;
 
   let body;
   if (done) body = <Done info={done} profile={me} />;
-  else if (open && !mine) body = <Blocked open={open} pub={pub} />;
-  else if (!mine) body = <Receive shop={shop} profile={profile} onStarted={() => setScreen('dash')} />;
+  else if (!reg) body = <RegisterPicker shop={shop} pub={pub} regs={regs} onPick={setPickReg} />;
+  else if (open && !mine) body = <Blocked open={open} pub={pub} onOther={regs.length ? () => setPickReg(null) : null} />;
+  else if (!mine) body = <Receive shop={rshop} reg={reg} profile={profile} onStarted={() => setScreen('dash')} onCancel={regs.length ? () => setPickReg(null) : null} />;
   else if (!shift) body = <Spinner text="بنفتح ورديتك…" />;
-  else if (screen === 'receive') body = <Receive key="edit" shop={shop} profile={profile} editShift={shift} onStarted={() => setScreen('dash')} onCancel={() => setScreen('dash')} />;
-  else if (screen === 'handover') body = <Handover shop={shop} shift={shift} entries={active} profile={me} onBack={() => setScreen('dash')} onDone={setDone} />;
-  else body = <Dash shop={shop} shift={shift} entries={active} deleted={deleted} profile={me} onHandover={() => setScreen('handover')} onReceive={() => setScreen('receive')} />;
+  else if (screen === 'receive') body = <Receive key="edit" shop={rshop} reg={reg} profile={profile} editShift={shift} onStarted={() => setScreen('dash')} onCancel={() => setScreen('dash')} />;
+  else if (screen === 'handover') body = <Handover shop={rshop} shift={shift} entries={active} incoming={incoming} profile={me} onBack={() => setScreen('dash')} onDone={setDone} />;
+  else body = <Dash shop={rshop} fullShop={shop} shift={shift} entries={active} deleted={deleted} incoming={incoming} outgoing={outgoing} profile={me} onHandover={() => setScreen('handover')} onReceive={() => setScreen('receive')} />;
 
   return (
     <div>
@@ -142,7 +152,41 @@ function NoShop() {
   );
 }
 
-function Blocked({ open, pub }) {
+function RegisterPicker({ shop, pub, regs, onPick }) {
+  const opens = allOpen(shop);
+  const list = [{ id: MAIN_REG, name: 'الكاشير الأساسي', kind: 'main' }, ...regs];
+  const kindLabel = { main: 'الدرج الأساسي', sub: 'كاشير فرعي', delivery: 'دليفري' };
+  return (
+    <div className="wrap" style={{ maxWidth: 760 }}>
+      <div className="stack" style={{ gap: 4 }}>
+        <h1 className="title">هتشتغل على أنهي درج النهارده؟</h1>
+        <span className="sub">اختار الدرج اللي هتستلمه</span>
+      </div>
+      <div className="grid2">
+        {list.map((r) => {
+          const o = opens.find((x) => x.reg === r.id);
+          const who = o && (pub?.cashiers || []).find((c) => c.uid === o.cashierUid);
+          return (
+            <button key={r.id} type="button" className="card" onClick={() => onPick(r.id)} style={{ textAlign: 'right', cursor: 'pointer', border: o ? '2px solid #FFD27A' : '2px solid transparent', gap: 10 }}>
+              <span className="spread">
+                <span className="stack" style={{ gap: 0 }}><strong style={{ fontSize: 20 }}>{r.name}</strong><span className="small muted">{kindLabel[r.kind] || ''}</span></span>
+                <span className={'badge ' + (o ? 'warn' : 'ok')}>{o ? 'شغّال' : 'فاضي'}</span>
+              </span>
+              {o ? (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Avatar name={o.cashierName} photo={pub?.photos?.[o.cashierUid] || who?.photo} color={who?.color} size={36} />
+                  <span className="small">{o.cashierName} · من {timeStr(o.openedAt)}</span>
+                </span>
+              ) : <span className="small muted">دوس علشان تستلم</span>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function Blocked({ open, pub, onOther }) {
   const owner = (pub?.cashiers || []).find((c) => c.uid === open.cashierUid);
   return (
     <div className="wrap center">
@@ -154,7 +198,8 @@ function Blocked({ open, pub }) {
           <Avatar name={open.cashierName} photo={pub?.photos?.[open.cashierUid] || owner?.photo} color={owner?.color} size={54} />
           <span className="stack" style={{ gap: 0, flexGrow: 1 }}><strong>{open.cashierName}</strong><span className="small muted">مفتوحة من {timeStr(open.openedAt)}</span></span>
         </div>
-        <button type="button" className="btn full" onClick={() => signOut(auth)}>خروج علشان {firstName(open.cashierName)} يدخل ويسلّم</button>
+        {onOther && <button type="button" className="btn full" onClick={onOther}>اختار درج تاني</button>}
+        <button type="button" className={'btn full' + (onOther ? ' soft' : '')} onClick={() => signOut(auth)}>خروج علشان {firstName(open.cashierName)} يدخل ويسلّم</button>
         <span className="small muted">لو {firstName(open.cashierName)} مش موجود، كلّم دعم مدقق يقفل الوردية من عندهم.</span>
       </section>
     </div>

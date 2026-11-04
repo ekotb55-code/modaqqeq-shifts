@@ -2,12 +2,13 @@ import { useMemo, useState } from 'react';
 import { collection, doc, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, useToast } from '../ui.jsx';
-import { WALLETS, billsTotal, emptyBills, fmt, num, pickImage, timeStr, todayKey } from '../lib';
+import { MAIN_REG, WALLETS, billsTotal, emptyBills, fmt, lastOf, num, openKey, pickImage, regName, timeStr, todayKey } from '../lib';
 import { Bills, MachineRows, SideBox } from './parts.jsx';
 
-export default function Receive({ shop, profile, onStarted, editShift, onCancel }) {
+export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, editShift, onCancel }) {
   const toast = useToast();
-  const last = shop.lastHandover || null;
+  const last = lastOf(shop, reg);
+  const isSub = reg !== MAIN_REG;
   const machines = shop.machines || [];
 
   const prevBills = useMemo(() => (last && last.keepDrawer !== 'shop' ? { ...emptyBills(), ...last.bills } : emptyBills()), [last]);
@@ -84,9 +85,10 @@ export default function Receive({ shop, profile, onStarted, editShift, onCancel 
       const b = writeBatch(db);
       b.set(shiftRef, {
         shopId: shop.id, cashierUid: profile.id, cashierName: profile.name, status: 'open',
+        register: reg, registerName: regName(shop, reg), registerKind: shop.register?.kind || 'main',
         day: todayKey(now), month: todayKey(now).slice(0, 7), openedAt: serverTimestamp(), openedAtLocal: now.toISOString(), receive,
       });
-      b.update(doc(db, 'shops', shop.id), { openShift: { id: shiftRef.id, cashierUid: profile.id, cashierName: profile.name, openedAt: now.toISOString() } });
+      b.update(doc(db, 'shops', shop.id), { [openKey(reg)]: { id: shiftRef.id, cashierUid: profile.id, cashierName: profile.name, openedAt: now.toISOString() } });
       const p = b.commit();
       // Photos go after the shift so the security rules can see who owns it.
       p.then(() => Promise.all(Object.entries(photos).map(([i, data]) => {
@@ -106,9 +108,9 @@ export default function Receive({ shop, profile, onStarted, editShift, onCancel 
   return (
     <div className="wrap">
       <div className="stack" style={{ gap: 4 }}>
-        <div className="spread"><h1 className="title">{editShift ? 'تعديل الاستلام' : 'استلم الوردية'}</h1>{editShift && <button type="button" className="btn soft sm" onClick={onCancel}>رجوع للعمليات</button>}</div>
+        <div className="spread"><h1 className="title">{editShift ? 'تعديل الاستلام' : 'استلم الوردية'}{isSub ? ` · ${regName(shop, reg)}` : ''}</h1>{onCancel && <button type="button" className="btn soft sm" onClick={onCancel}>{editShift ? 'رجوع للعمليات' : 'اختار درج تاني'}</button>}</div>
         <span className="sub">
-          {last ? <>الأرقام دي من تسليم {last.cashierName} الساعة {timeStr(last.at)}. لو تمام دوس «تمام، استلمت»، ولو في فرق عدّله وهيتسجل.</> : 'دي أول وردية في المحل. عدّ الدرج واكتب الأرقام.'}
+          {last ? <>الأرقام دي من تسليم {last.cashierName} الساعة {timeStr(last.at)}. لو تمام دوس «تمام، استلمت»، ولو في فرق عدّله وهيتسجل.</> : isSub ? 'اكتب اللي في درجك دلوقتي قبل فكة الأساسي (غالبًا صفر). الفكة اللي الأساسي هيديهالك هتظهرلك بعد ما تستلم وتأكدها.' : 'دي أول وردية في المحل. عدّ الدرج واكتب الأرقام.'}
         </span>
       </div>
       <div className="row">
@@ -120,7 +122,7 @@ export default function Receive({ shop, profile, onStarted, editShift, onCancel 
           <Bills bills={bills} setBills={setBills} orig={last ? prevBills : null} />
         </section>
         <div className="side">
-          <SideBox value={side} setValue={setSide} hint={sideChanged && last ? `اتعدّل · كان ${fmt(prevSide)} ج` : 'المبلغ كله · من غير فئات'} />
+          {!shop.noSide && <SideBox value={side} setValue={setSide} hint={sideChanged && last ? `اتعدّل · كان ${fmt(prevSide)} ج` : 'المبلغ كله · من غير فئات'} />}
           {walletKeys.length > 0 && (
             <section className="card tint-violet">
               <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />رصيد المحافظ</h2>
@@ -133,11 +135,13 @@ export default function Receive({ shop, profile, onStarted, editShift, onCancel 
               ))}
             </section>
           )}
-          <section className="card tint-yellow">
-            <h2 className="h2"><span className="dot" style={{ background: 'var(--yellow)' }} />أرصدة المكن</h2>
-            <span className="tiny muted">عدّل الرقم لو مختلف، وصوّر شاشة المكنة. المحاسب هيراجع الصور.</span>
-            <MachineRows machines={machines} values={mvals} setValues={setMvals} photos={photos} onPhoto={addPhoto} />
-          </section>
+          {(machines.length > 0 || !isSub) && (
+            <section className="card tint-yellow">
+              <h2 className="h2"><span className="dot" style={{ background: 'var(--yellow)' }} />أرصدة المكن</h2>
+              <span className="tiny muted">عدّل الرقم لو مختلف، وصوّر شاشة المكنة. المحاسب هيراجع الصور.</span>
+              <MachineRows machines={machines} values={mvals} setValues={setMvals} photos={photos} onPhoto={addPhoto} />
+            </section>
+          )}
           <button type="button" className="btn full" style={{ height: 66, fontSize: 20 }} onClick={confirm} disabled={busy}>
             <span className="ic"><Icon d="check" size={18} stroke={3} /></span>{busy ? 'لحظة…' : editShift ? 'حفظ التعديل' : 'تمام، استلمت'}
           </button>

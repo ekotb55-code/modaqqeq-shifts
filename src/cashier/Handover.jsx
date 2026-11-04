@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, useToast } from '../ui.jsx';
-import { WALLETS, billsTotal, computeShift, durationStr, emptyBills, fmt, num, pickImage, timeStr } from '../lib';
+import { MAIN_REG, WALLETS, billsTotal, computeShift, durationStr, emptyBills, fmt, lastKey, num, openKey, pickImage, timeStr } from '../lib';
+import { newTransfer } from './Transfers.jsx';
 import { Bills, MachineRows, SideBox } from './parts.jsx';
 
-function Split({ title, mark, color, amount, value, set }) {
+const WHERE = { stay: 'يفضل في الدرج', shop: 'يتسلّم للمحل', main: 'يتسلّم للأساسي' };
+function Split({ title, mark, color, amount, value, set, options = ['stay', 'shop'] }) {
   return (
     <div className="spread" style={{ background: 'rgba(255,255,255,.8)', borderRadius: 24, padding: '14px 16px' }}>
       <span style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -13,22 +15,25 @@ function Split({ title, mark, color, amount, value, set }) {
         <span className="stack" style={{ gap: 0 }}><span style={{ fontSize: 16, fontWeight: 700 }}>{title}</span><span style={{ fontSize: 22, fontWeight: 800 }}>{fmt(amount)} ج</span></span>
       </span>
       <span style={{ display: 'flex', gap: 6, background: '#fff', borderRadius: 999, padding: 5 }}>
-        <button type="button" className={'chip' + (value === 'stay' ? ' on' : '')} onClick={() => set('stay')}>يفضل في الدرج</button>
-        <button type="button" className={'chip' + (value === 'shop' ? ' on' : '')} onClick={() => set('shop')}>يتسلّم للمحل</button>
+        {options.map((o) => <button key={o} type="button" className={'chip' + (value === o ? ' on' : '')} onClick={() => set(o)}>{WHERE[o]}</button>)}
       </span>
     </div>
   );
 }
 
-export default function Handover({ shop, shift, entries, profile, onBack, onDone }) {
+export default function Handover({ shop, shift, entries, incoming = [], profile, onBack, onDone }) {
   const toast = useToast();
+  const reg = shift.register || MAIN_REG;
+  const isSub = reg !== MAIN_REG;
+  const noSide = !!shop.noSide;
   const machines = shop.machines || [];
   const [bills, setBills] = useState(emptyBills());
-  const [side, setSide] = useState('');
+  const [side, setSide] = useState(noSide ? '0' : '');
   const [mvals, setMvals] = useState(machines.map(() => ''));
   const [photos, setPhotos] = useState({});
-  const [keepDrawer, setKeepDrawer] = useState('stay');
+  const [keepDrawer, setKeepDrawer] = useState(isSub ? 'main' : 'stay');
   const [keepSide, setKeepSide] = useState('stay');
+  const opts = isSub ? ['main', 'stay'] : ['stay', 'shop'];
   const [busy, setBusy] = useState(false);
   const [sideFix, setSideFix] = useState(null);
 
@@ -69,9 +74,11 @@ export default function Handover({ shop, shift, entries, profile, onBack, onDone
       });
       b.update(doc(db, 'shifts', shift.id), { status: 'submitted', submittedAt: serverTimestamp(), submittedAtLocal: now.toISOString(), handover, entryCount: entries.length });
       b.update(doc(db, 'shops', shop.id), {
-        openShift: null,
-        lastHandover: { shiftId: shift.id, cashierName: profile.name, cashierUid: profile.id, at: now.toISOString(), ...handover },
+        [openKey(reg)]: null,
+        [lastKey(reg)]: { shiftId: shift.id, cashierName: profile.name, cashierUid: profile.id, at: now.toISOString(), ...handover },
       });
+      const toMain = (keepDrawer === 'main' ? drawerTotal : 0) + (keepSide === 'main' ? num(side) : 0);
+      if (isSub && toMain > 0) b.set(doc(collection(db, 'transfers')), newTransfer({ shop, shift, profile, toReg: MAIN_REG, amount: toMain, kind: 'handover' }));
       const p = b.commit();
       const offline = !navigator.onLine;
       if (offline) p.catch(() => {}); else await p;
@@ -80,8 +87,8 @@ export default function Handover({ shop, shift, entries, profile, onBack, onDone
         stats: [
           { label: `من ${timeStr(shift.openedAt || shift.openedAtLocal)} لـ ${timeStr(now)}`, value: `اشتغلت ${durationStr(shift.openedAt || shift.openedAtLocal, now)}` },
           { label: 'عملياتك', value: `${entries.length} عملية` },
-          { label: `درج الكاشير · ${fmt(drawerTotal)} ج`, value: keepDrawer === 'stay' ? 'فضل في الدرج' : 'اتسلّم للمحل' },
-          { label: `الجانبي · ${fmt(side)} ج`, value: keepSide === 'stay' ? 'فضل في الدرج' : 'اتسلّم للمحل' },
+          { label: `درج الكاشير · ${fmt(drawerTotal)} ج`, value: keepDrawer === 'stay' ? 'فضل في الدرج' : keepDrawer === 'main' ? 'اتسلّم للأساسي · مستني تأكيده' : 'اتسلّم للمحل' },
+          ...(noSide ? [] : [{ label: `الجانبي · ${fmt(side)} ج`, value: keepSide === 'stay' ? 'فضل في الدرج' : keepSide === 'main' ? 'اتسلّم للأساسي · مستني تأكيده' : 'اتسلّم للمحل' }]),
         ],
       });
     } catch (e) {
@@ -96,7 +103,7 @@ export default function Handover({ shop, shift, entries, profile, onBack, onDone
       <div className="spread" style={{ alignItems: 'flex-end' }}>
         <div className="stack" style={{ gap: 4 }}>
           <h1 className="title">سلّم الوردية</h1>
-          <span className="sub">عدّ الدرج، اكتب الجانبي وقراية المكن، وقول كل درج هيفضل ولا هيتسلّم للمحل</span>
+          <span className="sub">{isSub ? 'عدّ فلوسك كلها، وقول هتتسلّم للكاشير الأساسي ولا هتفضل في الدرج' : 'عدّ الدرج، اكتب الجانبي وقراية المكن، وقول كل درج هيفضل ولا هيتسلّم للمحل'}</span>
         </div>
         <button type="button" className="btn soft sm" onClick={onBack}>رجوع للعمليات</button>
       </div>
@@ -111,12 +118,14 @@ export default function Handover({ shop, shift, entries, profile, onBack, onDone
           </section>
           <section className="card tint-violet" style={{ gap: 14 }}>
             <h2 className="h2">الفلوس هتروح فين؟</h2>
-            <Split title="درج الكاشير" mark="د" color="#FFD3B5" amount={drawerTotal} value={keepDrawer} set={setKeepDrawer} />
-            <Split title="الدرج الجانبي" mark="ج" color="var(--lime)" amount={num(side)} value={keepSide} set={setKeepSide} />
+            <Split title="درج الكاشير" mark="د" color="#FFD3B5" amount={drawerTotal} value={keepDrawer} set={setKeepDrawer} options={opts} />
+            {!noSide && <Split title="الدرج الجانبي" mark="ج" color="var(--lime)" amount={num(side)} value={keepSide} set={setKeepSide} options={opts} />}
+            {isSub && (keepDrawer === 'main' || keepSide === 'main') && <span className="small muted">الكاشير الأساسي هيأكد إنه استلم المبلغ.</span>}
           </section>
         </div>
         <div className="side">
-          <SideBox value={side} setValue={(v) => { setSide(v); }} hint={`المفروض يبقى فيه ${fmt(expSide)} ج`} />
+          {incoming.length > 0 && <div className="alert warn small">فيه {incoming.length} مبلغ جاي ليك من كاشير تاني لسه ما أكدتهوش ({incoming.map((t) => `${t.fromName}: ${fmt(t.amount)} ج`).join('، ')}). أكّده من شاشة العمليات قبل ما تعدّ، أو هيفضل للوردية اللي بعدك.</div>}
+          {!noSide && <SideBox value={side} setValue={(v) => { setSide(v); }} hint={`المفروض يبقى فيه ${fmt(expSide)} ج`} />}
           {side !== '' && !sideOk && (
             <div className="alert bad" role="alert">
               <strong style={{ fontSize: 16 }}>الجانبي {sideDiff < 0 ? 'ناقص' : 'زيادة'} {fmt(Math.abs(sideDiff))} ج</strong>
@@ -146,11 +155,13 @@ export default function Handover({ shop, shift, entries, profile, onBack, onDone
               <span className="tiny muted">لو الرصيد اللي في المحفظة مختلف، كلّم المحاسب.</span>
             </section>
           )}
-          <section className="card tint-yellow">
-            <h2 className="h2"><span className="dot" style={{ background: 'var(--yellow)' }} />قراية المكن دلوقتي</h2>
-            <span className="tiny muted">اكتب الرقم وصوّر الشاشة، وكمّل. المحاسب هيراجع الصور.</span>
-            <MachineRows machines={machines} values={mvals} setValues={setMvals} photos={photos} onPhoto={addPhoto} />
-          </section>
+          {(machines.length > 0 || !isSub) && (
+            <section className="card tint-yellow">
+              <h2 className="h2"><span className="dot" style={{ background: 'var(--yellow)' }} />قراية المكن دلوقتي</h2>
+              <span className="tiny muted">اكتب الرقم وصوّر الشاشة، وكمّل. المحاسب هيراجع الصور.</span>
+              <MachineRows machines={machines} values={mvals} setValues={setMvals} photos={photos} onPhoto={addPhoto} />
+            </section>
+          )}
           <button type="button" className="btn full" style={{ height: 66, fontSize: 20 }} onClick={send} disabled={busy}>
             <span className="ic"><Icon d="send" size={18} /></span>{busy ? 'لحظة…' : 'سلّم وابعت للمحاسب'}
           </button>
