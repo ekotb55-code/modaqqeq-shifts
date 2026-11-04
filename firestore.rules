@@ -3,7 +3,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() { return request.auth != null; }
-    function isSuper() { return signedIn() && request.auth.token.email in ['ekotb55@gmail.com', 'ekotb555@gmail.com']; }
+    function isSuper() { return signedIn() && request.auth.token.email in ['ekotb555@gmail.com']; }
     function profilePath() { return /databases/$(database)/documents/users/$(request.auth.uid); }
     function hasProfile() { return signedIn() && exists(profilePath()); }
     function me() { return get(profilePath()).data; }

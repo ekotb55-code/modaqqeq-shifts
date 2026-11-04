@@ -106,7 +106,7 @@ export default function Handover({ shop, shift, entries, profile, onBack, onDone
           <SideBox value={side} setValue={setSide} hint="اكتب المبلغ كله" />
           <section className="card">
             <h2 className="h2"><span className="dot" style={{ background: 'var(--yellow)' }} />قراية المكن دلوقتي</h2>
-            <span className="tiny muted">اكتب الرقم وصوّر الشاشة، وكمّل. المراجعة بتحصل في الخلفية.</span>
+            <span className="tiny muted">اكتب الرقم وصوّر الشاشة، وكمّل. المحاسب هيراجع الصور.</span>
             <MachineRows machines={machines} values={mvals} setValues={setMvals} photos={photos} onPhoto={addPhoto} />
           </section>
           <button type="button" className="btn full" style={{ height: 66, fontSize: 20 }} onClick={send} disabled={busy}>

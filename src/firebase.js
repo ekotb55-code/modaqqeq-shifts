@@ -20,4 +20,4 @@ export const db = initializeFirestore(app, {
 });
 
 // Modaqqeq super-admin accounts (full access to everything).
-export const SUPER_ADMINS = ['ekotb55@gmail.com', 'ekotb555@gmail.com'];
+export const SUPER_ADMINS = ['ekotb555@gmail.com'];

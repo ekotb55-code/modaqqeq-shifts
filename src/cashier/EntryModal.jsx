@@ -194,7 +194,7 @@ export default function EntryModal({ type, shop, shift, profile, onClose }) {
               <img src={photo} alt="الصورة" style={{ width: 84, height: 110, objectFit: 'cover', borderRadius: 14 }} />
               <div className="stack">
                 <span className="badge ok">✓ الصورة اترفعت</span>
-                <span className="tiny muted">{type === 'transfer' ? 'هتتراجع على المبلغ واسم المستلم ورقم العملية' : 'هتوصل للدعم مع المصروف'}</span>
+                <span className="tiny muted">{type === 'transfer' ? 'المحاسب هيراجعها على المبلغ' : 'هتوصل للدعم مع المصروف'}</span>
                 <button type="button" className="link" style={{ alignSelf: 'flex-start', padding: 0 }} onClick={takePhoto}>غيّر الصورة</button>
               </div>
             </div>

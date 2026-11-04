@@ -135,6 +135,8 @@ function ShopEditor({ shop, linkedShop, onLinkDevice }) {
 
       <Cashiers shop={shop} pub={pub} />
 
+      <ShopPeople shop={shop} />
+
       <section className="card">
         <h2 className="h2">المكن والحسابات</h2>
         {f.machines.map((m, i) => (
@@ -235,6 +237,54 @@ function Cashiers({ shop, pub }) {
         <button type="button" className="btn sm" onClick={add} disabled={busy}><Icon d="plus" size={16} />{busy ? 'لحظة…' : 'إضافة كاشير'}</button>
       </div>
       <span className="tiny muted">علشان تغيّر الرقم السري لكاشير: شيله وضيفه تاني برقم جديد. اضغط على صورته علشان تغيّرها.</span>
+    </section>
+  );
+}
+
+const PEOPLE_GROUPS = [
+  { role: 'manager', title: 'مدير الفرع', hint: 'بيوصله تقرير كل وردية بعد التقفيل' },
+  { role: 'owner', title: 'الأونر', hint: 'بيشوف تقارير المحل كلها' },
+  { role: 'accountant', title: 'المحاسبين', hint: 'بيراجعوا ورديات المحل ويقفلوها' },
+  { role: 'reviewer', title: 'المراجعين', hint: 'بيتابعوا ويراجعوا ورا المحاسبين' },
+];
+
+function ShopPeople({ shop }) {
+  const toast = useToast();
+  const [users, setUsers] = useState([]);
+  useEffect(() => onSnapshot(collection(db, 'users'), (q) => setUsers(q.docs.map((d) => ({ id: d.id, ...d.data() })).filter((u) => !u.disabled)), () => {}), []);
+  const toggle = async (u) => {
+    const ids = u.shopIds || [];
+    const on = ids.includes(shop.id);
+    try {
+      await updateDoc(doc(db, 'users', u.id), { shopIds: on ? ids.filter((x) => x !== shop.id) : [...ids, shop.id] });
+      toast(on ? `${u.name} اتشال من ${shop.name}` : `${u.name} بقى على ${shop.name}`);
+    } catch { toast('مش قادرين نحفظ', 'err'); }
+  };
+  return (
+    <section className="card" style={{ gap: 16 }}>
+      <div className="stack" style={{ gap: 2 }}>
+        <h2 className="h2">المسؤولين عن المحل</h2>
+        <span className="tiny muted">اختار مين يتابع المحل ده. لو الاسم مش موجود اعمله حساب من «حسابات الموظفين».</span>
+      </div>
+      {PEOPLE_GROUPS.map((g) => {
+        const list = users.filter((u) => u.role === g.role);
+        return (
+          <div key={g.role} className="stack">
+            <span className="small"><b>{g.title}</b> <span className="muted">· {g.hint}</span></span>
+            <div className="chips">
+              {list.map((u) => {
+                const on = (u.shopIds || []).includes(shop.id);
+                return (
+                  <button key={u.id} type="button" className={'chip sm' + (on ? ' on' : '')} onClick={() => toggle(u)} aria-pressed={on} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, paddingInlineStart: 6 }}>
+                    <Avatar name={u.name} photo={u.photo} color={u.color || '#8FD3FF'} size={28} />{u.name}{on ? ' ✓' : ''}
+                  </button>
+                );
+              })}
+              {list.length === 0 && <span className="tiny muted">مفيش حسابات بالدور ده لسه</span>}
+            </div>
+          </div>
+        );
+      })}
     </section>
   );
 }

@@ -90,7 +90,7 @@ export default function Receive({ shop, profile, onStarted }) {
           <SideBox value={side} setValue={setSide} hint={sideChanged && last ? `اتعدّل · كان ${fmt(prevSide)} ج` : 'المبلغ كله · من غير فئات'} />
           <section className="card">
             <h2 className="h2"><span className="dot" style={{ background: 'var(--yellow)' }} />أرصدة المكن</h2>
-            <span className="tiny muted">عدّل الرقم لو مختلف، وصوّر شاشة المكنة. المراجعة بتحصل لوحدها في الخلفية.</span>
+            <span className="tiny muted">عدّل الرقم لو مختلف، وصوّر شاشة المكنة. المحاسب هيراجع الصور.</span>
             <MachineRows machines={machines} values={mvals} setValues={setMvals} photos={photos} onPhoto={addPhoto} />
           </section>
           <button type="button" className="btn full" style={{ height: 66, fontSize: 20 }} onClick={confirm} disabled={busy}>

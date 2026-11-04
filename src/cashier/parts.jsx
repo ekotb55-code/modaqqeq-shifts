@@ -69,7 +69,7 @@ export function MachineRows({ machines, values, setValues, photos, onPhoto }) {
           <div key={i} className="m-row">
             <span className="lbl">
               <span className="small"><b>{m.machine}</b> · {m.account}</span>
-              <span className="tiny" style={{ color: has ? '#3D6B00' : 'var(--muted)', fontWeight: 600 }}>{has ? '✓ الصورة اترفعت · هتتراجع في الخلفية' : 'صوّر شاشة المكنة'}</span>
+              <span className="tiny" style={{ color: has ? '#3D6B00' : 'var(--muted)', fontWeight: 600 }}>{has ? '✓ الصورة اترفعت · المحاسب هيراجعها' : 'صوّر شاشة المكنة'}</span>
             </span>
             <input inputMode="decimal" aria-label={`رصيد ${m.machine} ${m.account}`} value={values[i] ?? ''} onChange={(e) => { const v = [...values]; v[i] = e.target.value; setValues(v); }} onFocus={(e) => e.target.select()} />
             <button type="button" className={'cam' + (has ? ' ok' : '')} aria-label={`صورة شاشة ${m.machine} ${m.account}`} onClick={() => onPhoto(i)}>

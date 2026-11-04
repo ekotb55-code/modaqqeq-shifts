@@ -111,7 +111,8 @@ export function ShiftDetail({ shift, shop, profile, canReview }) {
 
   const close = async () => {
     if (sales === '') { toast('اكتب رقم المبيعات الأول', 'err'); return; }
-    if (!window.confirm(`تقفيل الوردية بنتيجة: ${diffText(sum.diff)}؟`)) return;
+    const warnPhotos = unchecked > 0 ? `\nلسه فيه ${unchecked} صورة ما اتراجعتش.` : '';
+    if (!window.confirm(`تقفيل الوردية بنتيجة: ${diffText(sum.diff)}؟${warnPhotos}`)) return;
     setBusy(true);
     try {
       const now = new Date();
@@ -145,6 +146,14 @@ export function ShiftDetail({ shift, shop, profile, canReview }) {
   const togglePosted = (e) => updateDoc(doc(db, 'shifts', shift.id, 'entries', e.id), { posted: !e.posted, postedBy: profile.name }).catch(() => toast('مش قادرين نحفظ', 'err'));
   const photoOf = (id) => photos.find((p) => p.id === id);
   const machinePhotos = photos.filter((p) => p.kind === 'machine');
+  const unchecked = photos.filter((p) => p.check !== 'ok' && p.check !== 'bad').length;
+  const checkPhoto = (p, check) => updateDoc(doc(db, 'shifts', shift.id, 'photos', p.id), { check, checkedBy: profile.name, checkedAt: serverTimestamp() }).catch(() => toast('مش قادرين نحفظ', 'err'));
+  const photoTyped = (p) => {
+    if (p.kind !== 'machine') return p.amount ?? null;
+    const list = (p.stage === 'receive' ? rcv.machines : hnd.machines) || [];
+    const m = list.find((x) => `${x.machine} · ${x.account}` === p.label);
+    return m ? m.value : null;
+  };
 
   const log = [
     { t: shift.openedAt || shift.openedAtLocal, text: `${shift.cashierName} استلم الوردية${rcv.prevCashier ? ` من ${rcv.prevCashier}` : ''}${rcv.diffFromPrev ? ' · عدّل في أرقام الاستلام' : ''}` },
@@ -239,9 +248,7 @@ export function ShiftDetail({ shift, shop, profile, canReview }) {
               </tbody>
             </table>
           </div>
-          {machinePhotos.length > 0 && (
-            <div className="chips">{machinePhotos.map((p) => <img key={p.id} className="thumb" src={p.data} alt={p.label} title={`${p.stage === 'receive' ? 'استلام' : 'تسليم'} · ${p.label}`} onClick={() => setView(p.data)} />)}</div>
-          )}
+          {machinePhotos.length > 0 && <span className="tiny muted">صور المكن تحت في قسم الصور</span>}
         </section>
       </div>
 
@@ -267,6 +274,34 @@ export function ShiftDetail({ shift, shop, profile, canReview }) {
           );
         })}
       </section>
+
+      {photos.length > 0 && (
+        <section className="card">
+          <div className="spread">
+            <h2 className="h2">الصور <span className="tiny muted" style={{ fontWeight: 500 }}>· اتأكد إن الرقم اللي في الصورة هو اللي الكاشير كتبه</span></h2>
+            {unchecked > 0 ? <span className="badge warn">فاضل {unchecked} صورة</span> : <span className="badge ok">✓ كل الصور اتراجعت</span>}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12 }}>
+            {photos.map((p) => {
+              const ok = p.check === 'ok', bad = p.check === 'bad';
+              const typed = photoTyped(p);
+              return (
+                <div key={p.id} style={{ background: 'var(--bg)', borderRadius: 20, padding: 10, display: 'flex', flexDirection: 'column', gap: 8, border: `2px solid ${ok ? 'var(--lime)' : bad ? 'var(--red)' : 'transparent'}` }}>
+                  <img src={p.data} alt={p.label} onClick={() => setView(p.data)} style={{ width: '100%', height: 150, objectFit: 'cover', borderRadius: 14, cursor: 'zoom-in', background: '#fff' }} />
+                  <span className="small"><b>{{ transfer: 'تحويل', invoice: 'فاتورة', machine: p.stage === 'receive' ? 'مكنة · استلام' : 'مكنة · تسليم' }[p.kind]}</b> · {p.label}</span>
+                  {typed !== null && <span className="small">الكاشير كتب: <b>{fmt(typed)}</b></span>}
+                  {canReview ? (
+                    <span style={{ display: 'flex', gap: 6 }}>
+                      <button type="button" className={'chip sm' + (ok ? ' on' : '')} style={{ flex: 1 }} onClick={() => checkPhoto(p, ok ? 'pending' : 'ok')}>{ok ? '✓ مطابقة' : 'مطابقة'}</button>
+                      <button type="button" className="chip sm" style={{ flex: 1, background: bad ? 'var(--red)' : undefined, color: bad ? '#fff' : undefined }} onClick={() => checkPhoto(p, bad ? 'pending' : 'bad')}>مش مطابقة</button>
+                    </span>
+                  ) : <span className={'badge ' + (ok ? 'ok' : bad ? 'bad' : 'warn')}>{ok ? 'مطابقة' : bad ? 'مش مطابقة' : 'لسه'}</span>}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       <div className="row" style={{ gap: 16 }}>
         <section className="card" style={{ flex: '1 1 320px', gap: 4 }}>
