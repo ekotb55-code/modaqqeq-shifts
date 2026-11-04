@@ -176,11 +176,12 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
 
   return (
     <div className="stack" style={{ gap: 16 }}>
-      <section className="card spread">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {shop?.logo ? <img src={shop.logo} alt="" style={{ height: 48, width: 'auto', maxWidth: 140, objectFit: 'contain' }} /> : <Avatar name={shop?.name} size={48} color="#FFC99A" />}
-          <div className="stack" style={{ gap: 2 }}>
-            <h1 style={{ fontSize: 20, fontWeight: 700 }}>{shop?.name} · {shift.cashierName}{shift.registerName && shift.register !== 'main' ? <span className="badge info" style={{ marginInlineStart: 8, verticalAlign: 'middle' }}>{shift.registerName}</span> : null}</h1>
+      <section className="card spread shift-head" style={{ gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 18, minWidth: 0 }}>
+          {shop?.logo ? <img src={shop.logo} alt="" className="shift-logo" /> : <Avatar name={shop?.name} size={84} color="#FFC99A" />}
+          <div className="stack" style={{ gap: 4, minWidth: 0 }}>
+            <h1 className="shift-shop">{shop?.name}</h1>
+            <span style={{ fontSize: 18, fontWeight: 700 }}>{shift.cashierName}{shift.registerName && shift.register !== 'main' ? <span className="badge info" style={{ marginInlineStart: 8, verticalAlign: 'middle' }}>{shift.registerName}</span> : null}</span>
             <span className="small muted">{dateStr(shift.openedAt || shift.openedAtLocal)} · {timeStr(shift.openedAt || shift.openedAtLocal)} ← {shift.submittedAt ? timeStr(shift.submittedAt) : 'لسه شغالة'} · {durationStr(shift.openedAt || shift.openedAtLocal, shift.submittedAt)}</span>
           </div>
         </div>
@@ -188,6 +189,11 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
           {shift.forced && <span className="badge bad">اتقفلت بالنيابة</span>}
           <span className={'badge ' + STATUS[status].cls}>{STATUS[status].label}</span>
           {reviewing && review?.startedAt && <span className="badge info">بدأت من {durationStr(review.startedAt)}</span>}
+          {fullShop?.posUrl && (
+            <a className="pos-link keep" href={fullShop.posUrl} target="_blank" rel="noopener noreferrer">
+              <span className="ic"><Icon d="monitor" size={18} /></span>برنامج البيع بتاع الفرع<Icon d="up" size={14} />
+            </a>
+          )}
         </span>
       </section>
 
