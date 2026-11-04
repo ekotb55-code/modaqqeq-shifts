@@ -21,20 +21,27 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
   const er = editShift?.receive;
   const [bills, setBills] = useState(er ? { ...emptyBills(), ...er.bills } : prevBills);
   const [side, setSide] = useState(String(er ? num(er.side) : prevSide));
-  const [mvals, setMvals] = useState(er ? machines.map((m) => { const f = (er.machines || []).find((x) => x.machine === m.machine && x.account === m.account); return f ? String(f.value ?? '') : ''; }) : prevMachines);
+  const [mvals, setMvals] = useState(er ? machines.map((m) => { const f = (er.machines || []).find((x) => x.machine === m.machine && x.account === m.account); return f ? String(f.value ?? '') : ''; }) : machines.map(() => ''));
   const [photos, setPhotos] = useState({});
+  const [wphotos, setWphotos] = useState({});
   const [busy, setBusy] = useState(false);
 
   const changed = Object.keys(bills).filter((f) => num(bills[f]) !== num(prevBills[f])).length;
   const sideChanged = num(side) !== prevSide;
   const walletKeys = WALLETS.filter((w) => (shop.wallets || ['insta', 'vf']).includes(w.key) && walletModeOf(shop, w.key) === 'shop');
   const prevWallets = Object.fromEntries(walletKeys.map((w) => [w.key, num(last?.walletsTyped?.[w.key] ?? last?.wallets?.[w.key])]));
-  const [wallets, setWallets] = useState(() => Object.fromEntries(walletKeys.map((w) => [w.key, String(er ? num(er.wallets?.[w.key]) : prevWallets[w.key])])));
-  const wChanged = walletKeys.filter((w) => num(wallets[w.key]) !== prevWallets[w.key]).length;
+  const [wallets, setWallets] = useState(() => Object.fromEntries(walletKeys.map((w) => [w.key, er ? String(num(er.wallets?.[w.key])) : ''])));
+  const wChanged = walletKeys.filter((w) => String(wallets[w.key] ?? '').trim() !== '' && num(wallets[w.key]) !== prevWallets[w.key]).length;
   const walletsOut = () => Object.fromEntries(walletKeys.map((w) => [w.key, num(wallets[w.key])]));
-  const mChanged = mvals.filter((v, i) => num(v) !== num(prevMachines[i])).length;
+  const mChanged = mvals.filter((v, i) => String(v).trim() !== '' && num(v) !== num(prevMachines[i])).length;
+  // New receive: every wallet and machine number typed by hand, each with its photo.
+  const missing = editShift ? [] : [
+    ...walletKeys.filter((w) => String(wallets[w.key] ?? '').trim() === '').map((w) => `اكتب رصيد ${w.label}`),
+    ...walletKeys.filter((w) => !wphotos[w.key]).map((w) => `صوّر ${w.label}`),
+    ...machines.map((m, i) => (String(mvals[i] ?? '').trim() === '' ? `اكتب رصيد ${m.machine} · ${m.account}` : null)).filter(Boolean),
+    ...machines.map((m, i) => (!photos[i] ? `صوّر ${m.machine} · ${m.account}` : null)).filter(Boolean),
+  ];
 
-  const [wphotos, setWphotos] = useState({});
   const addWalletPhoto = async (k) => {
     const data = await pickImage(1000, 0.65);
     if (data) { setWphotos((p) => ({ ...p, [k]: data })); toast('الصورة اترفعت · كمّل عادي'); }
@@ -75,6 +82,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
 
   const confirm = async () => {
     if (editShift) { saveEdit(); return; }
+    if (missing.length) { toast(missing[0], 'err'); return; }
     setBusy(true);
     try {
       const shiftRef = doc(collection(db, 'shifts'));
@@ -139,7 +147,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
                 <span className="tiny muted">اكتب الرصيد اللي في المحفظة دلوقتي وصوّر الشاشة. لو مختلف عن اللي مكتوب عدّله.</span>
                 {walletKeys.map((w) => (
                   <WalletField key={w.key} k={w.key} label={w.label} value={wallets[w.key]} onChange={(v) => setWallets({ ...wallets, [w.key]: v })}
-                    hint="الرصيد اللي في المحفظة دلوقتي" warn={last && num(wallets[w.key]) !== prevWallets[w.key] ? `اتعدّل · كان ${fmt(prevWallets[w.key])}` : null}
+                    hint={last ? `اكتب الرصيد اللي في المحفظة دلوقتي · ${last.cashierName} سلّم ${fmt(prevWallets[w.key])}` : 'اكتب الرصيد اللي في المحفظة دلوقتي'} warn={last && String(wallets[w.key] ?? '').trim() !== '' && num(wallets[w.key]) !== prevWallets[w.key] ? `مختلف عن اللي اتسلّم (${fmt(prevWallets[w.key])})` : null}
                     onPhoto={() => addWalletPhoto(w.key)} photo={wphotos[w.key]} />
                 ))}
               </section>
@@ -149,13 +157,18 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
         {(machines.length > 0 || !isSub) && (
           <section className="card tint-yellow">
             <h2 className="h2"><span className="dot" style={{ background: 'var(--yellow)' }} />أرصدة المكن</h2>
-            <span className="tiny muted">عدّل الرقم لو مختلف، وصوّر شاشة المكنة. المحاسب هيراجع الصور.</span>
-            <MachineRows machines={machines} values={mvals} setValues={setMvals} photos={photos} onPhoto={addPhoto} />
+            <span className="tiny muted">اكتب الرصيد اللي على كل مكنة بإيدك، وصوّر شاشتها. المحاسب هيراجع الصور.</span>
+            <MachineRows machines={machines} values={mvals} setValues={setMvals} photos={photos} onPhoto={addPhoto} prev={last ? prevMachines : null} prevName={last?.cashierName} />
           </section>
         )}
       </div>
       <div className="recv-done">
-        <button type="button" className="btn full" style={{ height: 66, fontSize: 20 }} onClick={confirm} disabled={busy}>
+        {missing.length > 0 && (
+          <span className="badge warn" style={{ whiteSpace: 'normal', textAlign: 'center', lineHeight: 1.7, padding: '8px 14px' }}>
+            فاضل: {missing.slice(0, 4).join(' · ')}{missing.length > 4 ? ` و${missing.length - 4} كمان` : ''}
+          </span>
+        )}
+        <button type="button" className="btn full" style={{ height: 66, fontSize: 20 }} onClick={confirm} disabled={busy || missing.length > 0}>
           <span className="ic"><Icon d="check" size={18} stroke={3} /></span>{busy ? 'لحظة…' : editShift ? 'حفظ التعديل' : 'تمام، استلمت'}
         </button>
         <span className="small muted" style={{ textAlign: 'center' }}>

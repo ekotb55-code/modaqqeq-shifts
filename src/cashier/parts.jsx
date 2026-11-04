@@ -66,7 +66,7 @@ export function Bills({ bills, setBills, orig, noSteppers }) {
   );
 }
 
-export function MachineRows({ machines, values, setValues, photos, onPhoto }) {
+export function MachineRows({ machines, values, setValues, photos, onPhoto, prev, prevName }) {
   const groups = [];
   machines.forEach((m, i) => {
     const g = groups.find((x) => x.name === m.machine);
@@ -92,7 +92,10 @@ export function MachineRows({ machines, values, setValues, photos, onPhoto }) {
                 const m = machines[i];
                 return (
                   <div key={i} className="mc-acc">
-                    <span className="small" style={{ fontWeight: 700 }}>{m.account}</span>
+                    <span className="spread" style={{ gap: 6 }}>
+                      <span className="small" style={{ fontWeight: 700 }}>{m.account}</span>
+                      {prev && prev[i] !== '' && <span className="tiny muted">{prevName ? `${prevName} سلّم` : 'اتسلّم'} {fmt(prev[i])}</span>}
+                    </span>
                     <label className="mc-in">
                       <input inputMode="decimal" aria-label={`رصيد ${m.machine} ${m.account}`} value={values[i] ?? ''} onChange={(e) => { const v = [...values]; v[i] = e.target.value; setValues(v); }} onFocus={(e) => e.target.select()} placeholder="الرصيد" />
                       <span className="small muted">ج</span>

@@ -328,10 +328,9 @@ export function PhotoSlot({ data, onPick, label = 'صوّر الشاشة', tone 
   }
   return (
     <div className="photo-slot has">
-      <img src={data} alt="الصورة اللي اترفعت" onClick={() => setView(true)} />
-      <span className="ps-ok">✓ اترفعت</span>
+      <span className="ps-frame"><img src={data} alt="الصورة اللي اترفعت" onClick={() => setView(true)} /><span className="ps-ok">✓ اترفعت</span></span>
       <span className="ps-actions">
-        <button type="button" onClick={() => setView(true)}><Icon d="eye" size={15} />شوفها</button>
+        <button type="button" onClick={() => setView(true)}><Icon d="eye" size={15} />شوفها كبيرة</button>
         <button type="button" onClick={onPick}><Icon d="cam" size={15} />غيّرها</button>
       </span>
       {view && <PhotoView src={data} onClose={() => setView(false)} />}

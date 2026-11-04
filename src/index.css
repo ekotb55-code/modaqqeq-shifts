@@ -383,10 +383,11 @@ img { max-width: 100%; }
 .photo-slot.ps-empty { height: 92px; border: 2px dashed currentColor; background: rgba(255,255,255,.55); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; opacity: .9; }
 .photo-slot.ps-empty.light { background: rgba(255,255,255,.14); }
 .photo-slot.ps-empty:hover { opacity: 1; }
-.photo-slot.has { height: 150px; background: #fff; border: 3px solid #B6F000; }
-.photo-slot.has img { width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; display: block; }
+.photo-slot.has { background: #fff; border: 3px solid #B6F000; padding: 6px; display: flex; flex-direction: column; gap: 6px; }
+.ps-frame { position: relative; display: block; background: #1B1B2F; border-radius: 12px; overflow: hidden; }
+.ps-frame img { width: 100%; height: auto; max-height: 420px; object-fit: contain; cursor: zoom-in; display: block; margin: 0 auto; }
 .ps-ok { position: absolute; top: 8px; right: 8px; background: #B6F000; color: #1B1B2F; font-size: 12px; font-weight: 800; border-radius: 999px; padding: 2px 10px; }
-.ps-actions { position: absolute; bottom: 8px; left: 8px; right: 8px; display: flex; gap: 6px; justify-content: center; }
+.ps-actions { display: flex; gap: 6px; justify-content: center; }
 .ps-actions button { display: inline-flex; align-items: center; gap: 4px; border: 0; border-radius: 999px; background: rgba(20,22,40,.78); color: #fff; font-family: inherit; font-size: 12px; font-weight: 700; padding: 6px 12px; cursor: pointer; }
 .mc-accounts { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
 .mc-acc { background: #fff; border-radius: 16px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
