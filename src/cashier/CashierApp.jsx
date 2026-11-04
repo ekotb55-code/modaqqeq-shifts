@@ -6,6 +6,7 @@ import { Icon, Avatar, Modal, Spinner, useToast } from '../ui.jsx';
 import { DEFAULT_SHOP, MAIN_REG, allOpen, cashierPassword, firstName, openOf, pickImage, regName, registersOf, shopForRegister, timeStr } from '../lib';
 import { usePendingTransfers } from './Transfers.jsx';
 import { AttentionBar, AttentionModal, useAttention } from './Attention.jsx';
+import { NetStrip, ThemePicker, useTheme } from '../theme.jsx';
 import { Topbar } from './parts.jsx';
 import Receive from './Receive.jsx';
 import Dash from './Dash.jsx';
@@ -35,6 +36,8 @@ export default function CashierApp({ profile }) {
   const pending = usePendingTransfers(shopId);
   const attention = useAttention(profile.id);
   const [attn, setAttn] = useState(null);
+  const [theme, setTheme] = useTheme(profile);
+  const [themeOpen, setThemeOpen] = useState(false);
 
   useEffect(() => {
     if (!shopId) return undefined;
@@ -83,7 +86,7 @@ export default function CashierApp({ profile }) {
   const me = { ...profile, photo: pub?.photos?.[profile.id] || profile.photo };
   const active = entries.filter((e) => !e.deleted);
   const deleted = entries.filter((e) => e.deleted);
-  const top = <Topbar shopPub={pub} profile={me} regLabel={reg && reg !== MAIN_REG ? regName(shop, reg) : (regs.length && reg ? regName(shop, reg) : null)} onPhoto={() => changeMyPhoto(shopId, profile, toast)} steps={(open && !mine && !done) || !reg ? null : steps} onLogout={logout} posUrl={shop.posUrl} onPin={() => setPinOpen(true)} />;
+  const top = <Topbar shopPub={pub} profile={me} regLabel={reg && reg !== MAIN_REG ? regName(shop, reg) : (regs.length && reg ? regName(shop, reg) : null)} onPhoto={() => changeMyPhoto(shopId, profile, toast)} onTheme={() => setThemeOpen(true)} steps={(open && !mine && !done) || !reg ? null : steps} onLogout={logout} posUrl={shop.posUrl} onPin={() => setPinOpen(true)} />;
 
   let body;
   if (done) body = <Done info={done} profile={me} />;
@@ -97,7 +100,9 @@ export default function CashierApp({ profile }) {
 
   return (
     <div>
+      <NetStrip />
       {top}
+      {themeOpen && <ThemePicker value={theme} onChange={setTheme} onClose={() => setThemeOpen(false)} />}
       {!done && <AttentionBar list={attention} currentId={shiftId} onOpen={setAttn} />}
       {body}
       {attn && <AttentionModal shift={attn} shop={shop} profile={me} onClose={() => setAttn(null)} />}

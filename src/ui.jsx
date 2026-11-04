@@ -24,6 +24,7 @@ export const IC = {
   truck: 'M3 7h11v9H3zM14 10h4l3 3v3h-7zM7 19a2 2 0 1 0 0-.1M17 19a2 2 0 1 0 0-.1',
   shop: 'M3 9l1-5h16l1 5M4 9v11h16V9M9 20v-6h6v6',
   card: 'M3 6h18v12H3zM3 10h18M7 15h4',
+  palette: 'M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.8 1.6-1.6 0-.5-.2-.8-.4-1.1-.3-.3-.4-.6-.4-1 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5c0-4.1-4-7.7-9-7.7zM7.5 12.5h.01M9.5 8h.01M14.5 8h.01M17 11.5h.01',
   cash: 'M3 6h18v12H3zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
   undo: 'M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3',
   dots: 'M5 12h.01M12 12h.01M19 12h.01',
@@ -88,30 +89,38 @@ export function useOnline() {
 }
 
 // Internet speed meter: measures a small download every few seconds.
-export function useNetSpeed(points = 30) {
+// One shared speed sampler for the whole app (the top strip and the meter read the same numbers).
+const netStore = { hist: [], subs: new Set(), timer: null };
+async function netSample() {
+  if (!navigator.onLine) { netPush(0); return; }
+  let mbps = null;
+  try {
+    const bytes = 150000;
+    const t0 = performance.now();
+    const r = await fetch(`https://speed.cloudflare.com/__down?bytes=${bytes}&r=${Math.random()}`, { cache: 'no-store' });
+    await r.arrayBuffer();
+    mbps = (bytes * 8) / ((performance.now() - t0) / 1000) / 1e6;
+  } catch {
+    mbps = navigator.connection?.downlink ?? null;
+  }
+  if (mbps !== null) netPush(Math.round(mbps * 10) / 10);
+}
+function netPush(v) {
+  netStore.hist = [...netStore.hist, v].slice(-30);
+  netStore.subs.forEach((f) => f(netStore.hist));
+}
+export function useNetSpeed() {
   const online = useOnline();
-  const [hist, setHist] = useState([]);
+  const [hist, setHist] = useState(netStore.hist);
   useEffect(() => {
-    let stop = false;
-    async function sample() {
-      if (!navigator.onLine) { setHist((h) => [...h, 0].slice(-points)); return; }
-      let mbps = null;
-      try {
-        const bytes = 150000;
-        const t0 = performance.now();
-        const r = await fetch(`https://speed.cloudflare.com/__down?bytes=${bytes}&r=${Math.random()}`, { cache: 'no-store' });
-        await r.arrayBuffer();
-        const secs = (performance.now() - t0) / 1000;
-        mbps = (bytes * 8) / secs / 1e6;
-      } catch {
-        mbps = navigator.connection?.downlink ?? null;
-      }
-      if (!stop && mbps !== null) setHist((h) => [...h, Math.round(mbps * 10) / 10].slice(-points));
-    }
-    sample();
-    const id = setInterval(sample, 5000);
-    return () => { stop = true; clearInterval(id); };
-  }, [points]);
+    netStore.subs.add(setHist);
+    if (!netStore.timer) { netSample(); netStore.timer = setInterval(netSample, 5000); }
+    return () => {
+      netStore.subs.delete(setHist);
+      if (!netStore.subs.size) { clearInterval(netStore.timer); netStore.timer = null; }
+    };
+  }, []);
+  useEffect(() => { if (!online) netPush(0); else netSample(); }, [online]);
   return { online, hist };
 }
 

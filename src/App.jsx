@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db, SUPER_ADMINS } from './firebase';
@@ -6,11 +6,14 @@ import { Spinner } from './ui.jsx';
 import CashierApp from './cashier/CashierApp.jsx';
 import Login from './staff/StaffLogin.jsx';
 import StaffApp from './staff/StaffApp.jsx';
+import { Intro } from './theme.jsx';
 
 export default function App() {
   const [user, setUser] = useState(undefined);
   const [profile, setProfile] = useState(null);
   const [err, setErr] = useState('');
+  const [intro, setIntro] = useState(() => { try { return !sessionStorage.getItem('mdq-intro'); } catch { return true; } });
+  const endIntro = useCallback(() => { setIntro(false); try { sessionStorage.setItem('mdq-intro', '1'); } catch { /* ignore */ } }, []);
 
   useEffect(() => onAuthStateChanged(auth, async (u) => {
     setErr('');
@@ -34,12 +37,9 @@ export default function App() {
     }
   }), []);
 
-  if (user === undefined) return <Spinner text="بنفتح التطبيق…" />;
-
-  if (user && profile) {
-    if (profile.role === 'cashier') return <CashierApp profile={profile} />;
-    return <StaffApp profile={profile} />;
-  }
-
-  return <Login error={err} />;
+  let body;
+  if (user === undefined) body = <Spinner text="بنفتح التطبيق…" />;
+  else if (user && profile) body = profile.role === 'cashier' ? <CashierApp profile={profile} /> : <StaffApp profile={profile} />;
+  else body = <Login error={err} />;
+  return <>{body}{intro && <Intro onDone={endIntro} />}</>;
 }

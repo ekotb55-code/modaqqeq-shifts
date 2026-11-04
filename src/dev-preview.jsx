@@ -13,6 +13,7 @@ import { SendModal } from './cashier/Transfers.jsx';
 import { ShiftDetail } from './staff/Review.jsx';
 import { ShopPicker, BranchChooser } from './staff/StaffApp.jsx';
 import { AttentionBar } from './cashier/Attention.jsx';
+import { NetStrip, Intro } from './theme.jsx';
 import ShiftChat from './ShiftChat.jsx';
 
 const shop = { id: 's1', name: 'مخبوزات لوفان', posUrl: 'https://x', wallets: ['insta', 'vf'], walletModes: { insta: 'shop', vf: 'owner' }, machines: [{ machine: 'فوري', account: 'الحساب الرئيسي', ratePct: 2 }, { machine: 'فوري', account: 'كاش أوت' }, { machine: 'فيزا', account: 'الرصيد', ratePct: 2, rateFrom: 'cashier' }],
@@ -36,6 +37,7 @@ shop.openShifts = { r1: { id: 'sh2', cashierUid: 'u2', cashierName: 'كريم ا
 const dshop = shopForRegister(shop, 'r1');
 const dshift = { ...shift, id: 'sh2', register: 'r1', registerName: 'درج الدليفري', receive: { drawerTotal: 300, side: 0, wallets: {}, machines: [] }, handover: null };
 const inc = [{ id: 't1', fromName: 'كريم الدليفري', fromRegName: 'درج الدليفري', kind: 'handover', amount: 1850, createdAtLocal: new Date().toISOString() }];
+document.documentElement.dataset.theme = new URLSearchParams(location.search).get('theme') || 'mdq';
 let body;
 if (v === 'login') body = <Login />;
 else if (v === 'ddash') body = <Dash shop={dshop} shift={dshift} entries={[{ id: 'x1', type: 'xfer_in', src: 'drawer', amount: 300, fromName: 'شوقي محمد (الكاشير الأساسي)', createdAtLocal: new Date().toISOString() }]} profile={{ ...profile, name: 'كريم الدليفري' }} onHandover={() => {}} onReceive={() => {}} />;
@@ -48,7 +50,8 @@ else if (v === 'review') body = <div className="wrap"><ShiftDetail shift={{ ...s
 else if (v === 'picker') body = <header className="topbar"><div className="topbar-in"><div style={{ display: 'flex', alignItems: 'center', gap: 14 }}><img className="logo-mdq" src="./modaqqeq-logo.png" alt="" /><ShopPicker shops={[{ id: 'a', name: 'فرع مايو', openShift: { cashierName: 'ابراهيم' } }, { id: 'b', name: 'الدواجن' }]} value={location.hash ? 'a' : null} onChange={() => {}} onNew={() => {}} /></div><nav className="tabs"><button className="on">الإعداد</button></nav><span /></div></header>;
 else if (v === 'branch') body = <BranchChooser shops={[{ id: 'a', name: 'فرع مايو', openShift: { cashierName: 'ابراهيم' } }, { id: 'b', name: 'الدواجن' }]} onPick={() => {}} onNew={() => {}} />;
 else if (v === 'attn') body = <><AttentionBar list={[{ id: 'x', status: 'reopened', openedAtLocal: new Date().toISOString(), reopenNote: 'سجّل مصروف المواصلات' }, { id: 'y', status: 'submitted', cashierUnread: true, openedAtLocal: new Date().toISOString(), lastMsg: { text: 'التحويل 67 صورته مش واضحة' } }]} onOpen={() => {}} /><div className="wrap"><section className="card"><ShiftChat shift={{ id: 'sh1' }} profile={profile} side="staff" /></section></div></>;
+else if (v === 'intro') body = <Intro onDone={() => {}} />;
 else if (v === 'zoom') body = <div className="wrap"><div style={{ width: 320 }}><ZoomImage src="./modaqqeq-logo.png" height={340} /></div><PhotoView src={location.hash ? './modaqqeq-logo.png' : null} onClose={() => {}} /></div>;
 else if (v === 'statements') body = <div className="wrap"><Statements c={computeShift(shift, entries, shop, 4000)} shift={shift} shop={shop} /></div>;
 else body = <Dash shop={shop} shift={shift} entries={entries} incoming={v === 'inc' ? inc : []} deleted={[{ id: 'd1', type: 'expense', kind: 'delivery', kindLabel: 'قبض دليفري', sub: 'أحمد', src: 'drawer', amount: 50, deleted: true, deletedByName: 'شوقي محمد', deleteReason: 'اتسجلت مرتين', createdAtLocal: new Date().toISOString(), deletedAtLocal: Date.now() }]} profile={profile} onHandover={() => {}} onReceive={() => {}} />;
-createRoot(document.getElementById('root')).render(<ToastProvider>{v !== 'login' && <Topbar shopPub={pub} profile={profile} steps={steps} onLogout={() => {}} posUrl={shop.posUrl} onPin={() => {}} onPhoto={() => {}} />}{body}</ToastProvider>);
+createRoot(document.getElementById('root')).render(<ToastProvider>{v !== 'login' && <NetStrip />}{v !== 'login' && <Topbar shopPub={pub} profile={profile} steps={steps} onLogout={() => {}} posUrl={shop.posUrl} onPin={() => {}} onPhoto={() => {}} onTheme={() => {}} />}{body}</ToastProvider>);

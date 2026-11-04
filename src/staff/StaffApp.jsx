@@ -9,6 +9,7 @@ import Ledger from './Ledger.jsx';
 import Reports from './Reports.jsx';
 import Setup from './Setup.jsx';
 import Safes from './Safes.jsx';
+import { NetStrip, ThemePicker, useTheme } from '../theme.jsx';
 
 export default function StaffApp({ profile }) {
   const isAdmin = profile.role === 'admin';
@@ -22,6 +23,8 @@ export default function StaffApp({ profile }) {
     isAdmin && { id: 'setup', label: 'الإعداد' },
   ].filter(Boolean);
   const [tab, setTab] = useState(tabs[0].id);
+  const [theme, setTheme] = useTheme(profile);
+  const [themeOpen, setThemeOpen] = useState(false);
   // The branch chosen at the top applies to every tab. 'all' = every branch.
   const [shopSel, setShopSelRaw] = useState(() => { try { return sessionStorage.getItem('mdq-staff-shop') || null; } catch { return null; } });
   const setShopSel = (v) => { setShopSelRaw(v); try { if (v) sessionStorage.setItem('mdq-staff-shop', v); else sessionStorage.removeItem('mdq-staff-shop'); } catch { /* ignore */ } };
@@ -58,6 +61,8 @@ export default function StaffApp({ profile }) {
 
   return (
     <div>
+      <NetStrip />
+      {themeOpen && <ThemePicker value={theme} onChange={setTheme} onClose={() => setThemeOpen(false)} />}
       <header className="topbar">
         <div className="topbar-in">
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -72,6 +77,7 @@ export default function StaffApp({ profile }) {
               <Avatar name={profile.name} photo={profile.photo} color={profile.color || '#4CC3FF'} size={46} />
               <span className="stack" style={{ gap: 0 }}><strong style={{ fontSize: 15 }}>{profile.name}</strong><span className="tiny muted">{ROLE_LABEL[profile.role]}</span></span>
             </span>
+            <button type="button" className="icon-btn" aria-label="غيّر شكل التطبيق" title="غيّر شكل التطبيق" onClick={() => setThemeOpen(true)}><Icon d="palette" /></button>
             <button type="button" className="icon-btn" aria-label="تسجيل خروج" title="تسجيل خروج" onClick={() => signOut(auth)}><Icon d="logout" /></button>
           </div>
         </div>

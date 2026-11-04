@@ -94,15 +94,15 @@ export function allOpen(shop) {
 export const WEEKDAYS = ['الأحد', 'الاتنين', 'التلات', 'الأربع', 'الخميس', 'الجمعة', 'السبت'];
 
 export const ENTRY_TYPES = {
-  expense: { label: 'مصروف', color: '#FF7A1A', sign: -1 },
-  income: { label: 'إيراد', color: '#B6F000', sign: 1 },
-  transfer: { label: 'تحويل محفظة', color: '#A07CFF', sign: 1 },
-  topup: { label: 'شحن رصيد مكنة', color: '#FFC800', sign: -1 },
-  move: { label: 'نقل بين الدرجين', color: '#4CC3FF', sign: 0 },
-  liquidate: { label: 'تسييل / تحويل', color: '#4CC3FF', sign: 0 },
-  withdraw: { label: 'سحب لصاحب المحل', color: '#FF7EB0', sign: -1 },
-  xfer_out: { label: 'فلوس لكاشير تاني', color: '#4CC3FF', sign: -1 },
-  xfer_in: { label: 'فلوس من كاشير تاني', color: '#B6F000', sign: 1 },
+  expense: { label: 'مصروف', color: 'var(--orange)', sign: -1 },
+  income: { label: 'إيراد', color: 'var(--lime)', sign: 1 },
+  transfer: { label: 'تحويل محفظة', color: 'var(--violet)', sign: 1 },
+  topup: { label: 'شحن رصيد مكنة', color: 'var(--yellow)', sign: -1 },
+  move: { label: 'نقل بين الدرجين', color: 'var(--sky)', sign: 0 },
+  liquidate: { label: 'تسييل / تحويل', color: 'var(--sky)', sign: 0 },
+  withdraw: { label: 'سحب لصاحب المحل', color: 'var(--pink)', sign: -1 },
+  xfer_out: { label: 'فلوس لكاشير تاني', color: 'var(--sky)', sign: -1 },
+  xfer_in: { label: 'فلوس من كاشير تاني', color: 'var(--lime)', sign: 1 },
 };
 
 export const SRC_LABEL = { drawer: 'درج الكاشير', side: 'الدرج الجانبي', insta: 'انستاباي', vf: 'فودافون كاش', 'out:owner': 'صاحب المحل' };
