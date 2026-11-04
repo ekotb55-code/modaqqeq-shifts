@@ -229,9 +229,16 @@ img { max-width: 100%; }
   .steps button { height: 36px; }
   .steps .n { width: 24px; height: 24px; }
   /* dashboard */
-  .hero { min-height: 0; gap: 12px; }
-  .hero .avatar { width: 54px !important; height: 54px !important; }
-  .hero .avatar svg { width: 46px; height: 46px; }
+  .hero { min-height: 0; gap: 12px; padding: 16px !important; }
+  .hero > .spread:first-child { flex-wrap: nowrap; gap: 10px; align-items: center !important; }
+  .hero > .spread:first-child > div:first-child { min-width: 0; flex: 1 1 auto; gap: 8px !important; }
+  .hero h1 { font-size: 18px !important; }
+  .hero > .spread:first-child .soft { font-size: 12px !important; }
+  .net { width: 44% !important; flex: 0 0 44%; }
+  .net > span:nth-child(2) > span:first-child { font-size: 22px !important; }
+  .net .tiny { display: none; }
+  .hero .avatar { width: 44px !important; height: 44px !important; }
+  .hero .avatar svg { width: 38px; height: 38px; }
   .net { padding: 8px 12px; gap: 2px; }
   .net svg { height: 30px; }
   .hero .btn { height: 48px !important; font-size: 15px !important; padding: 0 16px; }
@@ -303,3 +310,11 @@ img { max-width: 100%; }
 .alert.warn { background: #FFE3A3; }
 .alert.bad { background: #FFD6D6; }
 .alert.ok { background: #E2FAB0; }
+
+/* Small phones: shrink everything a bit so the whole layout fits without zooming out. */
+@media (max-width: 440px) {
+  body { zoom: 0.88; }
+}
+@media (max-width: 370px) {
+  body { zoom: 0.8; }
+}
