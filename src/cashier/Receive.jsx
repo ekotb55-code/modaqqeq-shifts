@@ -1,0 +1,106 @@
+import { useMemo, useState } from 'react';
+import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { db } from '../firebase';
+import { Icon, useToast } from '../ui.jsx';
+import { billsTotal, emptyBills, fmt, num, pickImage, timeStr, todayKey } from '../lib';
+import { Bills, MachineRows, SideBox } from './parts.jsx';
+
+export default function Receive({ shop, profile, onStarted }) {
+  const toast = useToast();
+  const last = shop.lastHandover || null;
+  const machines = shop.machines || [];
+
+  const prevBills = useMemo(() => (last && last.keepDrawer !== 'shop' ? { ...emptyBills(), ...last.bills } : emptyBills()), [last]);
+  const prevSide = last && last.keepSide !== 'shop' ? num(last.side) : 0;
+  const prevMachines = machines.map((m) => {
+    const f = (last?.machines || []).find((x) => x.machine === m.machine && x.account === m.account);
+    return f ? String(f.value ?? '') : '';
+  });
+
+  const [bills, setBills] = useState(prevBills);
+  const [side, setSide] = useState(String(prevSide));
+  const [mvals, setMvals] = useState(prevMachines);
+  const [photos, setPhotos] = useState({});
+  const [busy, setBusy] = useState(false);
+
+  const changed = Object.keys(bills).filter((f) => num(bills[f]) !== num(prevBills[f])).length;
+  const sideChanged = num(side) !== prevSide;
+  const mChanged = mvals.filter((v, i) => num(v) !== num(prevMachines[i])).length;
+
+  const addPhoto = async (i) => {
+    const data = await pickImage(1000, 0.65);
+    if (data) { setPhotos((p) => ({ ...p, [i]: data })); toast('الصورة اترفعت · كمّل عادي'); }
+  };
+
+  const confirm = async () => {
+    setBusy(true);
+    try {
+      const shiftRef = doc(collection(db, 'shifts'));
+      const now = new Date();
+      const receive = {
+        bills: Object.fromEntries(Object.entries(bills).map(([k, v]) => [k, num(v)])),
+        drawerTotal: billsTotal(bills),
+        side: num(side),
+        machines: machines.map((m, i) => ({ ...m, value: num(mvals[i]), photo: !!photos[i] })),
+        prevShiftId: last?.shiftId || null,
+        prevCashier: last?.cashierName || null,
+        prevDrawerTotal: billsTotal(prevBills),
+        prevSide,
+        diffFromPrev: changed > 0 || sideChanged || mChanged > 0,
+      };
+      const b = writeBatch(db);
+      b.set(shiftRef, {
+        shopId: shop.id, cashierUid: profile.id, cashierName: profile.name, status: 'open',
+        day: todayKey(now), month: todayKey(now).slice(0, 7), openedAt: serverTimestamp(), openedAtLocal: now.toISOString(), receive,
+      });
+      b.update(doc(db, 'shops', shop.id), { openShift: { id: shiftRef.id, cashierUid: profile.id, cashierName: profile.name, openedAt: now.toISOString() } });
+      const p = b.commit();
+      // Photos go after the shift so the security rules can see who owns it.
+      p.then(() => Promise.all(Object.entries(photos).map(([i, data]) => {
+        const pb = writeBatch(db);
+        pb.set(doc(collection(db, 'shifts', shiftRef.id, 'photos')), { kind: 'machine', stage: 'receive', label: `${machines[i].machine} · ${machines[i].account}`, data, check: 'pending', createdAt: serverTimestamp() });
+        return pb.commit();
+      }))).catch(() => {});
+      if (!navigator.onLine) toast('اتحفظ على الجهاز وهيترفع لما النت يرجع');
+      else { await p; toast('اتأكد الاستلام · الوردية بدأت'); }
+      onStarted();
+    } catch (e) {
+      console.error(e);
+      toast('حصلت مشكلة، جرّب تاني', 'err');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="wrap">
+      <div className="stack" style={{ gap: 4 }}>
+        <h1 className="title">استلم الوردية</h1>
+        <span className="sub">
+          {last ? <>الأرقام دي من تسليم {last.cashierName} الساعة {timeStr(last.at)}. لو تمام دوس «تمام، استلمت»، ولو في فرق عدّله وهيتسجل.</> : 'دي أول وردية في المحل. عدّ الدرج واكتب الأرقام.'}
+        </span>
+      </div>
+      <div className="row">
+        <section className="card grow" style={{ gap: 16 }}>
+          <div className="spread">
+            <h2 className="h2"><span className="dot" style={{ background: 'var(--orange)' }} />درج الكاشير</h2>
+            <span className="big-num">{fmt(billsTotal(bills))}<small> ج</small></span>
+          </div>
+          <Bills bills={bills} setBills={setBills} orig={last ? prevBills : null} />
+        </section>
+        <div className="side">
+          <SideBox value={side} setValue={setSide} hint={sideChanged && last ? `اتعدّل · كان ${fmt(prevSide)} ج` : 'المبلغ كله · من غير فئات'} />
+          <section className="card">
+            <h2 className="h2"><span className="dot" style={{ background: 'var(--yellow)' }} />أرصدة المكن</h2>
+            <span className="tiny muted">عدّل الرقم لو مختلف، وصوّر شاشة المكنة. المراجعة بتحصل لوحدها في الخلفية.</span>
+            <MachineRows machines={machines} values={mvals} setValues={setMvals} photos={photos} onPhoto={addPhoto} />
+          </section>
+          <button type="button" className="btn full" style={{ height: 66, fontSize: 20 }} onClick={confirm} disabled={busy}>
+            <span className="ic"><Icon d="check" size={18} stroke={3} /></span>{busy ? 'لحظة…' : 'تمام، استلمت'}
+          </button>
+          <span className="small muted" style={{ textAlign: 'center' }}>
+            {changed || sideChanged || mChanged ? `عدّلت ${changed + (sideChanged ? 1 : 0) + mChanged} رقم · هيتسجل فرق في الاستلام ويوصل للمحاسب` : last ? `كل الأرقام زي ما ${last.cashierName} سلّمها` : ''}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}

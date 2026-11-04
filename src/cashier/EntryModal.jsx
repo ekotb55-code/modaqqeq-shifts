@@ -1,0 +1,253 @@
+import { useMemo, useState } from 'react';
+import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { db } from '../firebase';
+import { Icon, Modal, useToast } from '../ui.jsx';
+import { ENTRY_TYPES, SRC_LABEL, WEEKDAYS, fmt, num, pickImage } from '../lib';
+
+const META = {
+  expense: { title: 'مصروف جديد', icon: 'up' },
+  income: { title: 'إيراد جديد', icon: 'down' },
+  transfer: { title: 'تحويل محفظة', icon: 'phone' },
+  topup: { title: 'شحن رصيد مكنة', icon: 'bolt' },
+  move: { title: 'نقل للدرج الجانبي', icon: 'swap' },
+  withdraw: { title: 'سحب لصاحب المحل', icon: 'person' },
+};
+
+function Chip({ on, onClick, children }) {
+  return <button type="button" className={'chip' + (on ? ' on' : '')} onClick={onClick}>{children}</button>;
+}
+
+export default function EntryModal({ type, shop, shift, profile, onClose }) {
+  const toast = useToast();
+  const kinds = useMemo(() => { const staff = shop.staff || []; return [
+    { id: 'supplier', label: 'مورد', icon: 'truck', q: 'مين المورد؟', subs: shop.suppliers || [], allowNew: 'مورد جديد' },
+    { id: 'advance', label: 'سلفة موظف', icon: 'person', q: 'لمين السلفة؟', subs: staff, allowNew: 'اسم تاني' },
+    { id: 'shop', label: 'مصروف محل', icon: 'shop', q: 'المصروف ده على إيه؟', subs: shop.shopExpenses || [], allowNew: 'نوع جديد' },
+    { id: 'wage', label: 'يومية / مرتب', icon: 'cash', q: 'لمين؟', subs: staff, allowNew: 'اسم تاني' },
+    { id: 'refund', label: 'مرتجع لعميل', icon: 'undo', q: '', subs: [] },
+    { id: 'other', label: 'حاجة تانية', icon: 'dots', q: '', subs: [] },
+  ]; }, [shop]);
+
+  const [src, setSrc] = useState(type === 'income' ? 'side' : 'drawer');
+  const [kind, setKind] = useState('supplier');
+  const [sub, setSub] = useState('');
+  const [custom, setCustom] = useState('');
+  const [invoice, setInvoice] = useState('invoice');
+  const [reason, setReason] = useState('');
+  const [wallet, setWallet] = useState('insta');
+  const [machine, setMachine] = useState('');
+  const [note, setNote] = useState('');
+  const [amount, setAmount] = useState('');
+  const [photo, setPhoto] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const kd = kinds.find((k) => k.id === kind);
+  const reasons = shop.incomeReasons || [];
+  const today = new Date().getDay();
+  const advanceDays = shop.advanceDays || [];
+  const advanceBlocked = type === 'expense' && kind === 'advance' && advanceDays.length > 0 && !advanceDays.includes(today);
+  const needsPhoto = type === 'transfer' || (type === 'expense' && kind === 'supplier' && invoice === 'invoice');
+  const machineNames = [...new Set((shop.machines || []).map((m) => m.machine))];
+
+  const subValue = sub === '__new' ? custom.trim() : sub;
+  const reasonValue = reason === '__new' ? custom.trim() : reason;
+
+  const takePhoto = async () => {
+    const data = await pickImage(1100, 0.65);
+    if (data) setPhoto(data);
+  };
+
+  const validate = () => {
+    if (num(amount) <= 0) return 'اكتب المبلغ';
+    if (advanceBlocked) return 'النهارده مش يوم سلف';
+    if (type === 'expense' && kd.subs !== undefined && kd.q && !subValue) return kd.q;
+    if (type === 'expense' && ['refund', 'other'].includes(kind) && !note.trim()) return kind === 'refund' ? 'اكتب رقم فاتورة البيع' : 'اكتب المصروف ده إيه';
+    if (type === 'income' && !reasonValue) return 'اختار سبب الإيراد';
+    if (type === 'topup' && !machine) return 'اختار المكنة';
+    if (needsPhoto && !photo) return type === 'transfer' ? 'لازم ترفع صورة التحويل' : 'صوّر الفاتورة';
+    return null;
+  };
+
+  const save = async (print) => {
+    const err = validate();
+    if (err) { toast(err, 'err'); return; }
+    setBusy(true);
+    const now = new Date();
+    const entry = {
+      type, amount: num(amount), by: profile.id, byName: profile.name,
+      createdAt: serverTimestamp(), createdAtLocal: now.toISOString(), posted: false,
+    };
+    if (type === 'expense') Object.assign(entry, { src, kind, kindLabel: kd.label, sub: subValue || '', note: note.trim(), invoice: kind === 'supplier' ? invoice : null, newItem: sub === '__new' });
+    if (type === 'income') Object.assign(entry, { src, reason: reasonValue, note: note.trim(), newItem: reason === '__new' });
+    if (type === 'transfer') Object.assign(entry, { wallet, src: wallet });
+    if (type === 'topup') Object.assign(entry, { src, machine });
+    if (type === 'move') Object.assign(entry, { src: 'drawer', to: 'side' });
+    if (type === 'withdraw') Object.assign(entry, { src, note: note.trim() });
+    try {
+      const b = writeBatch(db);
+      const eref = doc(collection(db, 'shifts', shift.id, 'entries'));
+      if (photo) {
+        const pref = doc(collection(db, 'shifts', shift.id, 'photos'));
+        entry.photoId = pref.id;
+        b.set(pref, { kind: type === 'transfer' ? 'transfer' : 'invoice', entryId: eref.id, label: type === 'transfer' ? SRC_LABEL[wallet] : subValue, amount: num(amount), data: photo, check: 'pending', createdAt: serverTimestamp() });
+      }
+      b.set(eref, entry);
+      const p = b.commit();
+      if (navigator.onLine) await p; else p.catch(() => {});
+      if (print) printReceipt({ shop, profile, entry, title: META[type].title });
+      toast(navigator.onLine ? (print ? 'اتسجل والإيصال بيتطبع' : 'اتسجل') : 'اتحفظ وهيترفع لما النت يرجع');
+      onClose();
+    } catch (e) {
+      console.error(e);
+      toast('حصلت مشكلة، جرّب تاني', 'err');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title={META[type].title} icon={META[type].icon} color={ENTRY_TYPES[type].color} onClose={onClose}>
+      {['expense', 'income', 'topup', 'withdraw'].includes(type) && (
+        <div className="stack">
+          <span className="small muted">{type === 'income' ? 'الفلوس داخلة فين؟' : 'الفلوس طالعة منين؟'}</span>
+          <div className="chips">
+            <Chip on={src === 'drawer'} onClick={() => setSrc('drawer')}>درج الكاشير</Chip>
+            <Chip on={src === 'side'} onClick={() => setSrc('side')}>الدرج الجانبي</Chip>
+          </div>
+        </div>
+      )}
+
+      {type === 'expense' && (
+        <>
+          <div className="stack">
+            <span className="small muted">نوع المصروف</span>
+            <div className="grid3">
+              {kinds.map((k) => (
+                <button key={k.id} type="button" className={'tile-opt' + (kind === k.id ? ' on' : '')} onClick={() => { setKind(k.id); setSub(''); setCustom(''); setNote(''); setPhoto(null); }}>
+                  <Icon d={k.icon} />{k.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {kd.q && (
+            <div className="stack" style={{ background: '#F7F6FB', borderRadius: 22, padding: '12px 14px' }}>
+              <span className="spread"><span className="small muted">{kd.q}</span>
+                {kind === 'advance' && advanceDays.length > 0 && <span className={'badge ' + (advanceBlocked ? 'bad' : 'ok')}>{advanceBlocked ? `السلف أيام: ${advanceDays.map((d) => WEEKDAYS[d]).join('، ')}` : 'النهارده يوم سلف'}</span>}
+              </span>
+              <div className="chips">
+                {kd.subs.map((x) => <button key={x} type="button" className={'chip sm' + (sub === x ? ' on' : '')} onClick={() => setSub(x)}>{x}</button>)}
+                {kd.allowNew && <button type="button" className={'chip sm' + (sub === '__new' ? ' on' : '')} onClick={() => setSub('__new')}>+ {kd.allowNew}</button>}
+              </div>
+              {sub === '__new' && <input className="input white" placeholder="اكتب الاسم" value={custom} onChange={(e) => setCustom(e.target.value)} autoFocus />}
+            </div>
+          )}
+          {kind === 'supplier' && (
+            <div className="chips">
+              <button type="button" className={'chip' + (invoice === 'invoice' ? ' on' : '')} style={{ flex: '1 1 200px', height: 58 }} onClick={() => setInvoice('invoice')}>فاتورة · هتصورها وتتبعت للدعم</button>
+              <button type="button" className={'chip' + (invoice === 'supply' ? ' on' : '')} style={{ flex: '1 1 200px', height: 58 }} onClick={() => { setInvoice('supply'); setPhoto(null); }}>توريد من غير فاتورة</button>
+            </div>
+          )}
+          {['refund', 'other'].includes(kind) && (
+            <label className="field">{kind === 'refund' ? 'رقم فاتورة البيع' : 'اكتب المصروف ده إيه'}
+              <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={kind === 'refund' ? 'مثلًا 10452' : 'مثلًا تصليح التلاجة'} />
+            </label>
+          )}
+        </>
+      )}
+
+      {type === 'income' && (
+        <div className="stack" style={{ background: '#F7F6FB', borderRadius: 22, padding: '12px 14px' }}>
+          <span className="small muted">سبب الإيراد</span>
+          <div className="chips">
+            {reasons.map((x) => <button key={x} type="button" className={'chip sm' + (reason === x ? ' on' : '')} onClick={() => setReason(x)}>{x}</button>)}
+            <button type="button" className={'chip sm' + (reason === '__new' ? ' on' : '')} onClick={() => setReason('__new')}>+ سبب تاني</button>
+          </div>
+          {reason === '__new' && <input className="input white" placeholder="اكتب السبب" value={custom} onChange={(e) => setCustom(e.target.value)} autoFocus />}
+        </div>
+      )}
+
+      {type === 'transfer' && (
+        <div className="stack">
+          <span className="small muted">العميل حوّل على</span>
+          <div className="chips">
+            <Chip on={wallet === 'insta'} onClick={() => setWallet('insta')}>انستاباي</Chip>
+            <Chip on={wallet === 'vf'} onClick={() => setWallet('vf')}>فودافون كاش</Chip>
+          </div>
+        </div>
+      )}
+
+      {type === 'topup' && (
+        <div className="stack">
+          <span className="small muted">شحنت أنهي مكنة؟ (المبلغ اللي دفعته للمندوب)</span>
+          <div className="chips">{machineNames.map((m) => <Chip key={m} on={machine === m} onClick={() => setMachine(m)}>{m}</Chip>)}</div>
+        </div>
+      )}
+
+      {type === 'move' && <span className="small muted">الفلوس هتطلع من درج الكاشير وتدخل الجانبي. ده مش بيأثر على الإجمالي.</span>}
+      {type === 'withdraw' && (
+        <label className="field">ملاحظة (اختياري)<input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="مثلًا أ. سامح خد إيراد الضهر" /></label>
+      )}
+
+      {needsPhoto && (
+        <div className="stack">
+          {photo ? (
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <img src={photo} alt="الصورة" style={{ width: 84, height: 110, objectFit: 'cover', borderRadius: 14 }} />
+              <div className="stack">
+                <span className="badge ok">✓ الصورة اترفعت</span>
+                <span className="tiny muted">{type === 'transfer' ? 'هتتراجع على المبلغ واسم المستلم ورقم العملية' : 'هتوصل للدعم مع المصروف'}</span>
+                <button type="button" className="link" style={{ alignSelf: 'flex-start', padding: 0 }} onClick={takePhoto}>غيّر الصورة</button>
+              </div>
+            </div>
+          ) : (
+            <button type="button" onClick={takePhoto} style={{ height: 80, borderRadius: 24, border: '2px dashed var(--violet)', background: '#F7F3FF', fontSize: 15, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+              <Icon d="cam" size={24} stroke={2} />{type === 'transfer' ? 'ارفع صورة التحويل (إجباري)' : 'صوّر الفاتورة'}
+            </button>
+          )}
+        </div>
+      )}
+
+      <label className="amount-box">
+        <span className="small muted">المبلغ</span>
+        <span style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          <input inputMode="decimal" placeholder="0" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus={type !== 'expense'} />
+          <span className="muted" style={{ fontSize: 17 }}>جنيه</span>
+        </span>
+      </label>
+
+      {type === 'expense' ? (
+        <>
+          <button type="button" className="btn full" onClick={() => save(true)} disabled={busy}><Icon d="print" />حفظ وطباعة إيصال</button>
+          <button type="button" className="link" onClick={() => save(false)} disabled={busy}>حفظ من غير طباعة</button>
+        </>
+      ) : (
+        <button type="button" className="btn full" onClick={() => save(false)} disabled={busy}>{busy ? 'لحظة…' : 'حفظ'}</button>
+      )}
+    </Modal>
+  );
+}
+
+function printReceipt({ shop, profile, entry, title }) {
+  let el = document.getElementById('receipt');
+  if (!el) { el = document.createElement('div'); el.id = 'receipt'; el.className = 'receipt'; document.body.appendChild(el); }
+  const now = new Date();
+  const line = [entry.kindLabel, entry.sub, entry.note].filter(Boolean).join(' · ');
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  el.innerHTML = `
+    <div style="text-align:center;font-family:Alexandria,sans-serif">
+      <img src="./modaqqeq-logo.png" alt="" />
+      <div style="font-weight:700;margin:4px 0">${esc(shop.name || '')}</div>
+      <div>${esc(title)}</div>
+      <hr />
+      <div style="font-size:16pt;font-weight:800">${fmt(entry.amount)} ج</div>
+      <div>${esc(line)}</div>
+      <div>من: ${esc(SRC_LABEL[entry.src] || '')}</div>
+      <hr />
+      <div>الكاشير: ${esc(profile.name)}</div>
+      <div>${now.toLocaleString('ar-EG')}</div>
+      <div style="margin-top:10mm">توقيع المستلم: ..................</div>
+    </div>`;
+  document.body.classList.add('print-receipt');
+  const done = () => { document.body.classList.remove('print-receipt'); window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  setTimeout(() => { window.print(); setTimeout(done, 1000); }, 50);
+}

@@ -1,0 +1,78 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isSuper() { return signedIn() && request.auth.token.email in ['ekotb55@gmail.com', 'ekotb555@gmail.com']; }
+    function profilePath() { return /databases/$(database)/documents/users/$(request.auth.uid); }
+    function hasProfile() { return signedIn() && exists(profilePath()); }
+    function me() { return get(profilePath()).data; }
+    function isAdmin() { return isSuper() || (hasProfile() && me().role == 'admin'); }
+    function inShop(shopId) { return hasProfile() && shopId in me().shopIds; }
+    function staffOf(shopId) {
+      return isAdmin() || (inShop(shopId) && me().role in ['reviewer', 'accountant', 'manager', 'owner']);
+    }
+    function reviewerOf(shopId) {
+      return isAdmin() || (inShop(shopId) && me().role in ['reviewer', 'accountant']);
+    }
+    function shiftData(shiftId) { return get(/databases/$(database)/documents/shifts/$(shiftId)).data; }
+
+    // Shop name, logo and cashier list — needed on the shop device before anyone signs in.
+    match /shopsPublic/{shopId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /shops/{shopId} {
+      allow read: if isAdmin() || inShop(shopId);
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin()
+        || (inShop(shopId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['openShift', 'lastHandover']));
+    }
+
+    match /users/{uid} {
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
+      allow write: if isAdmin();
+    }
+
+    match /shifts/{shiftId} {
+      allow read: if staffOf(resource.data.shopId) || (signedIn() && resource.data.cashierUid == request.auth.uid);
+      allow create: if inShop(request.resource.data.shopId)
+        && request.resource.data.cashierUid == request.auth.uid
+        && request.resource.data.status == 'open';
+      allow update: if reviewerOf(resource.data.shopId)
+        || (signedIn() && resource.data.cashierUid == request.auth.uid && resource.data.status == 'open'
+            && request.resource.data.cashierUid == request.auth.uid
+            && request.resource.data.status in ['open', 'submitted']);
+      allow delete: if isAdmin();
+
+      match /entries/{entryId} {
+        allow read: if staffOf(shiftData(shiftId).shopId) || shiftData(shiftId).cashierUid == request.auth.uid;
+        allow create: if signedIn() && shiftData(shiftId).cashierUid == request.auth.uid && shiftData(shiftId).status == 'open';
+        allow update, delete: if reviewerOf(shiftData(shiftId).shopId);
+      }
+
+      match /photos/{photoId} {
+        allow read: if staffOf(shiftData(shiftId).shopId) || shiftData(shiftId).cashierUid == request.auth.uid;
+        allow create: if signedIn() && shiftData(shiftId).cashierUid == request.auth.uid;
+        allow update, delete: if reviewerOf(shiftData(shiftId).shopId);
+      }
+    }
+
+    // Sales numbers live here so the cashier never sees them.
+    match /reviews/{shiftId} {
+      allow read: if signedIn() && (resource == null || staffOf(resource.data.shopId));
+      allow create: if reviewerOf(request.resource.data.shopId);
+      allow update: if reviewerOf(resource.data.shopId);
+      allow delete: if isAdmin();
+    }
+
+    // Shortages (عجز) and overages (زيادة) per cashier.
+    match /ledger/{id} {
+      allow read: if staffOf(resource.data.shopId) || (signedIn() && resource.data.cashierUid == request.auth.uid);
+      allow create: if reviewerOf(request.resource.data.shopId);
+      allow update: if reviewerOf(resource.data.shopId);
+      allow delete: if isAdmin();
+    }
+  }
+}
