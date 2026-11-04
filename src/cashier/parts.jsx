@@ -42,7 +42,7 @@ export function Topbar({ shopPub, profile, steps, onLogout, posUrl, onPin, onPho
   );
 }
 
-export function Bills({ bills, setBills, orig }) {
+export function Bills({ bills, setBills, orig, noSteppers }) {
   const set = (f, v) => setBills({ ...bills, [f]: Math.max(0, Math.floor(num(v))) });
   return (
     <div className="bills">
@@ -53,10 +53,10 @@ export function Bills({ bills, setBills, orig }) {
           <div key={f} className="bill" style={{ background: BILL_BG[i] }}>
             {changed && <span className="changed-tag">اتعدّل</span>}
             <span className="face">{f}</span>
-            <span className="stepper">
-              <button type="button" aria-label={`قلل فئة ${f}`} onClick={() => set(f, c - 1)}>−</button>
+            <span className={'stepper' + (noSteppers ? ' bare' : '')}>
+              {!noSteppers && <button type="button" aria-label={`قلل فئة ${f}`} onClick={() => set(f, c - 1)}>−</button>}
               <input inputMode="numeric" aria-label={`عدد فئة ${f}`} value={c} onChange={(e) => set(f, e.target.value)} onFocus={(e) => e.target.select()} />
-              <button type="button" className="plus" aria-label={`زود فئة ${f}`} onClick={() => set(f, c + 1)}>+</button>
+              {!noSteppers && <button type="button" className="plus" aria-label={`زود فئة ${f}`} onClick={() => set(f, c + 1)}>+</button>}
             </span>
             <span className="small">= {fmt(f * c)} ج</span>
           </div>

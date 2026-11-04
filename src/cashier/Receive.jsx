@@ -119,7 +119,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
             <h2 className="h2"><span className="dot" style={{ background: 'var(--orange)' }} />درج الكاشير</h2>
             <span className="big-num">{fmt(billsTotal(bills))}<small> ج</small></span>
           </div>
-          <Bills bills={bills} setBills={setBills} orig={last ? prevBills : null} />
+          <Bills bills={bills} setBills={setBills} orig={last ? prevBills : null} noSteppers />
         </section>
         <div className="side">
           {!shop.noSide && <SideBox value={side} setValue={setSide} hint={sideChanged && last ? `اتعدّل · كان ${fmt(prevSide)} ج` : 'المبلغ كله · من غير فئات'} />}
