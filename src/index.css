@@ -212,6 +212,24 @@ img { max-width: 100%; }
 }
 
 @media (max-width: 700px) {
+  body { padding-bottom: env(safe-area-inset-bottom); }
+  .login-art { display: none; }
+  .login { min-height: 100svh; }
+  .topbar-in { gap: 10px; }
+  .steps { order: 3; width: 100%; justify-content: space-between; overflow-x: auto; }
+  .steps button { padding: 0 10px 0 4px; font-size: 13px; }
+  .tabs { width: 100%; overflow-x: auto; flex-wrap: nowrap; }
+  .tabs button { white-space: nowrap; }
+  .tile { min-height: 140px; padding: 18px; }
+  .tile .t { font-size: 26px; }
+  .hero { padding: 20px; border-radius: 28px; }
+  .counter .v { font-size: 24px; }
+  .bill { flex-basis: 100px; padding: 10px 6px; }
+  .bill .face { font-size: 26px; }
+  .modal { padding: 18px; border-radius: 26px; }
+  .overlay { padding: 12px 10px; }
+  .pos-link { height: 42px; font-size: 13px; }
+  .vsep { display: none; }
   .wrap { padding: 16px 16px 40px; }
   .topbar-in { padding: 10px 16px; }
   .title { font-size: 26px; }

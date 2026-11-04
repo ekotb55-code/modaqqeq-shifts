@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, Modal, useToast } from '../ui.jsx';
-import { ENTRY_TYPES, SRC_LABEL, WEEKDAYS, fmt, num, pickImage } from '../lib';
+import { ENTRY_TYPES, OWNER, SRC_LABEL, WEEKDAYS, fmt, num, pickImage, safeLabel, shopSafes } from '../lib';
 
 const META = {
   expense: { title: 'مصروف جديد', icon: 'up' },
@@ -10,14 +10,31 @@ const META = {
   transfer: { title: 'تحويل محفظة', icon: 'phone' },
   topup: { title: 'شحن رصيد مكنة', icon: 'bolt' },
   move: { title: 'نقل بين الدرجين', icon: 'swap' },
+  liquidate: { title: 'تسييل وتحويل', icon: 'swap' },
   withdraw: { title: 'سحب لصاحب المحل', icon: 'person' },
 };
+
+function SafePick({ safes, value, onPick, balances, exclude }) {
+  return (
+    <div className="chips">
+      {safes.filter((x) => x.key !== exclude).map((x) => {
+        const b = balances?.[x.key];
+        return (
+          <button key={x.key} type="button" className={'chip' + (value === x.key ? ' on' : '')} onClick={() => onPick(x.key)} style={{ height: 'auto', minHeight: 46, padding: '6px 16px', display: 'inline-flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1.35 }}>
+            <span>{x.label}</span>
+            {b !== undefined && b !== null && <span style={{ fontSize: 12, fontWeight: 500, opacity: 0.85 }}>رصيد {fmt(b)}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function Chip({ on, onClick, children }) {
   return <button type="button" className={'chip' + (on ? ' on' : '')} onClick={onClick}>{children}</button>;
 }
 
-export default function EntryModal({ type, shop, shift, profile, onClose }) {
+export default function EntryModal({ type, shop, shift, profile, onClose, balances }) {
   const toast = useToast();
   const kinds = useMemo(() => { const staff = shop.staff || []; return [
     { id: 'supplier', label: 'مورد', icon: 'truck', q: 'مين المورد؟', subs: shop.suppliers || [], allowNew: 'مورد جديد' },
@@ -37,6 +54,11 @@ export default function EntryModal({ type, shop, shift, profile, onClose }) {
   const [wallet, setWallet] = useState('insta');
   const [machine, setMachine] = useState('');
   const [moveTo, setMoveTo] = useState('side');
+  const [liqTo, setLiqTo] = useState('');
+  const allSafes = shopSafes(shop);
+  const cashSafes = allSafes.filter((x) => x.kind === 'cash');
+  const machineSafes = allSafes.filter((x) => x.kind === 'machine');
+  const liqTargets = [...allSafes, { key: OWNER, label: 'صاحب المحل / المحفظة' }];
   const [note, setNote] = useState('');
   const [amount, setAmount] = useState('');
   const [photo, setPhoto] = useState(null);
@@ -48,7 +70,6 @@ export default function EntryModal({ type, shop, shift, profile, onClose }) {
   const advanceDays = shop.advanceDays || [];
   const advanceBlocked = type === 'expense' && kind === 'advance' && advanceDays.length > 0 && !advanceDays.includes(today);
   const needsPhoto = type === 'transfer' || (type === 'expense' && kind === 'supplier' && invoice === 'invoice');
-  const machineNames = [...new Set((shop.machines || []).map((m) => m.machine))];
 
   const subValue = sub === '__new' ? custom.trim() : sub;
   const reasonValue = reason === '__new' ? custom.trim() : reason;
@@ -65,6 +86,8 @@ export default function EntryModal({ type, shop, shift, profile, onClose }) {
     if (type === 'expense' && ['refund', 'other'].includes(kind) && !note.trim()) return kind === 'refund' ? 'اكتب رقم فاتورة البيع' : 'اكتب المصروف ده إيه';
     if (type === 'income' && !reasonValue) return 'اختار سبب الإيراد';
     if (type === 'topup' && !machine) return 'اختار المكنة';
+    if (type === 'liquidate' && !liqTo) return 'اختار الفلوس رايحة فين';
+    if (type === 'liquidate' && liqTo === src) return 'اختار خزنة تانية';
     if (needsPhoto && !photo) return type === 'transfer' ? 'لازم ترفع صورة التحويل' : 'صوّر الفاتورة';
     return null;
   };
@@ -81,7 +104,8 @@ export default function EntryModal({ type, shop, shift, profile, onClose }) {
     if (type === 'expense') Object.assign(entry, { src, kind, kindLabel: kd.label, sub: subValue || '', note: note.trim(), invoice: kind === 'supplier' ? invoice : null, newItem: sub === '__new' });
     if (type === 'income') Object.assign(entry, { src, reason: reasonValue, note: note.trim(), newItem: reason === '__new' });
     if (type === 'transfer') Object.assign(entry, { wallet, src: wallet });
-    if (type === 'topup') Object.assign(entry, { src, machine });
+    if (type === 'topup') { const mm = machineSafes.find((x) => x.key === machine); Object.assign(entry, { src, machineKey: machine, machine: mm?.m?.machine || '', account: mm?.m?.account || '' }); }
+    if (type === 'liquidate') Object.assign(entry, { src, to: liqTo, note: note.trim(), fromLabel: safeLabel(src, shop), toLabel: safeLabel(liqTo, shop) });
     if (type === 'move') Object.assign(entry, { src: moveTo === 'side' ? 'drawer' : 'side', to: moveTo });
     if (type === 'withdraw') Object.assign(entry, { src, note: note.trim() });
     try {
@@ -107,13 +131,24 @@ export default function EntryModal({ type, shop, shift, profile, onClose }) {
 
   return (
     <Modal title={META[type].title} icon={META[type].icon} color={ENTRY_TYPES[type].color} onClose={onClose}>
-      {['expense', 'income', 'topup', 'withdraw'].includes(type) && (
+      {['income', 'topup', 'withdraw'].includes(type) && (
         <div className="stack">
           <span className="small muted">{type === 'income' ? 'الفلوس داخلة فين؟' : 'الفلوس طالعة منين؟'}</span>
-          <div className="chips">
-            <Chip on={src === 'drawer'} onClick={() => setSrc('drawer')}>درج الكاشير</Chip>
-            <Chip on={src === 'side'} onClick={() => setSrc('side')}>الدرج الجانبي</Chip>
-          </div>
+          <SafePick safes={cashSafes} value={src} onPick={setSrc} balances={balances} />
+        </div>
+      )}
+      {['expense', 'liquidate'].includes(type) && (
+        <div className="stack">
+          <span className="small muted">الفلوس طالعة من أنهي خزنة؟</span>
+          <SafePick safes={allSafes} value={src} onPick={(k) => { setSrc(k); if (k === liqTo) setLiqTo(''); }} balances={balances} />
+        </div>
+      )}
+      {type === 'liquidate' && (
+        <div className="stack" style={{ background: '#F7F6FB', borderRadius: 22, padding: '12px 14px' }}>
+          <span className="small muted">رايحة فين؟</span>
+          <SafePick safes={liqTargets} value={liqTo} onPick={setLiqTo} balances={balances} exclude={src} />
+          <input className="input white" placeholder="ملاحظة (اختياري): مثلًا صاحب المحل طلب تسييل انستاباي" value={note} onChange={(e) => setNote(e.target.value)} />
+          {balances?.[src] !== undefined && balances?.[src] !== null && num(amount) > num(balances[src]) && <span className="badge warn">المبلغ أكبر من رصيد {safeLabel(src, shop)} ({fmt(balances[src])})</span>}
         </div>
       )}
 
@@ -179,7 +214,8 @@ export default function EntryModal({ type, shop, shift, profile, onClose }) {
       {type === 'topup' && (
         <div className="stack">
           <span className="small muted">شحنت أنهي مكنة؟ (المبلغ اللي دفعته للمندوب)</span>
-          <div className="chips">{machineNames.map((m) => <Chip key={m} on={machine === m} onClick={() => setMachine(m)}>{m}</Chip>)}</div>
+          <SafePick safes={machineSafes} value={machine} onPick={setMachine} balances={balances} />
+          {machineSafes.length === 0 && <span className="tiny muted">مفيش مكن مفعّلة للمحل</span>}
         </div>
       )}
 
@@ -249,7 +285,7 @@ function printReceipt({ shop, profile, entry, title }) {
       <hr />
       <div style="font-size:16pt;font-weight:800">${fmt(entry.amount)} ج</div>
       <div>${esc(line)}</div>
-      <div>من: ${esc(SRC_LABEL[entry.src] || '')}</div>
+      <div>من: ${esc(SRC_LABEL[entry.src] || safeLabel(entry.src, shop))}</div>
       <hr />
       <div>الكاشير: ${esc(profile.name)}</div>
       <div>${now.toLocaleString('ar-EG')}</div>

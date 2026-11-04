@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Avatar, CopyBtn, Icon, PhotoView, useToast } from '../ui.jsx';
-import { RATE_FROM, SETTLE, SRC_LABEL, diffText, durationStr, fmt, minutesBetween, num, sideExpected, summarize, timeStr, toDate, dateStr } from '../lib';
+import { SRC_LABEL, computeShift, diffText, durationStr, fmt, minutesBetween, num, safeLabel, timeStr, toDate, dateStr } from '../lib';
+import Statements from './Statements.jsx';
 import { entryTitle } from '../cashier/Dash.jsx';
 
 const STATUS = {
@@ -85,7 +86,7 @@ export function ShiftDetail({ shift, shop, profile, canReview }) {
     return () => { a(); b(); c(); };
   }, [shift.id]);
 
-  const sum = summarize({ ...shift, review: { sales: sales === '' ? null : num(sales) } }, entries);
+  const sum = computeShift(shift, entries, shop, sales === '' ? null : num(sales));
   const rcv = shift.receive || {};
   const hnd = shift.handover || {};
   const status = shift.status;
@@ -118,7 +119,7 @@ export function ShiftDetail({ shift, shop, profile, canReview }) {
       const now = new Date();
       const b = writeBatch(db);
       const mins = minutesBetween(review?.startedAt, now);
-      b.update(doc(db, 'reviews', shift.id), { sales: num(sales), diff: sum.diff, closedAt: serverTimestamp(), closeMinutes: mins, waitMinutes: minutesBetween(shift.submittedAt, review?.startedAt), totals: { expenses: sum.outCash, income: sum.income, insta: sum.insta, vf: sum.vf, cash: sum.handCash } });
+      b.update(doc(db, 'reviews', shift.id), { sales: num(sales), diff: sum.diff, closedAt: serverTimestamp(), closeMinutes: mins, waitMinutes: minutesBetween(shift.submittedAt, review?.startedAt), totals: { expenses: sum.outCash, income: sum.income, insta: sum.insta, vf: sum.vf, cash: sum.handCash, drawerDiff: sum.drawerDiff, sideDiff: sum.sideDiff } });
       b.update(doc(db, 'shifts', shift.id), { status: 'closed', closedAt: serverTimestamp(), closedBy: profile.name, diff: sum.diff });
       if (sum.diff !== 0) {
         b.set(doc(db, 'ledger', shift.id), {
@@ -145,7 +146,6 @@ export function ShiftDetail({ shift, shop, profile, canReview }) {
 
   const togglePosted = (e) => updateDoc(doc(db, 'shifts', shift.id, 'entries', e.id), { posted: !e.posted, postedBy: profile.name }).catch(() => toast('مش قادرين نحفظ', 'err'));
   const photoOf = (id) => photos.find((p) => p.id === id);
-  const machinePhotos = photos.filter((p) => p.kind === 'machine');
   const unchecked = photos.filter((p) => p.check !== 'ok' && p.check !== 'bad').length;
   const checkPhoto = (p, check) => updateDoc(doc(db, 'shifts', shift.id, 'photos', p.id), { check, checkedBy: profile.name, checkedAt: serverTimestamp() }).catch(() => toast('مش قادرين نحفظ', 'err'));
   const photoTyped = (p) => {
@@ -209,53 +209,12 @@ export function ShiftDetail({ shift, shop, profile, canReview }) {
               <span style={{ fontSize: 28, fontWeight: 800 }}>{diffText(sum.diff)}</span>
             </div>
           </div>
-          <div className="eq">
-            <span className="b">الاستلام <b>{fmt(sum.recvCash)}</b></span>+<span className="b">المبيعات <b>{fmt(sales)}</b></span>+<span className="b">الإيرادات <b>{fmt(sum.income)}</b></span>
-            −<span className="b">المصروفات <b>{fmt(sum.outCash)}</b></span>−<span className="b">التحويلات <b>{fmt(sum.transfers)}</b></span>
-            =<span className="b">المتوقع <b>{fmt(sum.expected)}</b></span>
-            <span className="b">التسليم الفعلي <b>{fmt(sum.handCash)}</b></span>
-          </div>
+          {sum.diff !== null && sum.sideDiff ? <span className="tiny muted">النتيجة = خزنة الكاشير {fmt(sum.drawerDiff)} + الجانبي {fmt(sum.sideDiff)}</span> : null}
         </section>
       )}
 
-      <div className="row" style={{ gap: 16 }}>
-        <section className="card tint-orange" style={{ flex: '1 1 320px' }}>
-          <h2 className="h2">النقدية</h2>
-          <table className="table">
-            <thead><tr><th>الخزنة</th><th>استلام</th><th>تسليم</th><th>رايحة فين</th></tr></thead>
-            <tbody>
-              <tr><td><b>درج الكاشير</b></td><td>{fmt(rcv.drawerTotal)}<CopyBtn value={fmt(rcv.drawerTotal)} /></td><td>{fmt(hnd.drawerTotal)}<CopyBtn value={fmt(hnd.drawerTotal)} /></td><td>{hnd.keepDrawer ? (hnd.keepDrawer === 'stay' ? 'فضل' : 'للمحل') : '—'}</td></tr>
-              <tr><td><b>الجانبي</b></td><td>{fmt(rcv.side)}<CopyBtn value={fmt(rcv.side)} /></td><td>{fmt(hnd.side)}<CopyBtn value={fmt(hnd.side)} /></td><td>{hnd.keepSide ? (hnd.keepSide === 'stay' ? 'فضل' : 'للمحل') : '—'}</td></tr>
-            </tbody>
-          </table>
-          {hnd.sideFix && <span className="badge bad" style={{ whiteSpace: 'normal' }}>الجانبي كان {hnd.sideFix.diff < 0 ? 'ناقص' : 'زيادة'} {fmt(Math.abs(hnd.sideFix.diff))} ج والكاشير {hnd.sideFix.diff < 0 ? 'كمّله من' : 'رجّعه لـ'} درجه</span>}
-          {shift.handover && Math.abs(num(hnd.side) - sideExpected(shift, entries)) > 0.009 && <span className="badge bad" style={{ whiteSpace: 'normal' }}>الجانبي مش مظبوط · المفروض {fmt(sideExpected(shift, entries))} واتسلّم {fmt(hnd.side)}</span>}
-          {rcv.diffFromPrev && <span className="badge warn" style={{ whiteSpace: 'normal' }}>الكاشير عدّل في الاستلام · اللي قبله سلّم درج {fmt(rcv.prevDrawerTotal)} وجانبي {fmt(rcv.prevSide)}</span>}
-          <h2 className="h2" style={{ marginTop: 6 }}>المحافظ {shop?.walletName && <span className="tiny muted" style={{ fontWeight: 500 }}>· انستاباي باسم {shop.walletName}</span>}</h2>
-          <div className="spread"><span>انستاباي</span><span><b>{fmt(sum.insta)}</b><CopyBtn value={fmt(sum.insta)} /></span></div>
-          <div className="spread"><span>فودافون كاش</span><span><b>{fmt(sum.vf)}</b><CopyBtn value={fmt(sum.vf)} /></span></div>
-        </section>
-        <section className="card tint-yellow" style={{ flex: '1 1 320px' }}>
-          <h2 className="h2">المكن <span className="tiny muted" style={{ fontWeight: 500 }}>· رصيد تراكمي</span></h2>
-          <div className="scroll-x">
-            <table className="table">
-              <thead><tr><th>الحساب</th><th>استلام</th><th>تسليم</th><th>الفرق</th></tr></thead>
-              <tbody>
-                {(rcv.machines || []).map((m, i) => {
-                  const h = (hnd.machines || []).find((x) => x.machine === m.machine && x.account === m.account);
-                  return (
-                    <tr key={i}><td><b>{m.machine}</b> {m.account}</td><td>{fmt(m.value)}</td><td>{h ? fmt(h.value) : '—'}</td><td>{h ? fmt(num(h.value) - num(m.value)) : '—'}<CopyBtn value={h ? fmt(num(h.value) - num(m.value)) : 0} /></td></tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          {[...new Map((rcv.machines || []).filter((m) => m.ratePct !== undefined).map((m) => [m.machine, m])).values()].map((m) => (
-            <span key={m.machine} className="tiny"><b>{m.machine}</b> · نسبة {fmt(m.ratePct)}% {RATE_FROM[m.rateFrom] || ''} · {SETTLE[m.settle] || ''}</span>
-          ))}
-          {machinePhotos.length > 0 && <span className="tiny muted">صور المكن تحت في قسم الصور</span>}
-        </section>
-      </div>
+      {rcv.diffFromPrev && <div className="alert warn small">الكاشير عدّل في أرقام الاستلام{shift.receiveEdits ? ` (${shift.receiveEdits} مرة بعد ما بدأ)` : ''} · اللي قبله سلّم درج {fmt(rcv.prevDrawerTotal)} وجانبي {fmt(rcv.prevSide)}، وهو استلم درج {fmt(rcv.drawerTotal)} وجانبي {fmt(rcv.side)}</div>}
+      <Statements c={sum} shift={shift} shop={shop} />
 
       <section className="card" style={{ gap: 0 }}>
         <h2 className="h2" style={{ marginBottom: 8 }}>2. المصروفات والحركات <span className="tiny muted" style={{ fontWeight: 500 }}>· علّم على اللي دخلته على السيستم</span></h2>
@@ -269,7 +228,7 @@ export function ShiftDetail({ shift, shop, profile, canReview }) {
                 <input type="checkbox" checked={!!e.posted} onChange={() => togglePosted(e)} disabled={!canReview} style={{ width: 20, height: 20, accentColor: 'var(--blue)' }} />
                 <span className="stack" style={{ gap: 1 }}>
                   <span style={{ fontWeight: 700 }}>{entryTitle(e)}{e.newItem && <span className="badge warn" style={{ marginInlineStart: 6 }}>جديد</span>}</span>
-                  <span className="tiny muted">{timeStr(e.createdAt || e.createdAtLocal)} · {SRC_LABEL[e.src] || ''}</span>
+                  <span className="tiny muted">{timeStr(e.createdAt || e.createdAtLocal)} · {SRC_LABEL[e.src] || safeLabel(e.src, shop)}{e.type === 'liquidate' ? ` ← ${safeLabel(e.to, shop)}` : ''}</span>
                 </span>
               </label>
               {ph && <img className="thumb" style={{ width: 44, height: 44 }} src={ph.data} alt="صورة" onClick={() => setView(ph.data)} />}

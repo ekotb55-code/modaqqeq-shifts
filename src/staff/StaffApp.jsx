@@ -8,6 +8,7 @@ import Review from './Review.jsx';
 import Ledger from './Ledger.jsx';
 import Reports from './Reports.jsx';
 import Setup from './Setup.jsx';
+import Safes from './Safes.jsx';
 
 export default function StaffApp({ profile, onLinkDevice, linkedShop }) {
   const isAdmin = profile.role === 'admin';
@@ -15,6 +16,7 @@ export default function StaffApp({ profile, onLinkDevice, linkedShop }) {
   const [shops, setShops] = useState([]);
   const tabs = [
     canReview && { id: 'review', label: 'الورديات' },
+    canReview && { id: 'safes', label: 'الخزن' },
     { id: 'reports', label: 'التقارير' },
     { id: 'ledger', label: 'العجز والزيادة' },
     isAdmin && { id: 'setup', label: 'الإعداد' },
@@ -53,6 +55,7 @@ export default function StaffApp({ profile, onLinkDevice, linkedShop }) {
         </div>
       </header>
       {tab === 'review' && <Review profile={profile} shops={shops} />}
+      {tab === 'safes' && <Safes shops={shops} />}
       {tab === 'reports' && <Reports profile={profile} shops={shops} />}
       {tab === 'ledger' && <Ledger profile={profile} shops={shops} canReview={canReview} />}
       {tab === 'setup' && <Setup profile={profile} shops={shops} linkedShop={linkedShop} onLinkDevice={onLinkDevice} />}

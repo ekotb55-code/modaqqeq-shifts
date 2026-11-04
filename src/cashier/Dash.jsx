@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Avatar, Icon, NetMeter } from '../ui.jsx';
-import { ENTRY_TYPES, SRC_LABEL, durationStr, firstName, fmt, num, timeStr } from '../lib';
+import { ENTRY_TYPES, SRC_LABEL, durationStr, firstName, fmt, liveBalances, num, safeLabel, shopSafes, timeStr } from '../lib';
 import EntryModal from './EntryModal.jsx';
 
 export function entryTitle(e) {
@@ -10,6 +10,7 @@ export function entryTitle(e) {
   if (e.type === 'topup') return ['شحن رصيد', e.machine].filter(Boolean).join(' · ');
   if (e.type === 'move') return (e.to || 'side') === 'side' ? 'نقل من الدرج للجانبي' : 'نقل من الجانبي للدرج';
   if (e.type === 'withdraw') return ['سحب لصاحب المحل', e.note].filter(Boolean).join(' · ');
+  if (e.type === 'liquidate') return [`تسييل/تحويل ${e.fromLabel || ''} ← ${e.toLabel || ''}`, e.note].filter(Boolean).join(' · ');
   return e.type;
 }
 
@@ -19,9 +20,10 @@ export default function Dash({ shop, shift, entries, profile, onHandover, onRece
   useEffect(() => { const id = setInterval(() => tick((x) => x + 1), 60000); return () => clearInterval(id); }, []);
 
   const sum = (f) => entries.filter(f).reduce((a, e) => a + num(e.amount), 0);
+  const balances = liveBalances(shift, entries, shop);
   const byType = (t) => entries.filter((e) => e.type === t);
   const subOf = (arr) => (arr.length ? `${arr.length} عمليات · ${fmt(arr.reduce((a, e) => a + num(e.amount), 0))} ج` : 'لسه مفيش النهارده');
-  const out = (src) => sum((e) => ['expense', 'topup', 'withdraw'].includes(e.type) && e.src === src);
+  const out = (src) => sum((e) => (['expense', 'topup', 'withdraw'].includes(e.type) || (e.type === 'liquidate' && e.to !== 'drawer' && e.to !== 'side')) && e.src === src);
 
   const counters = [
     { label: 'طالع من الدرج', value: out('drawer'), dot: '#fff', cls: 'c-orange' },
@@ -36,8 +38,8 @@ export default function Dash({ shop, shift, entries, profile, onHandover, onRece
   ];
   const extras = [
     { t: 'topup', label: 'شحن رصيد مكنة', icon: 'bolt' },
+    { t: 'liquidate', label: 'تسييل وتحويل بين الخزن', icon: 'swap' },
     { t: 'move', label: 'نقل بين الدرجين', icon: 'swap' },
-    { t: 'withdraw', label: 'سحب لصاحب المحل', icon: 'person' },
   ];
   const opened = shift.openedAt || shift.openedAtLocal;
 
@@ -103,10 +105,10 @@ export default function Dash({ shop, shift, entries, profile, onHandover, onRece
           {entries.map((e) => (
             <div key={e.id} className="feed-row">
               <span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-                <span className="feed-ic" style={{ background: ENTRY_TYPES[e.type]?.color }}><Icon d={{ expense: 'up', income: 'down', transfer: 'phone', topup: 'bolt', move: 'swap', withdraw: 'person' }[e.type]} size={18} /></span>
+                <span className="feed-ic" style={{ background: ENTRY_TYPES[e.type]?.color }}><Icon d={{ expense: 'up', income: 'down', transfer: 'phone', topup: 'bolt', move: 'swap', withdraw: 'person', liquidate: 'swap' }[e.type]} size={18} /></span>
                 <span className="stack" style={{ gap: 0, minWidth: 0 }}>
                   <span style={{ fontSize: 15, fontWeight: 600 }}>{entryTitle(e)}</span>
-                  <span className="tiny muted">{timeStr(e.createdAt || e.createdAtLocal)} · {SRC_LABEL[e.src] || SRC_LABEL[e.wallet] || ''}{e.hasPendingWrites ? ' · لسه بيترفع' : ''}</span>
+                  <span className="tiny muted">{timeStr(e.createdAt || e.createdAtLocal)} · {SRC_LABEL[e.src] || SRC_LABEL[e.wallet] || safeLabel(e.src, shop)}{e.hasPendingWrites ? ' · لسه بيترفع' : ''}</span>
                 </span>
               </span>
               <span style={{ fontSize: 17, fontWeight: 700, whiteSpace: 'nowrap' }}>{ENTRY_TYPES[e.type]?.sign < 0 ? '−' : ENTRY_TYPES[e.type]?.sign > 0 ? '+' : ''}{fmt(e.amount)}</span>
@@ -115,7 +117,19 @@ export default function Dash({ shop, shift, entries, profile, onHandover, onRece
         </section>
       </div>
 
-      {modal && <EntryModal type={modal} shop={shop} shift={shift} profile={profile} onClose={() => setModal(null)} />}
+      <section className="card">
+        <div className="spread"><h2 style={{ fontSize: 17, fontWeight: 700 }}>أرصدة الخزن دلوقتي</h2><span className="tiny muted">بتتحدث مع كل عملية</span></div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
+          {shopSafes(shop).filter((x) => x.key !== 'drawer').map((x) => (
+            <div key={x.key} style={{ background: x.color, borderRadius: 20, padding: '12px 14px' }}>
+              <div className="small" style={{ fontWeight: 600 }}>{x.label}</div>
+              <div style={{ fontSize: 24, fontWeight: 800 }}>{fmt(balances[x.key] ?? 0)}<span className="small" style={{ fontWeight: 500 }}> ج</span></div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {modal && <EntryModal type={modal} shop={shop} shift={shift} profile={profile} balances={balances} onClose={() => setModal(null)} />}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
 import { auth, SUPER_ADMINS } from '../firebase';
-import { useToast } from '../ui.jsx';
+import { InstallButton, useToast } from '../ui.jsx';
 
 const MSG = {
   'auth/invalid-credential': 'الإيميل أو الباسورد غلط',
@@ -61,6 +61,7 @@ export default function StaffLogin({ error, onBack }) {
               <button type="button" className="link" onClick={() => { setSetup(!setup); setMsg(''); }}>{setup ? 'عندي حساب' : 'أول مرة؟ (إدارة مدقق)'}</button>
             </div>
             {onBack && <button type="button" className="btn soft full" onClick={onBack}>رجوع لدخول الكاشير</button>}
+            <InstallButton />
           </form>
         </div>
       </section>

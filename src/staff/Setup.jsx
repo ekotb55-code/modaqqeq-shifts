@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { collection, doc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Avatar, Icon, useToast } from '../ui.jsx';
-import { AVATAR_BG, DEFAULT_SHOP, RATE_FROM, ROLE_LABEL, SETTLE, WEEKDAYS, cashierPassword, createAccount, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, num, pickImage, setLinkedShop, slug } from '../lib';
+import { AVATAR_BG, DEFAULT_SHOP, RATE_FROM, WALLETS, ROLE_LABEL, SETTLE, WEEKDAYS, cashierPassword, createAccount, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, num, pickImage, setLinkedShop, slug } from '../lib';
 
 export default function Setup({ profile, shops, linkedShop, onLinkDevice }) {
   const toast = useToast();
@@ -116,6 +116,13 @@ function MachinesEditor({ list, onChange }) {
               <span className="small muted">النسبة</span>
               <div className="chips">{Object.entries(RATE_FROM).map(([k, l]) => <button key={k} type="button" className={'chip sm' + (m.rateFrom === k ? ' on' : '')} onClick={() => upd(m.id, { rateFrom: k })}>{l}</button>)}</div>
             </div>
+            <div className="stack" style={{ flex: '1 1 200px' }}>
+              <span className="small muted">حركتها</span>
+              <div className="chips">
+                <button type="button" className={'chip sm' + (m.inCash !== false ? ' on' : '')} onClick={() => upd(m.id, { inCash: true })}>بتأثر على درج الكاشير</button>
+                <button type="button" className={'chip sm' + (m.inCash === false ? ' on' : '')} onClick={() => upd(m.id, { inCash: false })}>مش بتأثر</button>
+              </div>
+            </div>
             <div className="stack" style={{ flex: '1 1 240px' }}>
               <span className="small muted">الرصيد</span>
               <div className="chips">{Object.entries(SETTLE).map(([k, l]) => <button key={k} type="button" className={'chip sm' + (m.settle === k ? ' on' : '')} onClick={() => upd(m.id, { settle: k })}>{l}</button>)}</div>
@@ -132,7 +139,7 @@ function ShopEditor({ shop, linkedShop, onLinkDevice }) {
   const [pub, setPub] = useState(null);
   const [f, setF] = useState(() => ({
     name: shop.name || '', posUrl: shop.posUrl || '', walletName: shop.walletName || '',
-    machineList: machineListOf(shop), suppliers: shop.suppliers || [], staff: shop.staff || [],
+    machineList: machineListOf(shop), wallets: shop.wallets || ['insta', 'vf'], suppliers: shop.suppliers || [], staff: shop.staff || [],
     shopExpenses: shop.shopExpenses || [], incomeReasons: shop.incomeReasons || [], advanceDays: shop.advanceDays || [],
   }));
   const [dirty, setDirty] = useState(false);
@@ -190,6 +197,17 @@ function ShopEditor({ shop, linkedShop, onLinkDevice }) {
       <Cashiers shop={shop} pub={pub} />
 
       <ShopPeople shop={shop} />
+
+      <section className="card tint-violet">
+        <h2 className="h2">المحافظ المفعّلة للمحل</h2>
+        <div className="chips">
+          {WALLETS.map((w) => {
+            const on = f.wallets.includes(w.key);
+            return <button key={w.key} type="button" className={'chip' + (on ? ' on' : '')} aria-pressed={on} onClick={() => set('wallets', on ? f.wallets.filter((x) => x !== w.key) : [...f.wallets, w.key])}>{on ? '✓ ' : ''}{w.label}</button>;
+          })}
+        </div>
+        <span className="tiny muted">كل محفظة مفعّلة ليها خزنة رصيدها بيزيد بالتحويلات وبينقص بالتسييل والمصروفات.</span>
+      </section>
 
       <MachinesEditor list={f.machineList} onChange={(v) => set('machineList', v)} />
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth, db } from '../firebase';
-import { Avatar, Icon } from '../ui.jsx';
+import { Avatar, Icon, InstallButton } from '../ui.jsx';
 import { cashierPassword, firstName } from '../lib';
 
 export default function ShopLogin({ shopId, error, onStaff, onUnlink }) {
@@ -92,6 +92,7 @@ export default function ShopLogin({ shopId, error, onStaff, onUnlink }) {
             )}
           </div>
         </div>
+        <InstallButton />
         <div className="spread" style={{ justifyContent: 'center' }}>
           <button type="button" className="link" onClick={onStaff}><Icon d="person" size={16} /> دخول المحاسبين والإدارة</button>
         </div>

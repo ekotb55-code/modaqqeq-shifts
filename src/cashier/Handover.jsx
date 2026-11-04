@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, useToast } from '../ui.jsx';
-import { billsTotal, durationStr, emptyBills, fmt, num, pickImage, sideExpected, timeStr } from '../lib';
+import { WALLETS, billsTotal, computeShift, durationStr, emptyBills, fmt, num, pickImage, timeStr } from '../lib';
 import { Bills, MachineRows, SideBox } from './parts.jsx';
 
 function Split({ title, mark, color, amount, value, set }) {
@@ -33,7 +33,10 @@ export default function Handover({ shop, shift, entries, profile, onBack, onDone
   const [sideFix, setSideFix] = useState(null);
 
   const drawerTotal = billsTotal(bills);
-  const expSide = sideExpected(shift, entries);
+  const calc = computeShift(shift, entries, shop);
+  const expSide = calc.side.expected;
+  const walletKeys = WALLETS.filter((w) => (shop.wallets || ['insta', 'vf']).includes(w.key) || num(shift.receive?.wallets?.[w.key]) || calc.safes[w.key]?.lines.length);
+  const walletsClose = Object.fromEntries(walletKeys.map((w) => [w.key, calc.safes[w.key].expected]));
   const sideDiff = side === '' ? 0 : Math.round((num(side) - expSide) * 100) / 100;
   const sideOk = side !== '' && Math.abs(sideDiff) < 0.01;
   const fixSide = () => {
@@ -57,7 +60,7 @@ export default function Handover({ shop, shift, entries, profile, onBack, onDone
       bills: Object.fromEntries(Object.entries(bills).map(([k, v]) => [k, num(v)])),
       drawerTotal, side: num(side),
       machines: machines.map((m, i) => ({ ...m, value: num(mvals[i]), photo: !!photos[i] })),
-      keepDrawer, keepSide, sideExpected: expSide, sideFix: sideFix || null,
+      keepDrawer, keepSide, sideExpected: expSide, sideFix: sideFix || null, wallets: walletsClose,
     };
     try {
       const b = writeBatch(db);
@@ -128,6 +131,21 @@ export default function Handover({ shop, shift, entries, profile, onBack, onDone
             </div>
           )}
           {sideFix && sideOk && <div className="alert ok small">✓ الجانبي اتظبط · افتكر تعدّ درج الكاشير تاني بعد ما {sideFix.diff < 0 ? 'طلّعت منه' : 'حطيت فيه'} {fmt(Math.abs(sideFix.diff))} ج</div>}
+          {walletKeys.length > 0 && (
+            <section className="card tint-violet" style={{ gap: 8 }}>
+              <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />رصيد المحافظ آخر الوردية</h2>
+              {walletKeys.map((w) => {
+                const x = calc.safes[w.key];
+                return (
+                  <div key={w.key} className="m-row" style={{ padding: '10px 14px' }}>
+                    <span className="lbl"><span className="small"><b>{w.label}</b></span><span className="tiny muted">استلمت {fmt(x.open)} · دخل {fmt(x.inn)} · طلع {fmt(x.out)}</span></span>
+                    <strong style={{ fontSize: 18 }}>{fmt(x.expected)}</strong>
+                  </div>
+                );
+              })}
+              <span className="tiny muted">لو الرصيد اللي في المحفظة مختلف، كلّم المحاسب.</span>
+            </section>
+          )}
           <section className="card tint-yellow">
             <h2 className="h2"><span className="dot" style={{ background: 'var(--yellow)' }} />قراية المكن دلوقتي</h2>
             <span className="tiny muted">اكتب الرقم وصوّر الشاشة، وكمّل. المحاسب هيراجع الصور.</span>

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { collection, doc, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, useToast } from '../ui.jsx';
-import { billsTotal, emptyBills, fmt, num, pickImage, timeStr, todayKey } from '../lib';
+import { WALLETS, billsTotal, emptyBills, fmt, num, pickImage, timeStr, todayKey } from '../lib';
 import { Bills, MachineRows, SideBox } from './parts.jsx';
 
 export default function Receive({ shop, profile, onStarted, editShift, onCancel }) {
@@ -26,6 +26,11 @@ export default function Receive({ shop, profile, onStarted, editShift, onCancel 
 
   const changed = Object.keys(bills).filter((f) => num(bills[f]) !== num(prevBills[f])).length;
   const sideChanged = num(side) !== prevSide;
+  const walletKeys = WALLETS.filter((w) => (shop.wallets || ['insta', 'vf']).includes(w.key));
+  const prevWallets = Object.fromEntries(walletKeys.map((w) => [w.key, num(last?.wallets?.[w.key])]));
+  const [wallets, setWallets] = useState(() => Object.fromEntries(walletKeys.map((w) => [w.key, String(er ? num(er.wallets?.[w.key]) : prevWallets[w.key])])));
+  const wChanged = walletKeys.filter((w) => num(wallets[w.key]) !== prevWallets[w.key]).length;
+  const walletsOut = () => Object.fromEntries(walletKeys.map((w) => [w.key, num(wallets[w.key])]));
   const mChanged = mvals.filter((v, i) => num(v) !== num(prevMachines[i])).length;
 
   const addPhoto = async (i) => {
@@ -41,7 +46,8 @@ export default function Receive({ shop, profile, onStarted, editShift, onCancel 
         bills: Object.fromEntries(Object.entries(bills).map(([k, v]) => [k, num(v)])),
         drawerTotal: billsTotal(bills), side: num(side),
         machines: machines.map((m, i) => ({ ...m, value: num(mvals[i]), photo: !!photos[i] || !!(er.machines || [])[i]?.photo })),
-        diffFromPrev: er.diffFromPrev || changed > 0 || sideChanged || mChanged > 0,
+        wallets: walletsOut(),
+        diffFromPrev: er.diffFromPrev || changed > 0 || sideChanged || mChanged > 0 || wChanged > 0,
         editedAtLocal: new Date().toISOString(),
       };
       const p = updateDoc(doc(db, 'shifts', editShift.id), { receive, receiveEdits: (editShift.receiveEdits || 0) + 1 });
@@ -72,7 +78,8 @@ export default function Receive({ shop, profile, onStarted, editShift, onCancel 
         prevCashier: last?.cashierName || null,
         prevDrawerTotal: billsTotal(prevBills),
         prevSide,
-        diffFromPrev: changed > 0 || sideChanged || mChanged > 0,
+        wallets: walletsOut(), prevWallets,
+        diffFromPrev: changed > 0 || sideChanged || mChanged > 0 || wChanged > 0,
       };
       const b = writeBatch(db);
       b.set(shiftRef, {
@@ -114,6 +121,18 @@ export default function Receive({ shop, profile, onStarted, editShift, onCancel 
         </section>
         <div className="side">
           <SideBox value={side} setValue={setSide} hint={sideChanged && last ? `اتعدّل · كان ${fmt(prevSide)} ج` : 'المبلغ كله · من غير فئات'} />
+          {walletKeys.length > 0 && (
+            <section className="card tint-violet">
+              <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />رصيد المحافظ</h2>
+              <span className="tiny muted">الرصيد اللي في المحفظة دلوقتي. لو مختلف عن اللي مكتوب عدّله.</span>
+              {walletKeys.map((w) => (
+                <label key={w.key} className="m-row" style={{ padding: '6px 6px 6px 14px' }}>
+                  <span className="lbl"><span className="small"><b>{w.label}</b></span>{last && num(wallets[w.key]) !== prevWallets[w.key] && <span className="tiny" style={{ color: '#9B1C1C', fontWeight: 600 }}>اتعدّل · كان {fmt(prevWallets[w.key])}</span>}</span>
+                  <input inputMode="decimal" aria-label={`رصيد ${w.label}`} value={wallets[w.key]} onChange={(e) => setWallets({ ...wallets, [w.key]: e.target.value })} onFocus={(e) => e.target.select()} />
+                </label>
+              ))}
+            </section>
+          )}
           <section className="card tint-yellow">
             <h2 className="h2"><span className="dot" style={{ background: 'var(--yellow)' }} />أرصدة المكن</h2>
             <span className="tiny muted">عدّل الرقم لو مختلف، وصوّر شاشة المكنة. المحاسب هيراجع الصور.</span>
@@ -123,7 +142,7 @@ export default function Receive({ shop, profile, onStarted, editShift, onCancel 
             <span className="ic"><Icon d="check" size={18} stroke={3} /></span>{busy ? 'لحظة…' : editShift ? 'حفظ التعديل' : 'تمام، استلمت'}
           </button>
           <span className="small muted" style={{ textAlign: 'center' }}>
-            {changed || sideChanged || mChanged ? `عدّلت ${changed + (sideChanged ? 1 : 0) + mChanged} رقم · هيتسجل فرق في الاستلام ويوصل للمحاسب` : last ? `كل الأرقام زي ما ${last.cashierName} سلّمها` : ''}
+            {changed || sideChanged || mChanged || wChanged ? `عدّلت ${changed + (sideChanged ? 1 : 0) + mChanged + wChanged} رقم · هيتسجل فرق في الاستلام ويوصل للمحاسب` : last ? `كل الأرقام زي ما ${last.cashierName} سلّمها` : ''}
           </span>
         </div>
       </div>

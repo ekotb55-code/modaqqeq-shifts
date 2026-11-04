@@ -195,3 +195,31 @@ export function PhotoView({ src, onClose }) {
 export function Spinner({ text = 'لحظة…' }) {
   return <div className="empty">{text}</div>;
 }
+
+// "Add to home screen" helper: Android shows the real install prompt, iPhone gets the steps.
+let deferredPrompt = null;
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; window.dispatchEvent(new Event('mdq-install-ready')); });
+}
+export function InstallButton() {
+  const [ready, setReady] = useState(!!deferredPrompt);
+  const [iosHelp, setIosHelp] = useState(false);
+  const standalone = typeof window !== 'undefined' && (window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone);
+  const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  useEffect(() => {
+    const f = () => setReady(true);
+    window.addEventListener('mdq-install-ready', f);
+    return () => window.removeEventListener('mdq-install-ready', f);
+  }, []);
+  if (standalone || (!ready && !ios)) return null;
+  const install = async () => {
+    if (deferredPrompt) { deferredPrompt.prompt(); await deferredPrompt.userChoice.catch(() => {}); deferredPrompt = null; setReady(false); return; }
+    setIosHelp(true);
+  };
+  return (
+    <div className="stack center" style={{ gap: 6 }}>
+      <button type="button" className="btn soft sm" onClick={install}><Icon d="phone" size={18} />ثبّت التطبيق على الموبايل</button>
+      {iosHelp && <span className="small muted" style={{ textAlign: 'center', maxWidth: 320 }}>من Safari دوس زرار المشاركة (المربع اللي فيه سهم لفوق)، واختار «إضافة إلى الشاشة الرئيسية».</span>}
+    </div>
+  );
+}
