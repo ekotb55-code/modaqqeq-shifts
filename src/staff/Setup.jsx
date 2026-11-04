@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { collection, doc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Avatar, Icon, useToast } from '../ui.jsx';
-import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, REG_KIND, allOpen, newRegister, newExpenseType, RATE_FROM, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, createAccount, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, num, pickImage } from '../lib';
+import { Avatar, Icon, Modal, useToast } from '../ui.jsx';
+import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, REG_KIND, allOpen, newRegister, newExpenseType, RATE_FROM, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, num, pickImage } from '../lib';
 
 export default function Setup({ profile, shops, sel, setSel }) {
   const [view, setView] = useState('shops');
@@ -386,6 +386,7 @@ function Cashiers({ shop, pub }) {
       const uid = await createAccount(email, cashierPassword(pin));
       const c = { uid, name: name.trim(), username: un, color, photo: photo || null };
       await setDoc(doc(db, 'users', uid), { role: 'cashier', name: c.name, username: un, email, color, photo: c.photo, phone: phone.trim(), slot, startDate: todayKey(), shopIds: [shop.id], createdAt: serverTimestamp() });
+      setDoc(doc(db, 'cashierSecrets', uid), { pin, updatedAt: serverTimestamp() }).catch(() => {});
       await writeList([...all, c]);
       setName(''); setUsername(''); setPin(''); setPhone(''); setSlot(''); setPhoto(null);
       toast(`${c.name} اتضاف · يدخل بـ ${un} والرقم السري ${pin}`);
@@ -434,6 +435,7 @@ function Cashiers({ shop, pub }) {
 
 function CashierRow({ c, shop, all, writeList, open, onToggle, onPhoto }) {
   const toast = useToast();
+  const [pinOpen, setPinOpen] = useState(false);
   const [info, setInfo] = useState(null);
   const [stats, setStats] = useState(null);
   const [form, setForm] = useState(null);
@@ -515,6 +517,13 @@ function CashierRow({ c, shop, all, writeList, open, onToggle, onPhoto }) {
               <button type="button" className="btn sm" onClick={save}>حفظ</button>
             </div>
           )}
+          {c.username && (
+            <div className="spread" style={{ background: 'var(--bg)', borderRadius: 16, padding: '10px 12px' }}>
+              <span className="small"><b>الرقم السري</b> · <span className="muted">يدخل بـ {c.username}</span></span>
+              <button type="button" className="btn sm soft" onClick={() => setPinOpen(true)}><Icon d="lock" size={16} />تغيير الرقم السري</button>
+            </div>
+          )}
+          {pinOpen && <PinChange c={c} info={info} onClose={() => setPinOpen(false)} />}
           <div className="spread">
             <span className="tiny muted">{info?.createdAt ? `اتضاف ${dateStr(info.createdAt)}` : ''}</span>
             {stats && !stats.error && stats.total === 0
@@ -524,6 +533,54 @@ function CashierRow({ c, shop, all, writeList, open, onToggle, onPhoto }) {
         </div>
       )}
     </div>
+  );
+}
+
+function PinChange({ c, info, onClose }) {
+  const toast = useToast();
+  const [known, setKnown] = useState(undefined);
+  const [oldPin, setOldPin] = useState('');
+  const [a, setA] = useState('');
+  const [b, setB] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    getDoc(doc(db, 'cashierSecrets', c.uid)).then((s) => setKnown(s.exists() ? s.data().pin : null)).catch(() => setKnown(null));
+  }, [c.uid]);
+  const save = async () => {
+    const old = known || oldPin;
+    if (!/^[0-9]{4,8}$/.test(old)) { toast('اكتب الرقم السري القديم', 'err'); return; }
+    if (!/^[0-9]{4,8}$/.test(a)) { toast('الرقم الجديد لازم من 4 لـ 8 أرقام', 'err'); return; }
+    if (a !== b) { toast('الرقمين مش زي بعض', 'err'); return; }
+    setBusy(true);
+    try {
+      await changeAccountPassword(info?.email || cashierEmail(c.username), cashierPassword(old), cashierPassword(a));
+      await setDoc(doc(db, 'cashierSecrets', c.uid), { pin: a, updatedAt: serverTimestamp() });
+      toast(`الرقم السري بتاع ${c.name} اتغيّر · يدخل بـ ${c.username} والرقم ${a}`);
+      onClose();
+    } catch (e) {
+      console.error(e);
+      toast(['auth/invalid-credential', 'auth/wrong-password'].includes(e.code) ? 'الرقم القديم غلط' : e.code === 'auth/too-many-requests' ? 'محاولات كتير، استنى شوية' : 'مش قادرين نغيّره، اتأكد من النت', 'err');
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal title={`الرقم السري · ${c.name}`} icon="lock" color="var(--violet)" onClose={onClose} width={420}>
+      {known === undefined ? <span className="muted">لحظة…</span> : (
+        <>
+          {known ? (
+            <span className="small" style={{ background: 'var(--bg)', borderRadius: 14, padding: '10px 12px' }}>الرقم الحالي: <b dir="ltr">{known}</b></span>
+          ) : (
+            <label className="field">الرقم السري القديم
+              <input className="input" inputMode="numeric" maxLength={8} dir="ltr" value={oldPin} onChange={(e) => setOldPin(e.target.value.replace(/\D/g, ''))} />
+              <span className="tiny muted">مش متسجل عندنا لأن الكاشير اتعمل قبل الميزة دي · بعد أول تغيير هيبقى متسجل</span>
+            </label>
+          )}
+          <label className="field">الرقم الجديد (من 4 لـ 8 أرقام)<input className="input" inputMode="numeric" maxLength={8} dir="ltr" value={a} onChange={(e) => setA(e.target.value.replace(/\D/g, ''))} autoFocus /></label>
+          <label className="field">اكتبه تاني<input className="input" inputMode="numeric" maxLength={8} dir="ltr" value={b} onChange={(e) => setB(e.target.value.replace(/\D/g, ''))} /></label>
+          <button type="button" className="btn full" onClick={save} disabled={busy}>{busy ? 'لحظة…' : 'حفظ الرقم الجديد'}</button>
+        </>
+      )}
+    </Modal>
   );
 }
 

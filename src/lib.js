@@ -1,5 +1,5 @@
 import { initializeApp, deleteApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updatePassword } from 'firebase/auth';
 import { firebaseConfig } from './firebase';
 
 
@@ -176,6 +176,20 @@ export async function createAccount(email, password) {
     const uid = cred.user.uid;
     await signOut(getAuth(tmp));
     return uid;
+  } finally {
+    await deleteApp(tmp);
+  }
+}
+
+// Change another account's password from the admin's screen (free plan has no server):
+// sign in as that account in a separate app using the old password, then set the new one.
+export async function changeAccountPassword(email, oldPassword, newPassword) {
+  const tmp = initializeApp(firebaseConfig, 'pin-' + Date.now());
+  try {
+    const a = getAuth(tmp);
+    const cred = await signInWithEmailAndPassword(a, email, oldPassword);
+    await updatePassword(cred.user, newPassword);
+    await signOut(a);
   } finally {
     await deleteApp(tmp);
   }

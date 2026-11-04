@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { signOut, updatePassword } from 'firebase/auth';
-import { collection, doc, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
+import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Icon, Avatar, Modal, Spinner, useToast } from '../ui.jsx';
 import { DEFAULT_SHOP, MAIN_REG, allOpen, cashierPassword, firstName, openOf, pickImage, regName, registersOf, shopForRegister, timeStr } from '../lib';
@@ -124,6 +124,7 @@ function PinModal({ onClose }) {
     setBusy(true);
     try {
       await updatePassword(auth.currentUser, cashierPassword(a));
+      setDoc(doc(db, 'cashierSecrets', auth.currentUser.uid), { pin: a, updatedAt: serverTimestamp() }).catch(() => {});
       toast('الرقم السري اتغيّر');
       onClose();
     } catch (e) {

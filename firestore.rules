@@ -34,6 +34,12 @@ service cloud.firestore {
         || (inShop(shopId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['openShift', 'lastHandover', 'openShifts', 'lastHandovers']));
     }
 
+    // Cashier PINs so Modaqqeq admins can change them later (free plan has no server).
+    match /cashierSecrets/{uid} {
+      allow read: if isAdmin();
+      allow write: if isAdmin() || (signedIn() && request.auth.uid == uid);
+    }
+
     match /users/{uid} {
       allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
       allow write: if isAdmin();
