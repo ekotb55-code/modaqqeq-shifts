@@ -10,6 +10,7 @@ import Login from './staff/StaffLogin.jsx';
 import EntryModal from './cashier/EntryModal.jsx';
 import { computeShift, shopForRegister } from './lib';
 import { SendModal } from './cashier/Transfers.jsx';
+import { ShiftDetail } from './staff/Review.jsx';
 
 const shop = { id: 's1', name: 'مخبوزات لوفان', posUrl: 'https://x', wallets: ['insta', 'vf'], walletModes: { insta: 'shop', vf: 'owner' }, machines: [{ machine: 'فوري', account: 'الحساب الرئيسي', ratePct: 2 }, { machine: 'فوري', account: 'كاش أوت' }, { machine: 'فيزا', account: 'الرصيد', ratePct: 2, rateFrom: 'cashier' }],
   lastHandover: { cashierName: 'محمود سعيد', at: new Date().toISOString(), bills: { 200: 2, 100: 3, 50: 4, 20: 5, 10: 6, 5: 4, 1: 20 }, side: 5000, wallets: { insta: 300, vf: 0 }, machines: [{ machine: 'فوري', account: 'الحساب الرئيسي', value: 3250 }] },
@@ -40,6 +41,7 @@ else if (v === 'send') body = <SendModal shop={shopForRegister(shop, 'main')} sh
 else if (v === 'expense') body = <EntryModal type="expense" shop={shop} shift={shift} profile={profile} balances={{ side: 5000 }} onClose={() => {}} />;
 else if (v === 'receive') body = <Receive shop={shop} profile={profile} onStarted={() => {}} />;
 else if (v === 'handover') body = <Handover shop={shop} shift={{ ...shift, handover: null }} entries={entries} profile={profile} onBack={() => {}} onDone={() => {}} />;
+else if (v === 'review') body = <div className="wrap"><ShiftDetail shift={{ ...shift, status: 'submitted', shopId: 's1', handover: { ...(shift.handover || {}), keepDrawer: 'stay', drawerTotal: 2400, bills: { 200: 10, 100: 4 }, walletsTyped: { insta: 100 }, walletModes: { insta: 'shop', vf: 'owner' } } }} shop={shop} profile={{ ...profile, role: 'accountant' }} canReview /></div>;
 else if (v === 'statements') body = <div className="wrap"><Statements c={computeShift(shift, entries, shop, 4000)} shift={shift} shop={shop} /></div>;
 else body = <Dash shop={shop} shift={shift} entries={entries} incoming={v === 'inc' ? inc : []} deleted={[{ id: 'd1', type: 'expense', kind: 'delivery', kindLabel: 'قبض دليفري', sub: 'أحمد', src: 'drawer', amount: 50, deleted: true, deletedByName: 'شوقي محمد', deleteReason: 'اتسجلت مرتين', createdAtLocal: new Date().toISOString(), deletedAtLocal: Date.now() }]} profile={profile} onHandover={() => {}} onReceive={() => {}} />;
 createRoot(document.getElementById('root')).render(<ToastProvider>{v !== 'login' && <Topbar shopPub={pub} profile={profile} steps={steps} onLogout={() => {}} posUrl={shop.posUrl} onPin={() => {}} onPhoto={() => {}} />}{body}</ToastProvider>);

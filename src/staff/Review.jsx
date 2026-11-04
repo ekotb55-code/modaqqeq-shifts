@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Avatar, CopyBtn, Icon, PhotoView, useToast } from '../ui.jsx';
-import { SRC_LABEL, shopForRegister, computeShift, diffText, durationStr, fmt, minutesBetween, num, safeLabel, timeStr, toDate, dateStr } from '../lib';
+import { BILL_BG, FACES, SRC_LABEL, shopForRegister, computeShift, diffText, durationStr, fmt, minutesBetween, num, safeLabel, timeStr, toDate, dateStr } from '../lib';
 import Statements from './Statements.jsx';
 import { DeletedList, entryTitle } from '../cashier/Dash.jsx';
 
@@ -118,10 +118,22 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
     try { await updateDoc(doc(db, 'reviews', shift.id), { sales: num(sales), diff: sum.diff, salesAt: serverTimestamp() }); } catch (e) { console.error(e); }
   };
 
+  const unchecked = photos.filter((p) => p.check !== 'ok' && p.check !== 'bad').length;
+  const cashierSafe = `خزنة ${shift.cashierName}`;
+  const moves = systemMoves(shift, sum, cashierSafe);
+  const autoPosted = review?.autoPosted || {};
+  const toggleMove = (m) => setDoc(doc(db, 'reviews', shift.id), { shopId: shift.shopId, autoPosted: { [m.id]: !autoPosted[m.id] } }, { merge: true }).catch(() => toast('مش قادرين نحفظ', 'err'));
+  const leftEntries = entries.filter((e) => !e.posted).length;
+  const leftMoves = moves.filter((m) => !autoPosted[m.id]).length;
+  const blockers = [
+    leftMoves + leftEntries > 0 && `فاضل ${leftMoves + leftEntries} حركة ما اتعلّمش عليها`,
+    unchecked > 0 && `فاضل ${unchecked} صورة ما اتراجعتش`,
+  ].filter(Boolean);
+
   const close = async () => {
+    if (blockers.length) { toast(blockers.join(' · '), 'err'); return; }
     if (sales === '') { toast('اكتب رقم المبيعات الأول', 'err'); return; }
-    const warnPhotos = unchecked > 0 ? `\nلسه فيه ${unchecked} صورة ما اتراجعتش.` : '';
-    if (!window.confirm(`تقفيل الوردية بنتيجة: ${diffText(sum.diff)}؟${warnPhotos}`)) return;
+    if (!window.confirm(`تقفيل الوردية بنتيجة: ${diffText(sum.diff)}؟`)) return;
     setBusy(true);
     try {
       const now = new Date();
@@ -154,7 +166,6 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
 
   const togglePosted = (e) => updateDoc(doc(db, 'shifts', shift.id, 'entries', e.id), { posted: !e.posted, postedBy: profile.name }).catch(() => toast('مش قادرين نحفظ', 'err'));
   const photoOf = (id) => photos.find((p) => p.id === id);
-  const unchecked = photos.filter((p) => p.check !== 'ok' && p.check !== 'bad').length;
   const checkPhoto = (p, check) => updateDoc(doc(db, 'shifts', shift.id, 'photos', p.id), { check, checkedBy: profile.name, checkedAt: serverTimestamp() }).catch(() => toast('مش قادرين نحفظ', 'err'));
   const photoTyped = (p) => {
     if (p.kind !== 'machine') return p.amount ?? null;
@@ -230,10 +241,28 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
 
       {rcv.diffFromPrev && <div className="alert warn small">الكاشير عدّل في أرقام الاستلام{shift.receiveEdits ? ` (${shift.receiveEdits} مرة بعد ما بدأ)` : ''} · اللي قبله سلّم درج {fmt(rcv.prevDrawerTotal)} وجانبي {fmt(rcv.prevSide)}، وهو استلم درج {fmt(rcv.drawerTotal)} وجانبي {fmt(rcv.side)}</div>}
       <Statements c={sum} shift={shift} shop={shop} />
+      <BillsCompare rcv={rcv} hnd={shift.handover} />
 
       <section className="card" style={{ gap: 0 }}>
-        <h2 className="h2" style={{ marginBottom: 8 }}>2. المصروفات والحركات <span className="tiny muted" style={{ fontWeight: 500 }}>· علّم على اللي دخلته على السيستم</span></h2>
-        {entries.length === 0 && <div className="empty">مفيش عمليات في الوردية دي</div>}
+        <div className="spread" style={{ marginBottom: 8 }}>
+          <h2 className="h2">2. المصروفات والحركات <span className="tiny muted" style={{ fontWeight: 500 }}>· علّم على كل حاجة دخلتها على السيستم</span></h2>
+          {leftMoves + leftEntries > 0 ? <span className="badge warn">فاضل {leftMoves + leftEntries}</span> : <span className="badge ok">✓ كله اتعلّم</span>}
+        </div>
+        {moves.length > 0 && <div className="tiny muted" style={{ fontWeight: 700, padding: '6px 0' }}>حركات الخزن (المحاسب بيعملها)</div>}
+        {moves.map((m) => (
+          <div key={m.id} className="list-row" style={{ background: autoPosted[m.id] ? undefined : '#F2F7FF' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '1 1 260px', minWidth: 0 }}>
+              <input type="checkbox" checked={!!autoPosted[m.id]} onChange={() => toggleMove(m)} disabled={!canReview} style={{ width: 20, height: 20, accentColor: 'var(--blue)' }} />
+              <span className="stack" style={{ gap: 1 }}>
+                <span style={{ fontWeight: 700 }}>{m.title}</span>
+                <span className="tiny muted">{m.from} ← {m.to}</span>
+              </span>
+            </label>
+            <span style={{ display: 'flex', alignItems: 'center', fontWeight: 700, fontSize: 16, minWidth: 90, justifyContent: 'flex-end' }}>{fmt(m.amount)}<CopyBtn value={fmt(m.amount)} label="نسخ المبلغ" /></span>
+          </div>
+        ))}
+        {moves.length > 0 && entries.length > 0 && <div className="tiny muted" style={{ fontWeight: 700, padding: '10px 0 6px' }}>عمليات الكاشير</div>}
+        {entries.length === 0 && moves.length === 0 && <div className="empty">مفيش عمليات في الوردية دي</div>}
         {entries.map((e) => {
           const ph = e.photoId && photoOf(e.photoId);
           const name = e.sub || e.reason || e.machine || '';
@@ -322,12 +351,49 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
             <span style={{ lineHeight: 1.7 }}>
               {sum.diff === null ? 'اكتب رقم المبيعات علشان النتيجة تطلع.' : sum.diff < 0 ? `العجز ${fmt(-sum.diff)} ج هيتسجل على ${shift.cashierName} في سجل العجز، ويستنى تأكيد إنه اتخصم.` : sum.diff > 0 ? `الزيادة ${fmt(sum.diff)} ج هتتسجل باسم ${shift.cashierName} في سجل الزيادات.` : 'الوردية مضبوطة، مفيش عجز ولا زيادة.'}
             </span>
-            <button type="button" className="btn blue full" onClick={close} disabled={busy || sales === ''}><Icon d="check" />تقفيل الوردية وإرسال التقرير</button>
+            {blockers.map((b) => <span key={b} className="badge warn" style={{ whiteSpace: 'normal' }}>{b}</span>)}
+            <button type="button" className="btn blue full" onClick={close} disabled={busy || sales === '' || blockers.length > 0}><Icon d="check" />تقفيل الوردية وإرسال التقرير</button>
             <span className="tiny muted">التقرير بيوصل للمدير والأونر في صفحة التقارير.</span>
           </section>
         )}
       </div>
       <PhotoView src={view} onClose={() => setView(null)} />
     </div>
+  );
+}
+
+// Safe-to-safe moves the accountant has to make in the POS system for this shift.
+function systemMoves(shift, sum, cashierSafe) {
+  const rcv = shift.receive || {};
+  const hnd = shift.handover || null;
+  const list = [];
+  if (num(rcv.drawerTotal) > 0) list.push({ id: 'open', title: 'استلام أول المدة', from: 'خزنة التسليم', to: cashierSafe, amount: num(rcv.drawerTotal) });
+  (sum.walletInfo || []).filter((w) => w.mode === 'shop' && w.sales).forEach((w) => {
+    list.push({ id: 'w:' + w.key, title: `فرق ${w.label}`, from: w.sales < 0 ? w.label : cashierSafe, to: w.sales < 0 ? cashierSafe : w.label, amount: Math.abs(w.sales) });
+  });
+  (sum.machineGroups || []).filter((g) => g.affects && g.sales).forEach((g) => {
+    list.push({ id: 'm:' + g.machine, title: `فرق ${g.machine} الإجمالي`, from: g.sales < 0 ? g.machine : cashierSafe, to: g.sales < 0 ? cashierSafe : g.machine, amount: Math.abs(g.sales) });
+    if (g.fee) list.push({ id: 'f:' + g.machine, title: `مصاريف ${g.machine} (${fmt(g.rate)}%)`, from: cashierSafe, to: 'مصروف', amount: g.fee });
+  });
+  if (hnd && hnd.keepDrawer === 'stay' && num(hnd.drawerTotal) > 0) list.push({ id: 'close', title: 'تسليم آخر المدة للي بعده', from: cashierSafe, to: 'خزنة التسليم', amount: num(hnd.drawerTotal) });
+  return list;
+}
+
+function BillsCompare({ rcv, hnd }) {
+  const tot = (b) => FACES.reduce((a, f) => a + f * num(b?.[f]), 0);
+  if (!rcv?.bills && !hnd?.bills) return null;
+  return (
+    <section className="card" style={{ gap: 10 }}>
+      <h2 className="h2">الفئات · استلم وسلّم</h2>
+      <div style={{ overflowX: 'auto' }}>
+        <table className="table" style={{ minWidth: 420 }}>
+          <thead><tr><th>الفئة</th>{FACES.map((f, i) => <th key={f} style={{ background: BILL_BG[i] }}>{f}</th>)}<th>الإجمالي</th></tr></thead>
+          <tbody>
+            <tr><td><b>استلم</b></td>{FACES.map((f) => <td key={f}>{num(rcv?.bills?.[f])}</td>)}<td><b>{fmt(tot(rcv?.bills))}</b></td></tr>
+            <tr><td><b>سلّم</b></td>{FACES.map((f) => <td key={f}>{hnd?.bills ? num(hnd.bills[f]) : '—'}</td>)}<td><b>{hnd?.bills ? fmt(tot(hnd.bills)) : '—'}</b></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
