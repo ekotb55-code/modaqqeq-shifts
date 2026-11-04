@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
-import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { addDoc, collection, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Avatar, CopyBtn, Icon, PhotoView, ZoomImage, useToast } from '../ui.jsx';
+import { Avatar, CopyBtn, Icon, Modal, PhotoView, ZoomImage, useToast } from '../ui.jsx';
 import { BILL_BG, FACES, SRC_LABEL, WALLETS, shopForRegister, computeShift, diffText, durationStr, fmt, minutesBetween, num, safeLabel, timeStr, toDate, dateStr } from '../lib';
 import Statements from './Statements.jsx';
+import ShiftChat from '../ShiftChat.jsx';
 import { DeletedList, entryTitle } from '../cashier/Dash.jsx';
 
 const STATUS = {
   open: { label: 'شغالة', cls: 'info' },
   submitted: { label: 'جديدة', cls: 'warn' },
   reviewing: { label: 'بتتراجع', cls: 'dark' },
+  reopened: { label: 'مفتوحة للكاشير يعدّل', cls: 'info' },
   closed: { label: 'اتقفلت', cls: 'ok' },
 };
 
@@ -30,7 +32,7 @@ export function useShopShifts(shops, statuses) {
 }
 
 export default function Review({ profile, shops }) {
-  const pending = useShopShifts(shops, ['open', 'submitted', 'reviewing']);
+  const pending = useShopShifts(shops, ['open', 'submitted', 'reviewing', 'reopened']);
   const [selId, setSelId] = useState(null);
   const shopName = (id) => shops.find((s) => s.id === id)?.name || '';
   const sorted = useMemo(() => {
@@ -48,7 +50,7 @@ export default function Review({ profile, shops }) {
           {shops.length > 0 && sorted.length === 0 && <div className="card empty">مفيش ورديات مستنية مراجعة</div>}
           {sorted.map((s) => {
             const late = s.status === 'submitted' && minutesBetween(s.submittedAt, new Date()) > 60;
-            const st = late ? { label: `متأخرة ${durationStr(s.submittedAt)}`, cls: 'bad' } : STATUS[s.status];
+            const st = late ? { label: `متأخرة ${durationStr(s.submittedAt)}`, cls: 'bad' } : STATUS[s.status] || STATUS.submitted;
             return (
               <button key={s.id} type="button" className={'q-item' + (selId === s.id ? ' on' : '')} onClick={() => setSelId(s.id)}>
                 <span className="spread"><strong>{shopName(s.shopId)}</strong><span className={'badge ' + st.cls}>{st.label}</span></span>
@@ -178,10 +180,56 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
     } catch (e) { console.error(e); toast('حصلت مشكلة', 'err'); }
   };
 
+  const [fix, setFix] = useState(null); // { kind: 'entry' | 'photo', target, value }
+  const [addOpen, setAddOpen] = useState(false);
+  const [reopenOpen, setReopenOpen] = useState(false);
+  const logFix = (what, from, to) => ({ corrections: [...(shift.corrections || []), { what, from, to, by: profile.name, at: new Date().toISOString() }] });
+  const fixEntry = async (e, amount) => {
+    try {
+      await updateDoc(doc(db, 'shifts', shift.id, 'entries', e.id), { amount: num(amount), originalAmount: e.originalAmount ?? e.amount, correctedBy: profile.name, correctedAt: serverTimestamp() });
+      await updateDoc(doc(db, 'shifts', shift.id), logFix(entryTitle(e), num(e.amount), num(amount)));
+      toast('المبلغ اتعدّل والحساب اتحدّث'); setFix(null);
+    } catch (err) { console.error(err); toast('مش قادرين نعدّل', 'err'); }
+  };
+  // A photo marked "not matching": put the right number where the cashier typed it.
+  const fixPhoto = async (p, values) => {
+    try {
+      if (p.entryId) {
+        const e = allEntries.find((x) => x.id === p.entryId);
+        if (e) await fixEntry(e, values[0]);
+        await updateDoc(doc(db, 'shifts', shift.id, 'photos', p.id), { amount: num(values[0]), corrected: true });
+        setFix(null);
+        return;
+      }
+      const stageKey = p.stage === 'receive' ? 'receive' : 'handover';
+      const st = shift[stageKey] || {};
+      const patch = {};
+      if (p.kind === 'wallet') {
+        const field = stageKey === 'receive' ? 'wallets' : 'walletsTyped';
+        patch[`${stageKey}.${field}.${p.wallet}`] = num(values[0]);
+        await updateDoc(doc(db, 'shifts', shift.id), { ...patch, ...logFix(`${p.label} · ${stageKey === 'receive' ? 'استلام' : 'تسليم'}`, num(st[field]?.[p.wallet]), num(values[0])) });
+      } else {
+        const list = (st.machines || []).map((m) => ({ ...m }));
+        const idx = list.map((m, i) => (`${m.machine} · ${m.account}` === p.label || m.machine === p.label ? i : -1)).filter((i) => i >= 0);
+        const before = idx.map((i) => num(list[i].value)).join(' + ');
+        idx.forEach((i, k) => { if (values[k] !== undefined && values[k] !== '') list[i].value = num(values[k]); });
+        await updateDoc(doc(db, 'shifts', shift.id), { [`${stageKey}.machines`]: list, ...logFix(`${p.label} · ${stageKey === 'receive' ? 'استلام' : 'تسليم'}`, before, idx.map((i) => num(list[i].value)).join(' + ')) });
+      }
+      await updateDoc(doc(db, 'shifts', shift.id, 'photos', p.id), { corrected: true });
+      toast('الرقم اتعدّل والحساب اتحدّث'); setFix(null);
+    } catch (err) { console.error(err); toast('مش قادرين نعدّل', 'err'); }
+  };
+  const photoFields = (p) => {
+    if (p.entryId || p.kind === 'wallet') return [{ label: 'الرقم الصح', value: photoTyped(p) }];
+    const list = (p.stage === 'receive' ? rcv.machines : hnd.machines) || [];
+    return list.filter((m) => `${m.machine} · ${m.account}` === p.label || m.machine === p.label).map((m) => ({ label: m.account, value: m.value }));
+  };
+
   const togglePosted = (e) => updateDoc(doc(db, 'shifts', shift.id, 'entries', e.id), { posted: !e.posted, postedBy: profile.name }).catch(() => toast('مش قادرين نحفظ', 'err'));
   const photoOf = (id) => photos.find((p) => p.id === id);
   const checkPhoto = (p, check) => updateDoc(doc(db, 'shifts', shift.id, 'photos', p.id), { check, checkedBy: profile.name, checkedAt: serverTimestamp() }).catch(() => toast('مش قادرين نحفظ', 'err'));
   const photoTyped = (p) => {
+    if (p.kind === 'wallet') return (p.stage === 'receive' ? rcv.wallets?.[p.wallet] : hnd.walletsTyped?.[p.wallet]) ?? p.amount ?? null;
     if (p.kind !== 'machine') return p.amount ?? null;
     const list = (p.stage === 'receive' ? rcv.machines : hnd.machines) || [];
     const m = list.find((x) => `${x.machine} · ${x.account}` === p.label);
@@ -214,7 +262,8 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
         </div>
         <span style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           {shift.forced && <span className="badge bad">اتقفلت بالنيابة</span>}
-          <span className={'badge ' + STATUS[status].cls}>{STATUS[status].label}</span>
+          <span className={'badge ' + (STATUS[status] || STATUS.submitted).cls}>{(STATUS[status] || STATUS.submitted).label}</span>
+          {shift.staffUnread && <span className="badge warn">💬 رسالة جديدة من الكاشير</span>}
           {reviewing && review?.startedAt && <span className="badge info">بدأت من {durationStr(review.startedAt)}</span>}
           {fullShop?.posUrl && (
             <a className="pos-link keep" href={fullShop.posUrl} target="_blank" rel="noopener noreferrer">
@@ -228,6 +277,13 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
         <section className="card spread">
           <span className="muted">الوردية لسه شغالة. لو الكاشير مشي من غير ما يسلّم تقدر تقفلها بالنيابة عنه.</span>
           <button type="button" className="btn soft sm" onClick={forceSubmit}>قفل بالنيابة</button>
+        </section>
+      )}
+
+      {status === 'reopened' && (
+        <section className="card spread" style={{ background: '#E6F4FF' }}>
+          <span style={{ lineHeight: 1.7 }}><b>الوردية مفتوحة للكاشير يعدّلها</b>{shift.reopenNote ? ` · ${shift.reopenNote}` : ''}. أول ما يخلّص هترجعلك «جديدة».</span>
+          {canReview && <button type="button" className="btn soft sm" onClick={() => updateDoc(doc(db, 'shifts', shift.id), { status: 'submitted', reopenPending: false, cashierAttention: false }).catch(() => toast('مش قادرين نحفظ', 'err'))}>اقفلها تاني من غير تعديل</button>}
         </section>
       )}
 
@@ -282,10 +338,33 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
               </label>
               {ph && <img className="thumb" style={{ width: 44, height: 44 }} src={ph.data} alt="صورة" onClick={() => setView(ph.data)} />}
               {name && <span className="small" style={{ display: 'flex', alignItems: 'center' }}>{name}<CopyBtn value={name} label="نسخ الاسم" /></span>}
-              <span style={{ display: 'flex', alignItems: 'center', fontWeight: 700, fontSize: 16, minWidth: 90, justifyContent: 'flex-end' }}>{fmt(e.amount)}<CopyBtn value={fmt(e.amount)} label="نسخ المبلغ" /></span>
+              <span style={{ display: 'flex', alignItems: 'center', fontWeight: 700, fontSize: 16, minWidth: 90, justifyContent: 'flex-end', gap: 4 }}>
+                {e.originalAmount !== undefined && <span className="tiny muted" style={{ textDecoration: 'line-through' }}>{fmt(e.originalAmount)}</span>}
+                {fmt(e.amount)}<CopyBtn value={fmt(e.amount)} label="نسخ المبلغ" />
+                {canReview && !closed && <button type="button" className="icon-btn" style={{ width: 32, height: 32 }} aria-label={`عدّل مبلغ ${entryTitle(e)}`} title="عدّل المبلغ" onClick={() => setFix({ e, value: String(e.amount) })}><Icon d="gear" size={15} /></button>}
+              </span>
+              {fix?.e?.id === e.id && (
+                <div className="row" style={{ gap: 8, flex: '1 1 100%', alignItems: 'center' }}>
+                  <input className="input" inputMode="decimal" style={{ flex: '1 1 140px', height: 44 }} value={fix.value} onChange={(ev) => setFix({ ...fix, value: ev.target.value })} aria-label="المبلغ الصح" autoFocus />
+                  <button type="button" className="btn sm" onClick={() => fixEntry(e, fix.value)}>حفظ التعديل</button>
+                  <button type="button" className="link" onClick={() => setFix(null)}>إلغاء</button>
+                </div>
+              )}
             </div>
           );
         })}
+        {canReview && !closed && (
+          <div className="row" style={{ gap: 8, paddingTop: 12 }}>
+            <button type="button" className="btn soft sm" onClick={() => setAddOpen(true)}><Icon d="plus" size={16} />إضافة مصروف أو إيراد (تصحيح)</button>
+            {['submitted', 'reviewing'].includes(status) && <button type="button" className="btn soft sm" onClick={() => setReopenOpen(true)}><Icon d="undo" size={16} />افتح الوردية للكاشير يعدّلها</button>}
+          </div>
+        )}
+        {(shift.corrections || []).length > 0 && (
+          <div className="stack" style={{ gap: 2, paddingTop: 10 }}>
+            <span className="tiny muted" style={{ fontWeight: 700 }}>تعديلات المحاسب</span>
+            {shift.corrections.map((c, i) => <span key={i} className="tiny">{c.by}: {c.what} · من {typeof c.from === 'number' ? fmt(c.from) : c.from} لـ {typeof c.to === 'number' ? fmt(c.to) : c.to}</span>)}
+          </div>
+        )}
         {endMoves.length > 0 && <div className="tiny muted" style={{ fontWeight: 700, padding: '10px 0 6px' }}>في الآخر خالص</div>}
         {endMoves.map((m) => <MoveRow key={m.id} m={m} on={!!autoPosted[m.id]} onToggle={() => toggleMove(m)} canReview={canReview} photoOf={photoOf} onView={setView} />)}
       </section>
@@ -337,12 +416,20 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
                       <button type="button" className="chip sm" style={{ flex: 1, background: bad ? 'var(--red)' : undefined, color: bad ? '#fff' : undefined }} onClick={() => checkPhoto(p, bad ? 'pending' : 'bad')}>مش مطابقة</button>
                     </span>
                   ) : <span className={'badge ' + (ok ? 'ok' : bad ? 'bad' : 'warn')}>{ok ? 'مطابقة' : bad ? 'مش مطابقة' : 'لسه'}</span>}
+                  {bad && canReview && !closed && <PhotoFix fields={photoFields(p)} done={p.corrected} onSave={(vals) => fixPhoto(p, vals)} />}
                 </div>
               );
             })}
           </div>
         </section>
       )}
+
+      <section className="card" style={{ gap: 10 }}>
+        <h2 className="h2">💬 شات الوردية <span className="tiny muted" style={{ fontWeight: 500 }}>· بينك وبين {shift.cashierName}</span></h2>
+        <ShiftChat shift={shift} profile={profile} side="staff" />
+      </section>
+      {addOpen && <AddCorrection shift={shift} shop={shop} profile={profile} onClose={() => setAddOpen(false)} />}
+      {reopenOpen && <ReopenModal shift={shift} profile={profile} onClose={() => setReopenOpen(false)} />}
 
       <div className="row" style={{ gap: 16 }}>
         <section className="card" style={{ flex: '1 1 320px', gap: 4 }}>
@@ -430,5 +517,77 @@ function BillsCompare({ rcv, hnd }) {
         </table>
       </div>
     </section>
+  );
+}
+
+function PhotoFix({ fields, done, onSave }) {
+  const [vals, setVals] = useState(() => fields.map((f) => (f.value === null || f.value === undefined ? '' : String(f.value))));
+  return (
+    <div className="stack" style={{ gap: 6, background: '#FFF1F1', borderRadius: 14, padding: 10 }}>
+      <span className="tiny" style={{ fontWeight: 700, color: '#9B1C1C' }}>{done ? '✓ اتعدّل · تقدر تعدّل تاني' : 'اكتب الرقم اللي في الصورة'}</span>
+      {fields.map((f, i) => (
+        <label key={i} className="small" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ minWidth: 70 }}>{f.label}</span>
+          <input className="input" style={{ height: 40, flex: 1 }} inputMode="decimal" value={vals[i]} onChange={(e) => setVals(vals.map((v, j) => (j === i ? e.target.value : v)))} />
+        </label>
+      ))}
+      <button type="button" className="btn sm" onClick={() => onSave(vals)}>عدّل الرقم</button>
+    </div>
+  );
+}
+
+function AddCorrection({ shift, shop, profile, onClose }) {
+  const toast = useToast();
+  const [type, setType] = useState('expense');
+  const [src, setSrc] = useState('drawer');
+  const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    if (num(amount) <= 0) { toast('اكتب المبلغ', 'err'); return; }
+    if (!note.trim()) { toast('اكتب السبب', 'err'); return; }
+    setBusy(true);
+    try {
+      await addDoc(collection(db, 'shifts', shift.id, 'entries'), {
+        type, src, amount: num(amount), ...(type === 'expense' ? { kind: 'correction', kindLabel: 'تصحيح من المحاسب', note: note.trim() } : { reason: 'تصحيح من المحاسب', note: note.trim() }),
+        byAccountant: true, by: profile.id, byName: profile.name, posted: false,
+        createdAt: serverTimestamp(), createdAtLocal: new Date().toISOString(),
+      });
+      await updateDoc(doc(db, 'shifts', shift.id), { corrections: [...(shift.corrections || []), { what: `${type === 'expense' ? 'مصروف' : 'إيراد'} جديد · ${note.trim()}`, from: 0, to: num(amount), by: profile.name, at: new Date().toISOString() }] });
+      toast('العملية اتضافت والحساب اتحدّث'); onClose();
+    } catch (e) { console.error(e); toast('مش قادرين نضيف', 'err'); setBusy(false); }
+  };
+  return (
+    <Modal title="إضافة عملية تصحيح" icon="plus" color="var(--blue)" onClose={onClose} width={460}>
+      <div className="chips">
+        <button type="button" className={'chip' + (type === 'expense' ? ' on' : '')} onClick={() => setType('expense')}>مصروف</button>
+        <button type="button" className={'chip' + (type === 'income' ? ' on' : '')} onClick={() => setType('income')}>إيراد</button>
+      </div>
+      <div className="chips">
+        <button type="button" className={'chip' + (src === 'drawer' ? ' on' : '')} onClick={() => setSrc('drawer')}>درج الكاشير</button>
+        {!shop?.noSide && <button type="button" className={'chip' + (src === 'side' ? ' on' : '')} onClick={() => setSrc('side')}>الدرج الجانبي</button>}
+      </div>
+      <label className="field">المبلغ<input className="input" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus /></label>
+      <label className="field">السبب<input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="مثلًا: مصروف الكاشير نسي يسجله" /></label>
+      <button type="button" className="btn full" onClick={save} disabled={busy}>{busy ? 'لحظة…' : 'أضف'}</button>
+    </Modal>
+  );
+}
+
+function ReopenModal({ shift, profile, onClose }) {
+  const toast = useToast();
+  const [note, setNote] = useState('');
+  const go = async () => {
+    try {
+      await updateDoc(doc(db, 'shifts', shift.id), { status: 'reopened', reopenPending: true, cashierAttention: true, reopenNote: note.trim(), reopenedBy: profile.name, reopenedAt: serverTimestamp(), reopenCount: (shift.reopenCount || 0) + 1 });
+      toast(`الوردية اتفتحت لـ ${shift.cashierName} يعدّلها`); onClose();
+    } catch (e) { console.error(e); toast('مش قادرين نفتحها', 'err'); }
+  };
+  return (
+    <Modal title="افتح الوردية للكاشير" icon="undo" color="var(--blue)" onClose={onClose} width={460}>
+      <span className="small" style={{ lineHeight: 1.7 }}>{shift.cashierName} هيلاقي رسالة أول ما يدخل إن الوردية دي مفتوحة يعدّلها: يضيف أو يمسح عمليات. لما يخلّص هترجعلك «جديدة».</span>
+      <label className="field">عاوزه يعدّل إيه؟ (اختياري)<input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="مثلًا: سجّل مصروف المواصلات" /></label>
+      <button type="button" className="btn full" onClick={go}>افتحها</button>
+    </Modal>
   );
 }

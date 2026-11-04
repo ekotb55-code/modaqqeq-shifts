@@ -5,6 +5,7 @@ import { auth, db } from '../firebase';
 import { Icon, Avatar, Modal, Spinner, useToast } from '../ui.jsx';
 import { DEFAULT_SHOP, MAIN_REG, allOpen, cashierPassword, firstName, openOf, pickImage, regName, registersOf, shopForRegister, timeStr } from '../lib';
 import { usePendingTransfers } from './Transfers.jsx';
+import { AttentionBar, AttentionModal, useAttention } from './Attention.jsx';
 import { Topbar } from './parts.jsx';
 import Receive from './Receive.jsx';
 import Dash from './Dash.jsx';
@@ -32,6 +33,8 @@ export default function CashierApp({ profile }) {
   const [pinOpen, setPinOpen] = useState(false);
   const [pickReg, setPickReg] = useState(null);
   const pending = usePendingTransfers(shopId);
+  const attention = useAttention(profile.id);
+  const [attn, setAttn] = useState(null);
 
   useEffect(() => {
     if (!shopId) return undefined;
@@ -90,12 +93,14 @@ export default function CashierApp({ profile }) {
   else if (!shift) body = <Spinner text="بنفتح ورديتك…" />;
   else if (screen === 'receive') body = <Receive key="edit" shop={rshop} reg={reg} profile={profile} editShift={shift} onStarted={() => setScreen('dash')} onCancel={() => setScreen('dash')} />;
   else if (screen === 'handover') body = <Handover shop={rshop} shift={shift} entries={active} incoming={incoming} profile={me} onBack={() => setScreen('dash')} onDone={setDone} />;
-  else body = <Dash shop={rshop} fullShop={shop} shift={shift} entries={active} deleted={deleted} incoming={incoming} outgoing={outgoing} profile={me} onHandover={() => setScreen('handover')} onReceive={() => setScreen('receive')} />;
+  else body = <Dash shop={rshop} fullShop={shop} shift={shift} entries={active} deleted={deleted} incoming={incoming} outgoing={outgoing} profile={me} onHandover={() => setScreen('handover')} onReceive={() => setScreen('receive')} onChat={() => setAttn(shift)} />;
 
   return (
     <div>
       {top}
+      {!done && <AttentionBar list={attention} currentId={shiftId} onOpen={setAttn} />}
       {body}
+      {attn && <AttentionModal shift={attn} shop={shop} profile={me} onClose={() => setAttn(null)} />}
       {pinOpen && <PinModal onClose={() => setPinOpen(false)} />}
       {askLogout && (
         <div className="overlay">

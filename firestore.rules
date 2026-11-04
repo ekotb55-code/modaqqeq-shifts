@@ -53,14 +53,29 @@ service cloud.firestore {
       allow update: if reviewerOf(resource.data.shopId)
         || (signedIn() && resource.data.cashierUid == request.auth.uid && resource.data.status == 'open'
             && request.resource.data.cashierUid == request.auth.uid
-            && request.resource.data.status in ['open', 'submitted']);
+            && request.resource.data.status in ['open', 'submitted'])
+        // Shift reopened by the accountant: the cashier finishes editing and sends it back.
+        || (signedIn() && resource.data.cashierUid == request.auth.uid && resource.data.status == 'reopened'
+            && request.resource.data.status in ['reopened', 'submitted']
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reopenPending', 'cashierAttention', 'cashierUnread', 'staffUnread', 'lastMsg', 'reopenDoneAt', 'entryCount']))
+        // Chat flags, any time.
+        || ((staffOf(resource.data.shopId) || (signedIn() && resource.data.cashierUid == request.auth.uid))
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cashierAttention', 'cashierUnread', 'staffUnread', 'lastMsg']));
       allow delete: if isAdmin();
+
+      match /messages/{msgId} {
+        allow read: if staffOf(shiftData(shiftId).shopId) || shiftData(shiftId).cashierUid == request.auth.uid;
+        allow create: if signedIn() && request.resource.data.byUid == request.auth.uid
+          && (staffOf(shiftData(shiftId).shopId) || shiftData(shiftId).cashierUid == request.auth.uid);
+        allow update, delete: if isAdmin();
+      }
 
       match /entries/{entryId} {
         allow read: if staffOf(shiftData(shiftId).shopId) || shiftData(shiftId).cashierUid == request.auth.uid;
-        allow create: if signedIn() && shiftData(shiftId).cashierUid == request.auth.uid && shiftData(shiftId).status == 'open';
+        allow create: if reviewerOf(shiftData(shiftId).shopId)
+          || (signedIn() && shiftData(shiftId).cashierUid == request.auth.uid && shiftData(shiftId).status in ['open', 'reopened']);
         allow update: if reviewerOf(shiftData(shiftId).shopId)
-          || (signedIn() && shiftData(shiftId).cashierUid == request.auth.uid && shiftData(shiftId).status == 'open'
+          || (signedIn() && shiftData(shiftId).cashierUid == request.auth.uid && shiftData(shiftId).status in ['open', 'reopened']
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deleted', 'deletedAt', 'deletedAtLocal', 'deletedBy', 'deletedByName', 'deleteReason']));
         allow delete: if reviewerOf(shiftData(shiftId).shopId);
       }

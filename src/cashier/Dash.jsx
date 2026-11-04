@@ -19,7 +19,7 @@ export function entryTitle(e) {
   return e.type;
 }
 
-export default function Dash({ shop, shift, entries, deleted = [], incoming = [], outgoing = [], profile, onHandover, onReceive }) {
+export default function Dash({ shop, shift, entries, deleted = [], incoming = [], outgoing = [], profile, onHandover, onReceive, onChat }) {
   const [modal, setModal] = useState(null);
   const [del, setDel] = useState(null);
   const [showDeleted, setShowDeleted] = useState(false);
@@ -71,6 +71,7 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
           <div className="spread" style={{ alignItems: 'flex-end' }}>
             <span className="stack" style={{ gap: 0 }}><span className="small soft">عملياتك النهارده</span><span style={{ fontSize: 44, fontWeight: 800, lineHeight: 1.1 }}>{entries.length}</span></span>
             <span style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            {onChat && <button type="button" className="btn" style={{ height: 58, background: 'rgba(255,255,255,.18)', fontSize: 16, position: 'relative' }} onClick={onChat} aria-label="شات مع المحاسب"><Icon d="send" size={18} />المحاسب{shift.cashierUnread && <span className="dot-new" />}</button>}
             <button type="button" className="btn" style={{ height: 58, background: 'rgba(255,255,255,.18)', fontSize: 16 }} onClick={onReceive}>تعديل الاستلام</button>
             <button type="button" className="btn lime" style={{ paddingInline: '26px 10px', height: 58 }} onClick={onHandover}>
               سلّم الوردية<span className="ic" style={{ background: 'var(--ink)', color: 'var(--lime)', width: 40, height: 40 }}><Icon d="down" size={20} stroke={2.6} /></span>
@@ -200,7 +201,7 @@ export function DeletedList({ items, shop }) {
   );
 }
 
-function DeleteModal({ entry, shift, profile, onClose }) {
+export function DeleteModal({ entry, shift, profile, onClose }) {
   const toast = useToast();
   const [reason, setReason] = useState('');
   const go = () => {
