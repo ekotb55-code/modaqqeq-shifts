@@ -95,6 +95,7 @@ export default function ShopLogin({ shopId, error, onStaff, onUnlink }) {
         <InstallButton />
         <div className="spread" style={{ justifyContent: 'center' }}>
           <button type="button" className="link" onClick={onStaff}><Icon d="person" size={16} /> دخول المحاسبين والإدارة</button>
+          <button type="button" className="link" onClick={() => window.confirm('تغيّر المحل المربوط بالجهاز ده؟') && onUnlink()}>مش ده المحل؟</button>
         </div>
       </section>
       <section className="login-art">

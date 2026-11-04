@@ -166,6 +166,7 @@ function ShopEditor({ shop, linkedShop, onLinkDevice }) {
     toast('اللوجو اتحفظ');
   };
 
+  const shopLink = `${window.location.origin}${window.location.pathname}?shop=${shop.id}`;
   const link = () => {
     setLinkedShop(shop.id);
     onLinkDevice(shop.id);
@@ -191,6 +192,15 @@ function ShopEditor({ shop, linkedShop, onLinkDevice }) {
             <label className="field">لينك برنامج البيع<input className="input" dir="ltr" placeholder="https://" value={f.posUrl} onChange={(e) => set('posUrl', e.target.value)} /></label>
             <label className="field">اسم الحساب اللي بيستلم انستاباي (للمطابقة)<input className="input" value={f.walletName} onChange={(e) => set('walletName', e.target.value)} /></label>
           </div>
+        </div>
+      </section>
+
+      <section className="card tint-blue" style={{ gap: 8 }}>
+        <h2 className="h2">لينك دخول الكاشيرية</h2>
+        <span className="tiny muted">ابعت اللينك ده للكاشير أو افتحه على موبايل المحل. بيفتح على شاشة كاشيرية المحل ده على طول.</span>
+        <div className="m-row" style={{ background: '#fff' }}>
+          <span className="lbl small" dir="ltr" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{shopLink}</span>
+          <button type="button" className="btn sm" onClick={() => { navigator.clipboard?.writeText(shopLink); toast('اللينك اتنسخ'); }}><Icon d="copy" size={16} />نسخ</button>
         </div>
       </section>
 

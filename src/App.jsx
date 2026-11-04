@@ -14,7 +14,14 @@ export default function App() {
   const [user, setUser] = useState(undefined);
   const [profile, setProfile] = useState(null);
   const [err, setErr] = useState('');
-  const [linked, setLinked] = useState(getLinkedShop());
+  const [linked, setLinked] = useState(() => {
+    // A shop link like ...?shop=ID opens the cashier login for that shop on this device.
+    try {
+      const q = new URLSearchParams(window.location.search).get('shop');
+      if (q) { setLinkedShop(q); window.history.replaceState(null, '', window.location.pathname); return q; }
+    } catch { /* ignore */ }
+    return getLinkedShop();
+  });
   const [staffMode, setStaffMode] = useState(false);
 
   useEffect(() => onAuthStateChanged(auth, async (u) => {
@@ -47,5 +54,5 @@ export default function App() {
   }
 
   if (linked && !staffMode) return <ShopLogin shopId={linked} error={err} onStaff={() => setStaffMode(true)} onUnlink={() => { setLinkedShop(null); setLinked(null); }} />;
-  return <StaffLogin error={err} onBack={linked ? () => setStaffMode(false) : null} />;
+  return <StaffLogin error={err} onBack={linked ? () => setStaffMode(false) : null} onPickShop={(id) => { setLinkedShop(id); setLinked(id); setStaffMode(false); }} />;
 }

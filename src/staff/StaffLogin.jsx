@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { collection, getDocs } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
-import { auth, SUPER_ADMINS } from '../firebase';
-import { InstallButton, useToast } from '../ui.jsx';
+import { auth, db, SUPER_ADMINS } from '../firebase';
+import { Icon, InstallButton, useToast } from '../ui.jsx';
 
 const MSG = {
   'auth/invalid-credential': 'الإيميل أو الباسورد غلط',
@@ -14,13 +15,46 @@ const MSG = {
   'auth/invalid-email': 'الإيميل مكتوب غلط',
 };
 
-export default function StaffLogin({ error, onBack }) {
+function ShopPicker({ onPick, onClose }) {
+  const [shops, setShops] = useState(null);
+  const [q, setQ] = useState('');
+  useEffect(() => {
+    getDocs(collection(db, 'shopsPublic'))
+      .then((r) => setShops(r.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (a.name || '').localeCompare(b.name || ''))))
+      .catch(() => setShops([]));
+  }, []);
+  const list = (shops || []).filter((s) => !q.trim() || (s.name || '').includes(q.trim()));
+  return (
+    <div className="card card-lg" style={{ width: '100%', maxWidth: 440, gap: 14 }}>
+      <div className="stack" style={{ gap: 4 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 700 }}>دخول الكاشير</h1>
+        <span className="muted small">اختار المحل اللي إنت شغّال فيه. الجهاز هيفتكره بعد كده.</span>
+      </div>
+      <input className="input" placeholder="دوّر على اسم المحل" value={q} onChange={(e) => setQ(e.target.value)} />
+      {shops === null && <span className="muted small">بنحمّل المحلات…</span>}
+      {shops && list.length === 0 && <span className="muted small">مفيش محلات بالاسم ده</span>}
+      <div className="stack">
+        {list.map((s) => (
+          <button key={s.id} type="button" className="q-item" onClick={() => onPick(s.id)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            {s.logo ? <img src={s.logo} alt="" style={{ height: 40, width: 80, objectFit: 'contain' }} /> : <span style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--yellow)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>{(s.name || '?').charAt(0)}</span>}
+            <strong style={{ flexGrow: 1 }}>{s.name}</strong>
+            <Icon d="chevron" size={18} />
+          </button>
+        ))}
+      </div>
+      <button type="button" className="btn soft full" onClick={onClose}>رجوع</button>
+    </div>
+  );
+}
+
+export default function StaffLogin({ error, onBack, onPickShop }) {
   const toast = useToast();
   const [email, setEmail] = useState('');
   const [pass, setPass] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [setup, setSetup] = useState(false);
+  const [picking, setPicking] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -47,7 +81,13 @@ export default function StaffLogin({ error, onBack }) {
       <section className="login-main">
         <img className="logo-mdq" style={{ height: 92, alignSelf: 'flex-start' }} src="./modaqqeq-logo.png" alt="مدقق" />
         <div style={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {picking ? <ShopPicker onPick={onPickShop} onClose={() => setPicking(false)} /> : (
           <form className="card card-lg" style={{ width: '100%', maxWidth: 440, gap: 16 }} onSubmit={submit}>
+            {!onBack && (
+              <button type="button" className="btn lime full" style={{ height: 64, fontSize: 19 }} onClick={() => setPicking(true)}>
+                <Icon d="person" />أنا كاشير · ادخل برقمي السري
+              </button>
+            )}
             <div className="stack" style={{ gap: 4 }}>
               <h1 style={{ fontSize: 26, fontWeight: 700 }}>{setup ? 'إنشاء حساب إدارة مدقق' : 'دخول المحاسبين والإدارة'}</h1>
               <span className="muted small">{setup ? 'أول مرة بس. بعدها هتعمل باقي الحسابات من جوه.' : 'ادخل بالإيميل والباسورد بتوعك'}</span>
@@ -63,6 +103,7 @@ export default function StaffLogin({ error, onBack }) {
             {onBack && <button type="button" className="btn soft full" onClick={onBack}>رجوع لدخول الكاشير</button>}
             <InstallButton />
           </form>
+          )}
         </div>
       </section>
       <section className="login-art">
