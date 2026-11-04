@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { signOut } from 'firebase/auth';
+import { signOut, updatePassword } from 'firebase/auth';
 import { collection, doc, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { auth, db } from '../firebase';
-import { Icon, Avatar, Spinner } from '../ui.jsx';
-import { DEFAULT_SHOP, firstName, timeStr } from '../lib';
+import { Icon, Avatar, Modal, Spinner, useToast } from '../ui.jsx';
+import { DEFAULT_SHOP, cashierPassword, firstName, timeStr } from '../lib';
 import { Topbar } from './parts.jsx';
 import Receive from './Receive.jsx';
 import Dash from './Dash.jsx';
@@ -18,6 +18,7 @@ export default function CashierApp({ profile }) {
   const [screen, setScreen] = useState('dash');
   const [done, setDone] = useState(null);
   const [askLogout, setAskLogout] = useState(false);
+  const [pinOpen, setPinOpen] = useState(false);
 
   useEffect(() => {
     if (!shopId) return undefined;
@@ -47,7 +48,7 @@ export default function CashierApp({ profile }) {
     if (done) return [{ title: 'الاستلام', n: 1, state: 'done' }, { title: 'العمليات', n: 2, state: 'done' }, { title: 'التسليم', n: 3, state: 'done' }];
     if (!mine) return [{ title: 'الاستلام', n: 1, state: 'on' }, { title: 'العمليات', n: 2, state: '' }, { title: 'التسليم', n: 3, state: '' }];
     return [
-      { title: 'الاستلام', n: 1, state: 'done' },
+      { title: 'الاستلام', n: 1, state: screen === 'receive' ? 'on' : 'done', go: screen !== 'receive' ? () => setScreen('receive') : null },
       { title: 'العمليات', n: 2, state: screen === 'dash' ? 'on' : 'done', go: screen !== 'dash' ? () => setScreen('dash') : null },
       { title: 'التسليم', n: 3, state: screen === 'handover' ? 'on' : '', go: screen !== 'handover' ? () => setScreen('handover') : null },
     ];
@@ -57,20 +58,22 @@ export default function CashierApp({ profile }) {
   if (shop === undefined) return <Spinner text="بنحمّل المحل…" />;
   if (shop === null) return <NoShop />;
 
-  const top = <Topbar shopPub={pub} profile={profile} steps={open && !mine && !done ? null : steps} onLogout={logout} posUrl={shop.posUrl} />;
+  const top = <Topbar shopPub={pub} profile={profile} steps={open && !mine && !done ? null : steps} onLogout={logout} posUrl={shop.posUrl} onPin={() => setPinOpen(true)} />;
 
   let body;
   if (done) body = <Done info={done} profile={profile} />;
   else if (open && !mine) body = <Blocked open={open} pub={pub} />;
   else if (!mine) body = <Receive shop={shop} profile={profile} onStarted={() => setScreen('dash')} />;
   else if (!shift) body = <Spinner text="بنفتح ورديتك…" />;
+  else if (screen === 'receive') body = <Receive key="edit" shop={shop} profile={profile} editShift={shift} onStarted={() => setScreen('dash')} onCancel={() => setScreen('dash')} />;
   else if (screen === 'handover') body = <Handover shop={shop} shift={shift} entries={entries} profile={profile} onBack={() => setScreen('dash')} onDone={setDone} />;
-  else body = <Dash shop={shop} shift={shift} entries={entries} profile={profile} onHandover={() => setScreen('handover')} />;
+  else body = <Dash shop={shop} shift={shift} entries={entries} profile={profile} onHandover={() => setScreen('handover')} onReceive={() => setScreen('receive')} />;
 
   return (
     <div>
       {top}
       {body}
+      {pinOpen && <PinModal onClose={() => setPinOpen(false)} />}
       {askLogout && (
         <div className="overlay">
           <div role="dialog" aria-label="لسه ما سلّمتش" className="modal center" style={{ maxWidth: 460, textAlign: 'center' }}>
@@ -84,6 +87,33 @@ export default function CashierApp({ profile }) {
         </div>
       )}
     </div>
+  );
+}
+
+function PinModal({ onClose }) {
+  const toast = useToast();
+  const [a, setA] = useState('');
+  const [b, setB] = useState('');
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    if (!/^[0-9]{4}$/.test(a)) { toast('الرقم السري لازم 4 أرقام', 'err'); return; }
+    if (a !== b) { toast('الرقمين مش زي بعض', 'err'); return; }
+    setBusy(true);
+    try {
+      await updatePassword(auth.currentUser, cashierPassword(a));
+      toast('الرقم السري اتغيّر');
+      onClose();
+    } catch (e) {
+      toast(e.code === 'auth/requires-recent-login' ? 'اخرج وادخل تاني وبعدين غيّره' : 'مش قادرين نغيّره، اتأكد من النت', 'err');
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal title="غيّر الرقم السري" icon="lock" color="var(--violet)" onClose={onClose} width={420}>
+      <label className="field">الرقم الجديد (4 أرقام)<input className="input" inputMode="numeric" type="password" maxLength={4} dir="ltr" value={a} onChange={(e) => setA(e.target.value.replace(/\D/g, ''))} autoFocus /></label>
+      <label className="field">اكتبه تاني<input className="input" inputMode="numeric" type="password" maxLength={4} dir="ltr" value={b} onChange={(e) => setB(e.target.value.replace(/\D/g, ''))} /></label>
+      <button type="button" className="btn full" onClick={save} disabled={busy}>{busy ? 'لحظة…' : 'حفظ'}</button>
+    </Modal>
   );
 }
 
@@ -122,8 +152,8 @@ function Done({ info, profile }) {
   return (
     <div className="wrap" style={{ maxWidth: 720 }}>
       <section className="card card-lg center" style={{ textAlign: 'center', gap: 18, position: 'relative', overflow: 'hidden' }}>
-        <svg width="200" height="200" viewBox="0 0 200 200" aria-hidden="true" style={{ position: 'absolute', top: -70, right: -60 }}><circle cx="100" cy="100" r="80" fill="none" stroke="#C6F432" strokeWidth="22" /></svg>
-        <svg width="140" height="140" viewBox="0 0 140 140" aria-hidden="true" style={{ position: 'absolute', bottom: -50, left: -30 }}><rect x="10" y="10" width="120" height="120" rx="40" fill="#B79CFF" /></svg>
+        <svg width="200" height="200" viewBox="0 0 200 200" aria-hidden="true" style={{ position: 'absolute', top: -70, right: -60 }}><circle cx="100" cy="100" r="80" fill="none" stroke="#B6F000" strokeWidth="22" /></svg>
+        <svg width="140" height="140" viewBox="0 0 140 140" aria-hidden="true" style={{ position: 'absolute', bottom: -50, left: -30 }}><rect x="10" y="10" width="120" height="120" rx="40" fill="#A07CFF" /></svg>
         <span style={{ width: 104, height: 104, borderRadius: 999, background: 'var(--lime)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}><Icon d="check" size={52} stroke={3} /></span>
         <h1 style={{ fontSize: 34, fontWeight: 800, position: 'relative' }}>تسلم إيدك يا {firstName(profile.name)}</h1>
         <span className="muted" style={{ position: 'relative' }}>{info.offline ? 'التسليم اتحفظ وهيتبعت للمحاسب أول ما النت يرجع' : 'الوردية اتبعتت للمحاسب'}</span>

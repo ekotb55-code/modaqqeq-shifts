@@ -97,8 +97,8 @@ export default function ShopLogin({ shopId, error, onStaff, onUnlink }) {
         </div>
       </section>
       <section className="login-art">
-        <svg width="420" height="420" viewBox="0 0 420 420" aria-hidden="true" style={{ position: 'absolute', top: -90, left: -90 }}><circle cx="210" cy="210" r="170" fill="none" stroke="#C6F432" strokeWidth="34" /><circle cx="210" cy="210" r="80" fill="#B79CFF" /></svg>
-        <svg width="220" height="220" viewBox="0 0 220 220" aria-hidden="true" style={{ position: 'absolute', top: 210, right: 60 }}><rect x="20" y="20" width="180" height="180" rx="60" fill="#FF8A3D" /></svg>
+        <svg width="420" height="420" viewBox="0 0 420 420" aria-hidden="true" style={{ position: 'absolute', top: -90, left: -90 }}><circle cx="210" cy="210" r="170" fill="none" stroke="#B6F000" strokeWidth="34" /><circle cx="210" cy="210" r="80" fill="#A07CFF" /></svg>
+        <svg width="220" height="220" viewBox="0 0 220 220" aria-hidden="true" style={{ position: 'absolute', top: 210, right: 60 }}><rect x="20" y="20" width="180" height="180" rx="60" fill="#FF7A1A" /></svg>
         <h2>ورديتك كلها<br />من غير ورق ولا كشكول</h2>
         <p>استلم، سجّل مصاريفك وتحويلاتك، وسلّم بدوسة. والمحاسب بيراجع وراك على طول.</p>
       </section>

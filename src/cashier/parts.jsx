@@ -1,7 +1,7 @@
 import { Avatar, Icon } from '../ui.jsx';
 import { BILL_BG, FACES, fmt, num } from '../lib';
 
-export function Topbar({ shopPub, profile, steps, onLogout, posUrl }) {
+export function Topbar({ shopPub, profile, steps, onLogout, posUrl, onPin }) {
   return (
     <header className="topbar">
       <div className="topbar-in">
@@ -29,6 +29,7 @@ export function Topbar({ shopPub, profile, steps, onLogout, posUrl }) {
             <Avatar name={profile.name} photo={profile.photo} color={profile.color} size={50} />
             <span className="stack" style={{ gap: 0 }}><strong style={{ fontSize: 15 }}>{profile.name}</strong><span className="tiny muted">كاشير</span></span>
           </span>
+          {onPin && <button type="button" className="icon-btn" aria-label="غيّر الرقم السري" title="غيّر الرقم السري" onClick={onPin}><Icon d="lock" /></button>}
           <button type="button" className="icon-btn" aria-label="تسجيل خروج" title="تسجيل خروج" onClick={onLogout}><Icon d="logout" /></button>
         </div>
       </div>

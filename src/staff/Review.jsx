@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Avatar, CopyBtn, Icon, PhotoView, useToast } from '../ui.jsx';
-import { SRC_LABEL, diffText, durationStr, fmt, minutesBetween, num, summarize, timeStr, toDate, dateStr } from '../lib';
+import { RATE_FROM, SETTLE, SRC_LABEL, diffText, durationStr, fmt, minutesBetween, num, sideExpected, summarize, timeStr, toDate, dateStr } from '../lib';
 import { entryTitle } from '../cashier/Dash.jsx';
 
 const STATUS = {
@@ -169,7 +169,7 @@ export function ShiftDetail({ shift, shop, profile, canReview }) {
     <div className="stack" style={{ gap: 16 }}>
       <section className="card spread">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {shop?.logo ? <img src={shop.logo} alt="" style={{ height: 48, width: 'auto', maxWidth: 140, objectFit: 'contain' }} /> : <Avatar name={shop?.name} size={48} color="#F6D6A8" />}
+          {shop?.logo ? <img src={shop.logo} alt="" style={{ height: 48, width: 'auto', maxWidth: 140, objectFit: 'contain' }} /> : <Avatar name={shop?.name} size={48} color="#FFC99A" />}
           <div className="stack" style={{ gap: 2 }}>
             <h1 style={{ fontSize: 20, fontWeight: 700 }}>{shop?.name} · {shift.cashierName}</h1>
             <span className="small muted">{dateStr(shift.openedAt || shift.openedAtLocal)} · {timeStr(shift.openedAt || shift.openedAtLocal)} ← {shift.submittedAt ? timeStr(shift.submittedAt) : 'لسه شغالة'} · {durationStr(shift.openedAt || shift.openedAtLocal, shift.submittedAt)}</span>
@@ -219,7 +219,7 @@ export function ShiftDetail({ shift, shop, profile, canReview }) {
       )}
 
       <div className="row" style={{ gap: 16 }}>
-        <section className="card" style={{ flex: '1 1 320px' }}>
+        <section className="card tint-orange" style={{ flex: '1 1 320px' }}>
           <h2 className="h2">النقدية</h2>
           <table className="table">
             <thead><tr><th>الخزنة</th><th>استلام</th><th>تسليم</th><th>رايحة فين</th></tr></thead>
@@ -228,12 +228,14 @@ export function ShiftDetail({ shift, shop, profile, canReview }) {
               <tr><td><b>الجانبي</b></td><td>{fmt(rcv.side)}<CopyBtn value={fmt(rcv.side)} /></td><td>{fmt(hnd.side)}<CopyBtn value={fmt(hnd.side)} /></td><td>{hnd.keepSide ? (hnd.keepSide === 'stay' ? 'فضل' : 'للمحل') : '—'}</td></tr>
             </tbody>
           </table>
+          {hnd.sideFix && <span className="badge bad" style={{ whiteSpace: 'normal' }}>الجانبي كان {hnd.sideFix.diff < 0 ? 'ناقص' : 'زيادة'} {fmt(Math.abs(hnd.sideFix.diff))} ج والكاشير {hnd.sideFix.diff < 0 ? 'كمّله من' : 'رجّعه لـ'} درجه</span>}
+          {shift.handover && Math.abs(num(hnd.side) - sideExpected(shift, entries)) > 0.009 && <span className="badge bad" style={{ whiteSpace: 'normal' }}>الجانبي مش مظبوط · المفروض {fmt(sideExpected(shift, entries))} واتسلّم {fmt(hnd.side)}</span>}
           {rcv.diffFromPrev && <span className="badge warn" style={{ whiteSpace: 'normal' }}>الكاشير عدّل في الاستلام · اللي قبله سلّم درج {fmt(rcv.prevDrawerTotal)} وجانبي {fmt(rcv.prevSide)}</span>}
-          <h2 className="h2" style={{ marginTop: 6 }}>المحافظ</h2>
+          <h2 className="h2" style={{ marginTop: 6 }}>المحافظ {shop?.walletName && <span className="tiny muted" style={{ fontWeight: 500 }}>· انستاباي باسم {shop.walletName}</span>}</h2>
           <div className="spread"><span>انستاباي</span><span><b>{fmt(sum.insta)}</b><CopyBtn value={fmt(sum.insta)} /></span></div>
           <div className="spread"><span>فودافون كاش</span><span><b>{fmt(sum.vf)}</b><CopyBtn value={fmt(sum.vf)} /></span></div>
         </section>
-        <section className="card" style={{ flex: '1 1 320px' }}>
+        <section className="card tint-yellow" style={{ flex: '1 1 320px' }}>
           <h2 className="h2">المكن <span className="tiny muted" style={{ fontWeight: 500 }}>· رصيد تراكمي</span></h2>
           <div className="scroll-x">
             <table className="table">
@@ -248,6 +250,9 @@ export function ShiftDetail({ shift, shop, profile, canReview }) {
               </tbody>
             </table>
           </div>
+          {[...new Map((rcv.machines || []).filter((m) => m.ratePct !== undefined).map((m) => [m.machine, m])).values()].map((m) => (
+            <span key={m.machine} className="tiny"><b>{m.machine}</b> · نسبة {fmt(m.ratePct)}% {RATE_FROM[m.rateFrom] || ''} · {SETTLE[m.settle] || ''}</span>
+          ))}
           {machinePhotos.length > 0 && <span className="tiny muted">صور المكن تحت في قسم الصور</span>}
         </section>
       </div>
@@ -290,6 +295,7 @@ export function ShiftDetail({ shift, shop, profile, canReview }) {
                   <img src={p.data} alt={p.label} onClick={() => setView(p.data)} style={{ width: '100%', height: 150, objectFit: 'cover', borderRadius: 14, cursor: 'zoom-in', background: '#fff' }} />
                   <span className="small"><b>{{ transfer: 'تحويل', invoice: 'فاتورة', machine: p.stage === 'receive' ? 'مكنة · استلام' : 'مكنة · تسليم' }[p.kind]}</b> · {p.label}</span>
                   {typed !== null && <span className="small">الكاشير كتب: <b>{fmt(typed)}</b></span>}
+                  {p.kind === 'transfer' && shop?.walletName && <span className="tiny muted">لازم يكون المستلم: {shop.walletName}</span>}
                   {canReview ? (
                     <span style={{ display: 'flex', gap: 6 }}>
                       <button type="button" className={'chip sm' + (ok ? ' on' : '')} style={{ flex: 1 }} onClick={() => checkPhoto(p, ok ? 'pending' : 'ok')}>{ok ? '✓ مطابقة' : 'مطابقة'}</button>

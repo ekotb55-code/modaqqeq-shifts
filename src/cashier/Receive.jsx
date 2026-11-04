@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
-import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { collection, doc, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, useToast } from '../ui.jsx';
 import { billsTotal, emptyBills, fmt, num, pickImage, timeStr, todayKey } from '../lib';
 import { Bills, MachineRows, SideBox } from './parts.jsx';
 
-export default function Receive({ shop, profile, onStarted }) {
+export default function Receive({ shop, profile, onStarted, editShift, onCancel }) {
   const toast = useToast();
   const last = shop.lastHandover || null;
   const machines = shop.machines || [];
@@ -17,9 +17,10 @@ export default function Receive({ shop, profile, onStarted }) {
     return f ? String(f.value ?? '') : '';
   });
 
-  const [bills, setBills] = useState(prevBills);
-  const [side, setSide] = useState(String(prevSide));
-  const [mvals, setMvals] = useState(prevMachines);
+  const er = editShift?.receive;
+  const [bills, setBills] = useState(er ? { ...emptyBills(), ...er.bills } : prevBills);
+  const [side, setSide] = useState(String(er ? num(er.side) : prevSide));
+  const [mvals, setMvals] = useState(er ? machines.map((m) => { const f = (er.machines || []).find((x) => x.machine === m.machine && x.account === m.account); return f ? String(f.value ?? '') : ''; }) : prevMachines);
   const [photos, setPhotos] = useState({});
   const [busy, setBusy] = useState(false);
 
@@ -32,7 +33,32 @@ export default function Receive({ shop, profile, onStarted }) {
     if (data) { setPhotos((p) => ({ ...p, [i]: data })); toast('الصورة اترفعت · كمّل عادي'); }
   };
 
+  const saveEdit = async () => {
+    setBusy(true);
+    try {
+      const receive = {
+        ...er,
+        bills: Object.fromEntries(Object.entries(bills).map(([k, v]) => [k, num(v)])),
+        drawerTotal: billsTotal(bills), side: num(side),
+        machines: machines.map((m, i) => ({ ...m, value: num(mvals[i]), photo: !!photos[i] || !!(er.machines || [])[i]?.photo })),
+        diffFromPrev: er.diffFromPrev || changed > 0 || sideChanged || mChanged > 0,
+        editedAtLocal: new Date().toISOString(),
+      };
+      const p = updateDoc(doc(db, 'shifts', editShift.id), { receive, receiveEdits: (editShift.receiveEdits || 0) + 1 });
+      p.then(() => Promise.all(Object.entries(photos).map(([i, data]) => {
+        const pb = writeBatch(db);
+        pb.set(doc(collection(db, 'shifts', editShift.id, 'photos')), { kind: 'machine', stage: 'receive', label: `${machines[i].machine} · ${machines[i].account}`, data, check: 'pending', createdAt: serverTimestamp() });
+        return pb.commit();
+      }))).catch(() => {});
+      if (navigator.onLine) await p; else p.catch(() => {});
+      toast('الاستلام اتعدّل · المحاسب هيشوف التعديل');
+      onStarted();
+    } catch (e) { console.error(e); toast('حصلت مشكلة، جرّب تاني', 'err'); }
+    setBusy(false);
+  };
+
   const confirm = async () => {
+    if (editShift) { saveEdit(); return; }
     setBusy(true);
     try {
       const shiftRef = doc(collection(db, 'shifts'));
@@ -73,13 +99,13 @@ export default function Receive({ shop, profile, onStarted }) {
   return (
     <div className="wrap">
       <div className="stack" style={{ gap: 4 }}>
-        <h1 className="title">استلم الوردية</h1>
+        <div className="spread"><h1 className="title">{editShift ? 'تعديل الاستلام' : 'استلم الوردية'}</h1>{editShift && <button type="button" className="btn soft sm" onClick={onCancel}>رجوع للعمليات</button>}</div>
         <span className="sub">
           {last ? <>الأرقام دي من تسليم {last.cashierName} الساعة {timeStr(last.at)}. لو تمام دوس «تمام، استلمت»، ولو في فرق عدّله وهيتسجل.</> : 'دي أول وردية في المحل. عدّ الدرج واكتب الأرقام.'}
         </span>
       </div>
       <div className="row">
-        <section className="card grow" style={{ gap: 16 }}>
+        <section className="card grow tint-orange" style={{ gap: 16 }}>
           <div className="spread">
             <h2 className="h2"><span className="dot" style={{ background: 'var(--orange)' }} />درج الكاشير</h2>
             <span className="big-num">{fmt(billsTotal(bills))}<small> ج</small></span>
@@ -88,13 +114,13 @@ export default function Receive({ shop, profile, onStarted }) {
         </section>
         <div className="side">
           <SideBox value={side} setValue={setSide} hint={sideChanged && last ? `اتعدّل · كان ${fmt(prevSide)} ج` : 'المبلغ كله · من غير فئات'} />
-          <section className="card">
+          <section className="card tint-yellow">
             <h2 className="h2"><span className="dot" style={{ background: 'var(--yellow)' }} />أرصدة المكن</h2>
             <span className="tiny muted">عدّل الرقم لو مختلف، وصوّر شاشة المكنة. المحاسب هيراجع الصور.</span>
             <MachineRows machines={machines} values={mvals} setValues={setMvals} photos={photos} onPhoto={addPhoto} />
           </section>
           <button type="button" className="btn full" style={{ height: 66, fontSize: 20 }} onClick={confirm} disabled={busy}>
-            <span className="ic"><Icon d="check" size={18} stroke={3} /></span>{busy ? 'لحظة…' : 'تمام، استلمت'}
+            <span className="ic"><Icon d="check" size={18} stroke={3} /></span>{busy ? 'لحظة…' : editShift ? 'حفظ التعديل' : 'تمام، استلمت'}
           </button>
           <span className="small muted" style={{ textAlign: 'center' }}>
             {changed || sideChanged || mChanged ? `عدّلت ${changed + (sideChanged ? 1 : 0) + mChanged} رقم · هيتسجل فرق في الاستلام ويوصل للمحاسب` : last ? `كل الأرقام زي ما ${last.cashierName} سلّمها` : ''}

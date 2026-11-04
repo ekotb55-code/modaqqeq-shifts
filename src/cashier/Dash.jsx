@@ -8,12 +8,12 @@ export function entryTitle(e) {
   if (e.type === 'income') return ['إيراد', e.reason, e.note].filter(Boolean).join(' · ');
   if (e.type === 'transfer') return `تحويل ${SRC_LABEL[e.wallet] || ''}`;
   if (e.type === 'topup') return ['شحن رصيد', e.machine].filter(Boolean).join(' · ');
-  if (e.type === 'move') return 'نقل من الدرج للجانبي';
+  if (e.type === 'move') return (e.to || 'side') === 'side' ? 'نقل من الدرج للجانبي' : 'نقل من الجانبي للدرج';
   if (e.type === 'withdraw') return ['سحب لصاحب المحل', e.note].filter(Boolean).join(' · ');
   return e.type;
 }
 
-export default function Dash({ shop, shift, entries, profile, onHandover }) {
+export default function Dash({ shop, shift, entries, profile, onHandover, onReceive }) {
   const [modal, setModal] = useState(null);
   const [, tick] = useState(0);
   useEffect(() => { const id = setInterval(() => tick((x) => x + 1), 60000); return () => clearInterval(id); }, []);
@@ -24,10 +24,10 @@ export default function Dash({ shop, shift, entries, profile, onHandover }) {
   const out = (src) => sum((e) => ['expense', 'topup', 'withdraw'].includes(e.type) && e.src === src);
 
   const counters = [
-    { label: 'طالع من الدرج', value: out('drawer'), dot: 'var(--orange)' },
-    { label: 'طالع من الجانبي', value: out('side'), dot: 'var(--yellow)' },
-    { label: 'انستاباي', value: sum((e) => e.type === 'transfer' && e.wallet === 'insta'), dot: 'var(--violet)' },
-    { label: 'فودافون كاش', value: sum((e) => e.type === 'transfer' && e.wallet === 'vf'), dot: '#FF5A5F' },
+    { label: 'طالع من الدرج', value: out('drawer'), dot: '#fff', cls: 'c-orange' },
+    { label: 'طالع من الجانبي', value: out('side'), dot: '#fff', cls: 'c-yellow' },
+    { label: 'انستاباي', value: sum((e) => e.type === 'transfer' && e.wallet === 'insta'), dot: '#fff', cls: 'c-violet' },
+    { label: 'فودافون كاش', value: sum((e) => e.type === 'transfer' && e.wallet === 'vf'), dot: '#fff', cls: 'c-pink' },
   ];
   const tiles = [
     { t: 'expense', label: 'مصروف', icon: 'up' },
@@ -36,7 +36,7 @@ export default function Dash({ shop, shift, entries, profile, onHandover }) {
   ];
   const extras = [
     { t: 'topup', label: 'شحن رصيد مكنة', icon: 'bolt' },
-    { t: 'move', label: 'نقل للدرج الجانبي', icon: 'swap' },
+    { t: 'move', label: 'نقل بين الدرجين', icon: 'swap' },
     { t: 'withdraw', label: 'سحب لصاحب المحل', icon: 'person' },
   ];
   const opened = shift.openedAt || shift.openedAtLocal;
@@ -57,14 +57,17 @@ export default function Dash({ shop, shift, entries, profile, onHandover }) {
           </div>
           <div className="spread" style={{ alignItems: 'flex-end' }}>
             <span className="stack" style={{ gap: 0 }}><span className="small soft">عملياتك النهارده</span><span style={{ fontSize: 44, fontWeight: 800, lineHeight: 1.1 }}>{entries.length}</span></span>
+            <span style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button type="button" className="btn" style={{ height: 58, background: 'rgba(255,255,255,.18)', fontSize: 16 }} onClick={onReceive}>تعديل الاستلام</button>
             <button type="button" className="btn lime" style={{ paddingInline: '26px 10px', height: 58 }} onClick={onHandover}>
               سلّم الوردية<span className="ic" style={{ background: 'var(--ink)', color: 'var(--lime)', width: 40, height: 40 }}><Icon d="down" size={20} stroke={2.6} /></span>
             </button>
+            </span>
           </div>
         </section>
         <div className="counters">
           {counters.map((c) => (
-            <div key={c.label} className="counter">
+            <div key={c.label} className={'counter ' + c.cls}>
               <span className="small muted" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span className="dot" style={{ background: c.dot, width: 10, height: 10 }} />{c.label}</span>
               <span className="v">{fmt(c.value)}<span className="small muted" style={{ fontWeight: 500 }}> ج</span></span>
             </div>
@@ -85,7 +88,7 @@ export default function Dash({ shop, shift, entries, profile, onHandover }) {
       </div>
 
       <div className="row">
-        <section className="card" style={{ flex: '1 1 300px' }}>
+        <section className="card tint-blue" style={{ flex: '1 1 300px' }}>
           <h2 style={{ fontSize: 17, fontWeight: 700 }}>حاجات تانية</h2>
           {extras.map((x) => (
             <button key={x.t} type="button" className="extra" onClick={() => setModal(x.t)}>

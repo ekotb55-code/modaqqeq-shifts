@@ -40,7 +40,7 @@ export function Icon({ d, size = 20, stroke = 2.2, ...rest }) {
   );
 }
 
-export function Avatar({ name, photo, color = '#B79CFF', size = 50 }) {
+export function Avatar({ name, photo, color = '#A07CFF', size = 50 }) {
   return (
     <span className="avatar" style={{ width: size, height: size, background: color }} title={name}>
       {photo ? <img src={photo} alt="" /> : (
@@ -126,8 +126,8 @@ export function NetMeter({ dark = true }) {
   const line = pts.map((p) => p.map((x) => x.toFixed(1)).join(',')).join(' ');
   const lvl = !online ? 'off' : now === null ? 'wait' : now >= 15 ? 'good' : now >= 5 ? 'mid' : 'bad';
   const st = {
-    good: ['ممتازة', '#C6F432'], mid: ['متوسطة', '#FFD84D'], bad: ['ضعيفة', '#FFA8C5'],
-    off: ['مفيش نت', '#FFA8C5'], wait: ['بيقيس…', '#DCEBFA'],
+    good: ['ممتازة', '#B6F000'], mid: ['متوسطة', '#FFC800'], bad: ['ضعيفة', '#FF7EB0'],
+    off: ['مفيش نت', '#FF7EB0'], wait: ['بيقيس…', '#D6E6FF'],
   }[lvl];
   const last = pts[pts.length - 1];
   return (

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { collection, doc, onSnapshot, serverTimestamp, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Avatar, Icon, useToast } from '../ui.jsx';
-import { AVATAR_BG, DEFAULT_SHOP, ROLE_LABEL, WEEKDAYS, cashierPassword, createAccount, pickImage, setLinkedShop, slug } from '../lib';
+import { AVATAR_BG, DEFAULT_SHOP, RATE_FROM, ROLE_LABEL, SETTLE, WEEKDAYS, cashierPassword, createAccount, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, num, pickImage, setLinkedShop, slug } from '../lib';
 
 export default function Setup({ profile, shops, linkedShop, onLinkDevice }) {
   const toast = useToast();
@@ -73,12 +73,66 @@ function TagList({ title, items, onChange, placeholder }) {
   );
 }
 
+function MachinesEditor({ list, onChange }) {
+  const upd = (id, patch) => onChange(list.map((m) => (m.id === id ? { ...m, ...patch } : m)));
+  return (
+    <section className="card tint-yellow" style={{ gap: 14 }}>
+      <div className="spread">
+        <div className="stack" style={{ gap: 2 }}>
+          <h2 className="h2">المكن</h2>
+          <span className="tiny muted">ضيف المكن اللي المحل شغّال عليها بس. المكنة اللي تقفلها مش هتظهر للكاشير.</span>
+        </div>
+        <button type="button" className="btn sm" onClick={() => onChange([...list, newMachine()])}><Icon d="plus" size={16} />مكنة جديدة</button>
+      </div>
+      {list.length === 0 && <div className="empty" style={{ padding: 16 }}>مفيش مكن لسه. دوس «مكنة جديدة».</div>}
+      {list.map((m) => (
+        <div key={m.id} style={{ background: '#fff', borderRadius: 24, padding: 16, display: 'flex', flexDirection: 'column', gap: 14, opacity: m.active ? 1 : 0.6 }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <label className="field" style={{ flex: '1 1 200px' }}>اسم المكنة<input className="input" placeholder="مثلًا فوري، ماجيك، أمان" value={m.name} onChange={(e) => upd(m.id, { name: e.target.value })} /></label>
+            <label className="field" style={{ width: 130 }}>النسبة %<input className="input" inputMode="decimal" dir="ltr" placeholder="2" value={m.ratePct} onChange={(e) => upd(m.id, { ratePct: e.target.value })} /></label>
+            <button type="button" className={'chip' + (m.active ? ' on' : '')} onClick={() => upd(m.id, { active: !m.active })} aria-pressed={m.active}>{m.active ? '✓ مفعّلة للمحل' : 'مقفولة'}</button>
+            <button type="button" className="icon-btn" aria-label={`امسح ${m.name || 'المكنة'}`} onClick={() => window.confirm('تمسح المكنة دي من المحل؟') && onChange(list.filter((x) => x.id !== m.id))}><Icon d="trash" size={18} /></button>
+          </div>
+          <div className="stack">
+            <span className="small muted">الحسابات</span>
+            <div className="chips">
+              <button type="button" className={'chip sm' + (!m.hasSubs ? ' on' : '')} onClick={() => upd(m.id, { hasSubs: false })}>حساب واحد</button>
+              <button type="button" className={'chip sm' + (m.hasSubs ? ' on' : '')} onClick={() => upd(m.id, { hasSubs: true, accounts: m.accounts.length ? m.accounts : [''] })}>فيها حسابات فرعية</button>
+            </div>
+            {m.hasSubs && (
+              <div className="stack">
+                {m.accounts.map((a, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 8 }}>
+                    <input className="input" placeholder="مثلًا الحساب الرئيسي، كاش أوت، الكارت، الهوا" value={a} onChange={(e) => upd(m.id, { accounts: m.accounts.map((x, j) => (j === i ? e.target.value : x)) })} />
+                    <button type="button" className="icon-btn" aria-label="امسح الحساب" onClick={() => upd(m.id, { accounts: m.accounts.filter((_, j) => j !== i) })}><Icon d="x" size={16} /></button>
+                  </div>
+                ))}
+                <button type="button" className="link" style={{ alignSelf: 'flex-start', padding: 0 }} onClick={() => upd(m.id, { accounts: [...m.accounts, ''] })}>+ حساب فرعي</button>
+              </div>
+            )}
+          </div>
+          <div className="row" style={{ gap: 16 }}>
+            <div className="stack" style={{ flex: '1 1 240px' }}>
+              <span className="small muted">النسبة</span>
+              <div className="chips">{Object.entries(RATE_FROM).map(([k, l]) => <button key={k} type="button" className={'chip sm' + (m.rateFrom === k ? ' on' : '')} onClick={() => upd(m.id, { rateFrom: k })}>{l}</button>)}</div>
+            </div>
+            <div className="stack" style={{ flex: '1 1 240px' }}>
+              <span className="small muted">الرصيد</span>
+              <div className="chips">{Object.entries(SETTLE).map(([k, l]) => <button key={k} type="button" className={'chip sm' + (m.settle === k ? ' on' : '')} onClick={() => upd(m.id, { settle: k })}>{l}</button>)}</div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function ShopEditor({ shop, linkedShop, onLinkDevice }) {
   const toast = useToast();
   const [pub, setPub] = useState(null);
   const [f, setF] = useState(() => ({
     name: shop.name || '', posUrl: shop.posUrl || '', walletName: shop.walletName || '',
-    machines: shop.machines || [], suppliers: shop.suppliers || [], staff: shop.staff || [],
+    machineList: machineListOf(shop), suppliers: shop.suppliers || [], staff: shop.staff || [],
     shopExpenses: shop.shopExpenses || [], incomeReasons: shop.incomeReasons || [], advanceDays: shop.advanceDays || [],
   }));
   const [dirty, setDirty] = useState(false);
@@ -88,8 +142,8 @@ function ShopEditor({ shop, linkedShop, onLinkDevice }) {
 
   const save = async () => {
     try {
-      const machines = f.machines.filter((m) => m.machine.trim() && m.account.trim());
-      await updateDoc(doc(db, 'shops', shop.id), { ...f, machines, name: f.name.trim() });
+      const machineList = f.machineList.filter((m) => m.name.trim()).map((m) => ({ ...m, name: m.name.trim(), ratePct: num(m.ratePct), accounts: m.accounts.map((a) => a.trim()).filter(Boolean) }));
+      await updateDoc(doc(db, 'shops', shop.id), { ...f, machineList, machines: flattenMachines(machineList), name: f.name.trim() });
       await setDoc(doc(db, 'shopsPublic', shop.id), { name: f.name.trim() }, { merge: true });
       setDirty(false);
       toast('اتحفظ');
@@ -113,14 +167,14 @@ function ShopEditor({ shop, linkedShop, onLinkDevice }) {
 
   return (
     <div className="stack" style={{ gap: 16 }}>
-      <section className="card">
+      <section className="card tint-blue">
         <div className="spread">
           <h2 className="h2">بيانات المحل</h2>
           <button type="button" className={'btn sm ' + (linkedShop === shop.id ? 'soft' : 'blue')} onClick={link}>{linkedShop === shop.id ? '✓ الجهاز ده مربوط بالمحل' : 'اربط الجهاز ده بالمحل'}</button>
         </div>
         <div className="row" style={{ gap: 16, alignItems: 'center' }}>
           <div className="stack center" style={{ flex: '0 0 auto' }}>
-            <div style={{ width: 200, height: 110, borderRadius: 20, background: 'var(--chip)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+            <div style={{ width: 200, height: 110, borderRadius: 20, background: '#fff', border: '2px dashed #B4C6F0', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
               {pub?.logo ? <img src={pub.logo} alt="لوجو المحل" style={{ maxHeight: 100, maxWidth: 190, objectFit: 'contain' }} /> : <span className="muted small">مفيش لوجو</span>}
             </div>
             <button type="button" className="link" onClick={uploadLogo}>{pub?.logo ? 'غيّر اللوجو' : 'ارفع لوجو المحل'}</button>
@@ -137,19 +191,9 @@ function ShopEditor({ shop, linkedShop, onLinkDevice }) {
 
       <ShopPeople shop={shop} />
 
-      <section className="card">
-        <h2 className="h2">المكن والحسابات</h2>
-        {f.machines.map((m, i) => (
-          <div key={i} style={{ display: 'flex', gap: 8 }}>
-            <input className="input" placeholder="المكنة (فوري)" value={m.machine} onChange={(e) => set('machines', f.machines.map((x, j) => (j === i ? { ...x, machine: e.target.value } : x)))} />
-            <input className="input" placeholder="الحساب (الرئيسي)" value={m.account} onChange={(e) => set('machines', f.machines.map((x, j) => (j === i ? { ...x, account: e.target.value } : x)))} />
-            <button type="button" className="icon-btn" aria-label="امسح" onClick={() => set('machines', f.machines.filter((_, j) => j !== i))}><Icon d="trash" size={18} /></button>
-          </div>
-        ))}
-        <button type="button" className="btn soft sm" style={{ alignSelf: 'flex-start' }} onClick={() => set('machines', [...f.machines, { machine: '', account: '' }])}><Icon d="plus" size={16} />حساب مكنة</button>
-      </section>
+      <MachinesEditor list={f.machineList} onChange={(v) => set('machineList', v)} />
 
-      <section className="card" style={{ gap: 18 }}>
+      <section className="card tint-violet" style={{ gap: 18 }}>
         <h2 className="h2">القوايم</h2>
         <TagList title="الموردين" items={f.suppliers} onChange={(v) => set('suppliers', v)} placeholder="اسم المورد" />
         <TagList title="الموظفين (للسلف واليوميات)" items={f.staff} onChange={(v) => set('staff', v)} placeholder="اسم الموظف" />
@@ -172,14 +216,23 @@ function ShopEditor({ shop, linkedShop, onLinkDevice }) {
   );
 }
 
+const SLOTS = ['صباحي', 'مسائي', 'سهر'];
+
 function Cashiers({ shop, pub }) {
   const toast = useToast();
   const [name, setName] = useState('');
   const [pin, setPin] = useState('');
+  const [phone, setPhone] = useState('');
+  const [slot, setSlot] = useState('');
   const [color, setColor] = useState(AVATAR_BG[0]);
   const [photo, setPhoto] = useState(null);
   const [busy, setBusy] = useState(false);
-  const list = (pub?.cashiers || []).filter((c) => !c.disabled);
+  const [open, setOpen] = useState(null);
+  const all = pub?.cashiers || [];
+  const active = all.filter((c) => !c.disabled);
+  const stopped = all.filter((c) => c.disabled);
+
+  const writeList = (list) => setDoc(doc(db, 'shopsPublic', shop.id), { cashiers: list }, { merge: true });
 
   const add = async () => {
     if (!name.trim()) { toast('اكتب اسم الكاشير', 'err'); return; }
@@ -189,55 +242,140 @@ function Cashiers({ shop, pub }) {
       const email = `c-${slug()}@cashier.modaqqeq.app`;
       const uid = await createAccount(email, cashierPassword(pin));
       const c = { uid, name: name.trim(), email, color, photo: photo || null };
-      await setDoc(doc(db, 'users', uid), { role: 'cashier', name: c.name, email, color, photo: c.photo, shopIds: [shop.id], createdAt: serverTimestamp() });
-      await setDoc(doc(db, 'shopsPublic', shop.id), { cashiers: [...(pub?.cashiers || []), c] }, { merge: true });
-      setName(''); setPin(''); setPhoto(null);
+      await setDoc(doc(db, 'users', uid), { role: 'cashier', name: c.name, email, color, photo: c.photo, phone: phone.trim(), slot, startDate: todayKey(), shopIds: [shop.id], createdAt: serverTimestamp() });
+      await writeList([...all, c]);
+      setName(''); setPin(''); setPhone(''); setSlot(''); setPhoto(null);
       toast(`${c.name} اتضاف · الرقم السري ${pin}`);
     } catch (e) { console.error(e); toast('مش قادرين نضيف الكاشير، اتأكد من النت', 'err'); }
     setBusy(false);
-  };
-
-  const remove = async (c) => {
-    if (!window.confirm(`تشيل ${c.name} من المحل؟ مش هيقدر يدخل تاني.`)) return;
-    try {
-      await updateDoc(doc(db, 'users', c.uid), { disabled: true });
-      await setDoc(doc(db, 'shopsPublic', shop.id), { cashiers: (pub?.cashiers || []).filter((x) => x.uid !== c.uid) }, { merge: true });
-      toast('اتشال');
-    } catch { toast('مش قادرين نشيله', 'err'); }
   };
 
   const changePhoto = async (c) => {
     const data = await pickImage(300, 0.8);
     if (!data) return;
     await updateDoc(doc(db, 'users', c.uid), { photo: data });
-    await setDoc(doc(db, 'shopsPublic', shop.id), { cashiers: (pub?.cashiers || []).map((x) => (x.uid === c.uid ? { ...x, photo: data } : x)) }, { merge: true });
+    await writeList(all.map((x) => (x.uid === c.uid ? { ...x, photo: data } : x)));
     toast('الصورة اتغيرت');
   };
 
   return (
-    <section className="card">
+    <section className="card tint-lime">
       <h2 className="h2">الكاشيرية</h2>
-      <div className="chips" style={{ gap: 12 }}>
-        {list.map((c) => (
-          <div key={c.uid} style={{ background: 'var(--chip)', borderRadius: 22, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <button type="button" onClick={() => changePhoto(c)} style={{ border: 0, background: 'transparent', padding: 0 }} aria-label={`غيّر صورة ${c.name}`} title="غيّر الصورة"><Avatar name={c.name} photo={c.photo} color={c.color} size={44} /></button>
-            <strong>{c.name}</strong>
-            <button type="button" className="copy" aria-label={`شيل ${c.name}`} onClick={() => remove(c)}><Icon d="trash" size={16} /></button>
-          </div>
-        ))}
-        {list.length === 0 && <span className="muted small">لسه مفيش كاشيرية</span>}
+      <div className="stack">
+        {active.map((c) => <CashierRow key={c.uid} c={c} shop={shop} all={all} writeList={writeList} open={open === c.uid} onToggle={() => setOpen(open === c.uid ? null : c.uid)} onPhoto={() => changePhoto(c)} />)}
+        {active.length === 0 && <span className="muted small">لسه مفيش كاشيرية</span>}
+        {stopped.length > 0 && <span className="small muted" style={{ marginTop: 6 }}>موقوفين</span>}
+        {stopped.map((c) => <CashierRow key={c.uid} c={c} shop={shop} all={all} writeList={writeList} open={open === c.uid} onToggle={() => setOpen(open === c.uid ? null : c.uid)} onPhoto={() => changePhoto(c)} />)}
       </div>
-      <div style={{ background: 'var(--bg)', borderRadius: 22, padding: 14, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}>
+      <div style={{ background: 'rgba(255,255,255,.85)', borderRadius: 22, padding: 14, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}>
         <button type="button" onClick={async () => { const d = await pickImage(300, 0.8); if (d) setPhoto(d); }} style={{ border: 0, background: 'transparent', padding: 0 }} aria-label="صورة الكاشير" title="صورة (اختياري)"><Avatar name={name} photo={photo} color={color} size={52} /></button>
-        <label className="field" style={{ flex: '1 1 180px' }}>الاسم<input className="input white" value={name} onChange={(e) => setName(e.target.value)} /></label>
-        <label className="field" style={{ width: 130 }}>رقم سري (4 أرقام)<input className="input white" inputMode="numeric" maxLength={4} dir="ltr" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} /></label>
+        <label className="field" style={{ flex: '1 1 170px' }}>الاسم<input className="input" value={name} onChange={(e) => setName(e.target.value)} /></label>
+        <label className="field" style={{ width: 120 }}>رقم سري (4 أرقام)<input className="input" inputMode="numeric" maxLength={4} dir="ltr" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} /></label>
+        <label className="field" style={{ width: 150 }}>الموبايل<input className="input" inputMode="tel" dir="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} /></label>
+        <label className="field" style={{ width: 120 }}>الوردية
+          <select className="input" value={slot} onChange={(e) => setSlot(e.target.value)}><option value="">—</option>{SLOTS.map((x) => <option key={x}>{x}</option>)}</select>
+        </label>
         <div className="chips" style={{ gap: 6 }} role="group" aria-label="اللون">
           {AVATAR_BG.map((c) => <button key={c} type="button" aria-label={`لون ${c}`} onClick={() => setColor(c)} style={{ width: 30, height: 30, borderRadius: 999, background: c, border: color === c ? '3px solid var(--ink)' : '3px solid #fff' }} />)}
         </div>
         <button type="button" className="btn sm" onClick={add} disabled={busy}><Icon d="plus" size={16} />{busy ? 'لحظة…' : 'إضافة كاشير'}</button>
       </div>
-      <span className="tiny muted">علشان تغيّر الرقم السري لكاشير: شيله وضيفه تاني برقم جديد. اضغط على صورته علشان تغيّرها.</span>
+      <span className="tiny muted">دوس على اسم الكاشير علشان تشوف تفاصيله. الكاشير يقدر يغيّر رقمه السري بنفسه من جوه حسابه.</span>
     </section>
+  );
+}
+
+function CashierRow({ c, shop, all, writeList, open, onToggle, onPhoto }) {
+  const toast = useToast();
+  const [info, setInfo] = useState(null);
+  const [stats, setStats] = useState(null);
+  const [form, setForm] = useState(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const u1 = onSnapshot(doc(db, 'users', c.uid), (s) => { const d = s.data() || {}; setInfo(d); setForm((f) => f || { phone: d.phone || '', slot: d.slot || '', startDate: d.startDate || '', notes: d.notes || '' }); }, () => {});
+    const month = todayKey().slice(0, 7);
+    Promise.all([
+      getDocs(query(collection(db, 'shifts'), where('shopId', '==', shop.id), where('cashierUid', '==', c.uid))),
+      getDocs(query(collection(db, 'ledger'), where('shopId', '==', shop.id), where('cashierUid', '==', c.uid))),
+    ]).then(([sh, lg]) => {
+      const shifts = sh.docs.map((d) => d.data());
+      const thisMonth = shifts.filter((x) => x.month === month);
+      const mins = thisMonth.reduce((a, x) => a + (minutesBetween(x.openedAt || x.openedAtLocal, x.submittedAt) || 0), 0);
+      const led = lg.docs.map((d) => d.data()).filter((x) => x.month === month);
+      setStats({
+        total: shifts.length, month: thisMonth.length, mins,
+        short: led.filter((x) => x.kind === 'shortage').reduce((a, x) => a + num(x.amount), 0),
+        over: led.filter((x) => x.kind === 'overage').reduce((a, x) => a + num(x.amount), 0),
+      });
+    }).catch(() => setStats({ error: true }));
+    return () => u1();
+  }, [open, c.uid, shop.id]);
+
+  const save = async () => {
+    try { await updateDoc(doc(db, 'users', c.uid), form); toast('اتحفظ'); } catch { toast('مش قادرين نحفظ', 'err'); }
+  };
+  const setDisabled = async (disabled) => {
+    if (disabled && !window.confirm(`توقف ${c.name}؟ مش هيقدر يدخل، ووردياته هتفضل محفوظة.`)) return;
+    try {
+      await updateDoc(doc(db, 'users', c.uid), { disabled });
+      await writeList(all.map((x) => (x.uid === c.uid ? { ...x, disabled } : x)));
+      toast(disabled ? 'اتوقف' : 'اتفعّل تاني');
+    } catch { toast('مش قادرين نحفظ', 'err'); }
+  };
+  const remove = async () => {
+    if (!stats || stats.error) { toast('استنى لحد ما التفاصيل تحمّل', 'err'); return; }
+    if (stats.total > 0) { toast('مينفعش يتحذف علشان عليه ورديات · تقدر توقفه', 'err'); return; }
+    if (!window.confirm(`تحذف ${c.name} نهائي؟`)) return;
+    try {
+      await updateDoc(doc(db, 'users', c.uid), { disabled: true, deleted: true });
+      await writeList(all.filter((x) => x.uid !== c.uid));
+      toast('اتحذف');
+    } catch { toast('مش قادرين نحذف', 'err'); }
+  };
+  const hm = (m) => `${Math.floor(m / 60)} س ${m % 60} د`;
+
+  return (
+    <div style={{ background: '#fff', borderRadius: 22, padding: '10px 12px', opacity: c.disabled ? 0.65 : 1 }}>
+      <div className="spread">
+        <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button type="button" onClick={onPhoto} style={{ border: 0, background: 'transparent', padding: 0 }} aria-label={`غيّر صورة ${c.name}`} title="غيّر الصورة"><Avatar name={c.name} photo={c.photo} color={c.color} size={44} /></button>
+          <button type="button" onClick={onToggle} style={{ border: 0, background: 'transparent', padding: 0, textAlign: 'right' }} aria-expanded={open}>
+            <strong>{c.name}</strong>{c.disabled && <span className="badge bad" style={{ marginInlineStart: 6 }}>موقوف</span>}
+            <span className="tiny muted" style={{ display: 'block' }}>{open ? 'اقفل التفاصيل' : 'التفاصيل'}</span>
+          </button>
+        </span>
+        <span style={{ display: 'flex', gap: 6 }}>
+          {c.disabled
+            ? <button type="button" className="chip sm" onClick={() => setDisabled(false)}>تفعيل تاني</button>
+            : <button type="button" className="chip sm" onClick={() => setDisabled(true)}>إيقاف</button>}
+        </span>
+      </div>
+      {open && (
+        <div className="stack" style={{ marginTop: 12, gap: 12 }}>
+          <div className="grid2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))' }}>
+            {[['ورديات الشهر', stats ? stats.month ?? '—' : '…'], ['ساعات الشهر', stats && !stats.error ? hm(stats.mins) : '…'], ['عجز الشهر', stats && !stats.error ? fmt(stats.short) : '…'], ['زيادة الشهر', stats && !stats.error ? fmt(stats.over) : '…'], ['كل وردياته', stats ? stats.total ?? '—' : '…']].map(([l, v]) => (
+              <div key={l} style={{ background: 'var(--bg)', borderRadius: 16, padding: '10px 12px' }}><div className="tiny muted">{l}</div><div style={{ fontWeight: 700, fontSize: 18 }}>{v}</div></div>
+            ))}
+          </div>
+          {form && (
+            <div className="row" style={{ gap: 10, alignItems: 'flex-end' }}>
+              <label className="field" style={{ flex: '1 1 150px' }}>الموبايل<input className="input" dir="ltr" inputMode="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label>
+              <label className="field" style={{ flex: '1 1 120px' }}>الوردية<select className="input" value={form.slot} onChange={(e) => setForm({ ...form, slot: e.target.value })}><option value="">—</option>{SLOTS.map((x) => <option key={x}>{x}</option>)}</select></label>
+              <label className="field" style={{ flex: '1 1 150px' }}>بدأ الشغل<input className="input" type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></label>
+              <label className="field" style={{ flex: '2 1 220px' }}>ملاحظات<input className="input" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></label>
+              <button type="button" className="btn sm" onClick={save}>حفظ</button>
+            </div>
+          )}
+          <div className="spread">
+            <span className="tiny muted">{info?.createdAt ? `اتضاف ${dateStr(info.createdAt)}` : ''}</span>
+            {stats && !stats.error && stats.total === 0
+              ? <button type="button" className="link" style={{ color: 'var(--red)' }} onClick={remove}>حذف نهائي</button>
+              : <span className="tiny muted">مينفعش يتحذف علشان عليه ورديات</span>}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -276,7 +414,7 @@ function ShopPeople({ shop }) {
                 const on = (u.shopIds || []).includes(shop.id);
                 return (
                   <button key={u.id} type="button" className={'chip sm' + (on ? ' on' : '')} onClick={() => toggle(u)} aria-pressed={on} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, paddingInlineStart: 6 }}>
-                    <Avatar name={u.name} photo={u.photo} color={u.color || '#8FD3FF'} size={28} />{u.name}{on ? ' ✓' : ''}
+                    <Avatar name={u.name} photo={u.photo} color={u.color || '#4CC3FF'} size={28} />{u.name}{on ? ' ✓' : ''}
                   </button>
                 );
               })}
@@ -341,7 +479,7 @@ function StaffAccounts({ shops }) {
         {users.map((u) => (
           <div key={u.id} className="list-row">
             <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Avatar name={u.name} color={u.color || '#8FD3FF'} size={40} />
+              <Avatar name={u.name} color={u.color || '#4CC3FF'} size={40} />
               <span className="stack" style={{ gap: 0 }}><strong>{u.name}</strong><span className="tiny muted" dir="ltr">{u.email}</span></span>
             </span>
             <select className="input" style={{ width: 150, height: 44 }} value={u.role} onChange={(e) => update(u, { role: e.target.value })} aria-label={`دور ${u.name}`}>

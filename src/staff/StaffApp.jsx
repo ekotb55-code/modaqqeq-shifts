@@ -45,7 +45,7 @@ export default function StaffApp({ profile, onLinkDevice, linkedShop }) {
           </nav>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <span className="who">
-              <Avatar name={profile.name} photo={profile.photo} color={profile.color || '#8FD3FF'} size={46} />
+              <Avatar name={profile.name} photo={profile.photo} color={profile.color || '#4CC3FF'} size={46} />
               <span className="stack" style={{ gap: 0 }}><strong style={{ fontSize: 15 }}>{profile.name}</strong><span className="tiny muted">{ROLE_LABEL[profile.role]}</span></span>
             </span>
             <button type="button" className="icon-btn" aria-label="تسجيل خروج" title="تسجيل خروج" onClick={() => signOut(auth)}><Icon d="logout" /></button>

@@ -9,7 +9,7 @@ const META = {
   income: { title: 'إيراد جديد', icon: 'down' },
   transfer: { title: 'تحويل محفظة', icon: 'phone' },
   topup: { title: 'شحن رصيد مكنة', icon: 'bolt' },
-  move: { title: 'نقل للدرج الجانبي', icon: 'swap' },
+  move: { title: 'نقل بين الدرجين', icon: 'swap' },
   withdraw: { title: 'سحب لصاحب المحل', icon: 'person' },
 };
 
@@ -36,6 +36,7 @@ export default function EntryModal({ type, shop, shift, profile, onClose }) {
   const [reason, setReason] = useState('');
   const [wallet, setWallet] = useState('insta');
   const [machine, setMachine] = useState('');
+  const [moveTo, setMoveTo] = useState('side');
   const [note, setNote] = useState('');
   const [amount, setAmount] = useState('');
   const [photo, setPhoto] = useState(null);
@@ -81,7 +82,7 @@ export default function EntryModal({ type, shop, shift, profile, onClose }) {
     if (type === 'income') Object.assign(entry, { src, reason: reasonValue, note: note.trim(), newItem: reason === '__new' });
     if (type === 'transfer') Object.assign(entry, { wallet, src: wallet });
     if (type === 'topup') Object.assign(entry, { src, machine });
-    if (type === 'move') Object.assign(entry, { src: 'drawer', to: 'side' });
+    if (type === 'move') Object.assign(entry, { src: moveTo === 'side' ? 'drawer' : 'side', to: moveTo });
     if (type === 'withdraw') Object.assign(entry, { src, note: note.trim() });
     try {
       const b = writeBatch(db);
@@ -182,7 +183,15 @@ export default function EntryModal({ type, shop, shift, profile, onClose }) {
         </div>
       )}
 
-      {type === 'move' && <span className="small muted">الفلوس هتطلع من درج الكاشير وتدخل الجانبي. ده مش بيأثر على الإجمالي.</span>}
+      {type === 'move' && (
+        <div className="stack">
+          <div className="chips">
+            <Chip on={moveTo === 'side'} onClick={() => setMoveTo('side')}>من درج الكاشير للجانبي</Chip>
+            <Chip on={moveTo === 'drawer'} onClick={() => setMoveTo('drawer')}>من الجانبي لدرج الكاشير</Chip>
+          </div>
+          <span className="small muted">ده مش بيأثر على إجمالي الفلوس، بس بيظبط حساب كل درج.</span>
+        </div>
+      )}
       {type === 'withdraw' && (
         <label className="field">ملاحظة (اختياري)<input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="مثلًا أ. سامح خد إيراد الضهر" /></label>
       )}

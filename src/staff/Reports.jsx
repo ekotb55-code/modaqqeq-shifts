@@ -96,8 +96,8 @@ export default function Reports({ profile, shops }) {
             ['المبيعات', tot('sales')], ['المصروفات', tot('exp')], ['انستاباي', tot('insta')], ['فودافون كاش', tot('vf')],
             ['العجز', ledger.filter((l) => l.kind === 'shortage').reduce((a, l) => a + num(l.amount), 0)],
             ['الزيادة', ledger.filter((l) => l.kind === 'overage').reduce((a, l) => a + num(l.amount), 0)],
-          ].map(([l, v]) => (
-            <div key={l} className="counter"><span className="small muted">{l}</span><span className="v">{fmt(v)}<span className="small muted" style={{ fontWeight: 500 }}> ج</span></span></div>
+          ].map(([l, v], i) => (
+            <div key={l} className={'counter ' + ['c-sky', 'c-orange', 'c-violet', 'c-pink', 'c-yellow', 'c-lime'][i]}><span className="small muted">{l}</span><span className="v">{fmt(v)}<span className="small muted" style={{ fontWeight: 500 }}> ج</span></span></div>
           ))}
         </div>
 

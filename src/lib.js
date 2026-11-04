@@ -6,17 +6,12 @@ export const getLinkedShop = () => { try { return localStorage.getItem('mdq_shop
 export const setLinkedShop = (id) => { try { if (id) localStorage.setItem('mdq_shop', id); else localStorage.removeItem('mdq_shop'); } catch { /* storage blocked */ } };
 
 export const FACES =[200, 100, 50, 20, 10, 5, 1];
-export const BILL_BG = ['#E3F3C8', '#D6E6FF', '#FFDDE8', '#D7F5E4', '#FFE1D2', '#EAE1FF', '#FFF0B3'];
-export const AVATAR_BG = ['#B79CFF', '#C6F432', '#FF8A3D', '#8FD3FF', '#FFD84D', '#FFA8C5'];
+export const BILL_BG = ['#CDF27A', '#B4D2FF', '#FFC1D8', '#A8EEC8', '#FFC9A8', '#D3C0FF', '#FFE68A'];
+export const AVATAR_BG = ['#A07CFF', '#B6F000', '#FF7A1A', '#4CC3FF', '#FFC800', '#FF7EB0'];
 
 export const DEFAULT_SHOP = {
-  machines: [
-    { machine: 'فوري', account: 'الحساب الرئيسي' },
-    { machine: 'فوري', account: 'كاش أوت' },
-    { machine: 'فوري', account: 'الكارت' },
-    { machine: 'فوري', account: 'الهوا' },
-    { machine: 'ماجيك', account: 'الرصيد' },
-  ],
+  machines: [],
+  machineList: [],
   suppliers: [],
   staff: [],
   shopExpenses: ['مياه وأكياس', 'كهربا', 'نظافة', 'صيانة', 'مواصلات', 'شاي وأكل'],
@@ -26,15 +21,41 @@ export const DEFAULT_SHOP = {
   walletName: '',
 };
 
+export const RATE_FROM = { cashier: 'بتتخصم من الكاشير', posting: 'بتتحسب عند الترحيل' };
+export const SETTLE = { owner: 'بتترحل لصاحب المحل تلقائي', daily: 'بتتقفل يوميًا' };
+
+// Machines are configured per shop: name, sub-accounts (or one account), commission rate and how it's settled.
+export function newMachine() {
+  return { id: Math.random().toString(36).slice(2, 9), name: '', active: true, hasSubs: false, accounts: [], ratePct: 0, rateFrom: 'posting', settle: 'owner' };
+}
+export function machineListOf(shop) {
+  if (Array.isArray(shop?.machineList) && shop.machineList.length) return shop.machineList;
+  // older shops stored a flat list — group it by machine name
+  const map = {};
+  (shop?.machines || []).forEach((m) => {
+    const k = m.machine || 'مكنة';
+    map[k] ||= { ...newMachine(), name: k, accounts: [] };
+    if (m.account && m.account !== k) map[k].accounts.push(m.account);
+  });
+  return Object.values(map).map((m) => ({ ...m, hasSubs: m.accounts.length > 0 }));
+}
+export function flattenMachines(list) {
+  return list.filter((m) => m.active && m.name.trim()).flatMap((m) => {
+    const base = { machine: m.name.trim(), machineId: m.id, ratePct: num(m.ratePct), rateFrom: m.rateFrom, settle: m.settle };
+    const accs = m.hasSubs ? m.accounts.map((a) => a.trim()).filter(Boolean) : [];
+    return accs.length ? accs.map((a) => ({ ...base, account: a })) : [{ ...base, account: 'الرصيد' }];
+  });
+}
+
 export const WEEKDAYS = ['الأحد', 'الاتنين', 'التلات', 'الأربع', 'الخميس', 'الجمعة', 'السبت'];
 
 export const ENTRY_TYPES = {
-  expense: { label: 'مصروف', color: '#FF8A3D', sign: -1 },
-  income: { label: 'إيراد', color: '#C6F432', sign: 1 },
-  transfer: { label: 'تحويل محفظة', color: '#B79CFF', sign: 1 },
-  topup: { label: 'شحن رصيد مكنة', color: '#FFD84D', sign: -1 },
-  move: { label: 'نقل للجانبي', color: '#8FD3FF', sign: 0 },
-  withdraw: { label: 'سحب لصاحب المحل', color: '#FFA8C5', sign: -1 },
+  expense: { label: 'مصروف', color: '#FF7A1A', sign: -1 },
+  income: { label: 'إيراد', color: '#B6F000', sign: 1 },
+  transfer: { label: 'تحويل محفظة', color: '#A07CFF', sign: 1 },
+  topup: { label: 'شحن رصيد مكنة', color: '#FFC800', sign: -1 },
+  move: { label: 'نقل بين الدرجين', color: '#4CC3FF', sign: 0 },
+  withdraw: { label: 'سحب لصاحب المحل', color: '#FF7EB0', sign: -1 },
 };
 
 export const SRC_LABEL = { drawer: 'درج الكاشير', side: 'الدرج الجانبي', insta: 'انستاباي', vf: 'فودافون كاش' };
@@ -153,6 +174,19 @@ export function summarize(shift, entries) {
   const expected = recvCash + num(sales) + income - outCash - transfers;
   const diff = hasSales ? Math.round((handCash - expected) * 100) / 100 : null;
   return { expenses, income, transfers, insta, vf, topups, withdraws, recvCash, handCash, outCash, expected, diff, hasSales };
+}
+
+// Side drawer must balance on its own: received + what came in − what went out.
+export function sideExpected(shift, entries) {
+  let v = num(shift?.receive?.side);
+  entries.forEach((e) => {
+    const a = num(e.amount);
+    if (e.type === 'move') { if ((e.to || 'side') === 'side') v += a; else v -= a; return; }
+    if (e.src !== 'side') return;
+    if (e.type === 'income') v += a;
+    if (['expense', 'topup', 'withdraw'].includes(e.type)) v -= a;
+  });
+  return Math.round(v * 100) / 100;
 }
 
 export const diffText = (d) => (d === null ? '—' : d < 0 ? `عجز ${fmt(-d)} ج` : d > 0 ? `زيادة ${fmt(d)} ج` : 'مضبوط');
