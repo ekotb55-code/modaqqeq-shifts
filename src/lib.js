@@ -106,10 +106,20 @@ export const initial = (n) => String(n || '?').trim().charAt(0);
 
 // Cashiers sign in with name + 4-digit PIN. Behind the scenes each has an email/password account.
 export const cashierPassword = (pin) => `mdq-${pin}-shift`;
-// Cashiers sign in with a username (English letters/numbers or their phone number) and a PIN.
-export const USERNAME_RE = /^[a-z0-9][a-z0-9._-]{2,30}$/;
-export const normUsername = (u) => String(u || '').trim().toLowerCase().replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\s+/g, '');
-export const cashierEmail = (u) => `${normUsername(u)}@cashier.modaqqeq.app`;
+// Cashiers sign in with a username (Arabic or English, or their phone number) and a PIN.
+// Arabic spelling variants are unified so "شوقى" and "شوقي" are the same login.
+export const USERNAME_RE = /^[a-z0-9ء-ي._-]{2,30}$/;
+export const normUsername = (u) => String(u || '').trim().toLowerCase()
+  .replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
+  .replace(/[ً-ٰٟـ]/g, '')
+  .replace(/[أإآٱ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').replace(/ؤ/g, 'و').replace(/ئ/g, 'ي')
+  .replace(/\s+/g, '');
+export const cashierEmail = (u) => {
+  const n = normUsername(u);
+  if (/^[a-z0-9._-]+$/.test(n)) return `${n}@cashier.modaqqeq.app`;
+  const hex = Array.from(new TextEncoder().encode(n)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  return `ar-${hex}@cashier.modaqqeq.app`;
+};
 
 // Create an auth account without signing the current admin out.
 export async function createAccount(email, password) {

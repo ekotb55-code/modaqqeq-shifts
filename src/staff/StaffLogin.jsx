@@ -59,7 +59,7 @@ export default function Login({ error }) {
             </div>
             {(msg || error) && <span className="badge bad" style={{ fontSize: 14, padding: '8px 14px', whiteSpace: 'normal' }}>{msg || error}</span>}
             <label className="field">{setup ? 'الإيميل' : 'اسم الدخول أو الإيميل'}
-              <input className="input" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} dir="ltr" value={user} onChange={(e) => setUser(e.target.value)} required />
+              <input className="input" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} dir="auto" value={user} onChange={(e) => setUser(e.target.value)} required />
             </label>
             <label className="field">{setup || isEmail ? 'الباسورد' : 'الرقم السري'}
               <input className="input" type="password" inputMode={!setup && !isEmail && user ? 'numeric' : undefined} autoComplete={setup ? 'new-password' : 'current-password'} dir="ltr" value={pass} onChange={(e) => setPass(e.target.value)} required minLength={setup ? 6 : 4} />
