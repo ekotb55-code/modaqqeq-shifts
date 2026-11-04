@@ -144,16 +144,19 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
 
       {shopSafes(shop).some((x) => x.key !== 'drawer') && <section className="card">
         <div className="spread"><h2 style={{ fontSize: 17, fontWeight: 700 }}>أرصدة الخزن دلوقتي</h2><span className="tiny muted">بتتحدث مع كل عملية</span></div>
-        <div className="safes-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
+        <div className="safes-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(175px, 1fr))', gap: 10 }}>
           {shopSafes(shop).filter((x) => x.key !== 'drawer').flatMap((x) => {
             const card = (
               x.kind === 'wallet' ? (
-                <div key={x.key} style={{ background: WALLET_LOOK[x.key]?.bg || x.color, color: '#fff', borderRadius: 20, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <WalletMark k={x.key} size={40} />
-                  <span className="stack" style={{ gap: 0 }}>
-                    <span className="small" style={{ fontWeight: 700 }}>{x.label} <span className="tiny" style={{ fontWeight: 500, opacity: 0.9 }}>· {x.mode === 'owner' ? 'تحويلات لصاحب المحل' : 'رصيد'}</span></span>
-                    <span style={{ fontSize: 24, fontWeight: 800 }}>{fmt(balances[x.key] ?? 0)}<span className="small" style={{ fontWeight: 500 }}> ج</span></span>
+                <div key={x.key} style={{ background: WALLET_LOOK[x.key]?.bg || x.color, color: '#fff', borderRadius: 20, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                    <WalletMark k={x.key} size={30} />
+                    <span className="stack" style={{ gap: 0, minWidth: 0 }}>
+                      <span className="small" style={{ fontWeight: 800, whiteSpace: 'nowrap' }}>{x.label}</span>
+                      <span className="tiny" style={{ fontWeight: 500, opacity: 0.9 }}>{x.mode === 'owner' ? 'تحويلات لصاحب المحل' : 'رصيد'}</span>
+                    </span>
                   </span>
+                  <span style={{ fontSize: 24, fontWeight: 800, whiteSpace: 'nowrap', direction: 'ltr', textAlign: 'right' }}><span className="small" style={{ fontWeight: 500 }}>ج </span>{fmt(balances[x.key] ?? 0)}</span>
                 </div>
               ) : (
                 <div key={x.key} style={{ background: x.color, borderRadius: 20, padding: '12px 14px' }}>
