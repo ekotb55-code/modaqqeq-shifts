@@ -447,3 +447,12 @@ img { max-width: 100%; }
 .sp-item.on .tiny { color: rgba(255,255,255,.85); }
 .sp-item.add { flex-direction: row; align-items: center; gap: 8px; color: var(--blue); font-weight: 800; border-top: 1px solid #EEF1FA; border-radius: 0 0 14px 14px; }
 @media (max-width: 700px) { .sp-btn { height: 44px; padding: 0 10px; } .sp-btn strong { font-size: 14px; max-width: 120px; } }
+
+.branch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px; }
+.branch-card { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 22px; border-radius: 28px; border: 2px solid transparent; background: #fff; font-family: inherit; color: var(--ink); cursor: pointer; text-align: right; box-shadow: 0 4px 18px rgba(30,40,90,.07); }
+.branch-card strong { font-size: 22px; }
+.branch-card:hover { border-color: var(--blue); }
+.bc-ic { width: 52px; height: 52px; border-radius: 18px; background: var(--blue); color: #fff; display: flex; align-items: center; justify-content: center; }
+.branch-card.all .bc-ic { background: var(--violet, #A07CFF); }
+.branch-card.add { background: var(--blue-soft, #E6EEFF); color: var(--blue); }
+.branch-card.add .bc-ic { background: #fff; color: var(--blue); }

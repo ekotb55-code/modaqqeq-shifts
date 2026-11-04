@@ -22,7 +22,13 @@ export default function StaffApp({ profile }) {
     isAdmin && { id: 'setup', label: 'الإعداد' },
   ].filter(Boolean);
   const [tab, setTab] = useState(tabs[0].id);
-  const [setupShop, setSetupShop] = useState(null);
+  // The branch chosen at the top applies to every tab. 'all' = every branch.
+  const [shopSel, setShopSelRaw] = useState(() => { try { return sessionStorage.getItem('mdq-staff-shop') || null; } catch { return null; } });
+  const setShopSel = (v) => { setShopSelRaw(v); try { if (v) sessionStorage.setItem('mdq-staff-shop', v); else sessionStorage.removeItem('mdq-staff-shop'); } catch { /* ignore */ } };
+  const validSel = shopSel === 'all' || shops.some((x) => x.id === shopSel) ? shopSel : null;
+  const effSel = validSel || (shops.length === 1 ? shops[0].id : null);
+  const viewShops = effSel && effSel !== 'all' ? shops.filter((x) => x.id === effSel) : shops;
+  const setupShop = effSel && effSel !== 'all' ? effSel : null;
   const toast = useToast();
   const newShop = async () => {
     const name = window.prompt('اسم المحل الجديد');
@@ -32,7 +38,7 @@ export default function StaffApp({ profile }) {
     b.set(ref, { ...DEFAULT_SHOP, name: name.trim(), createdAt: serverTimestamp(), openShift: null, lastHandover: null });
     b.set(doc(db, 'shopsPublic', ref.id), { name: name.trim(), logo: null, cashiers: [] });
     await b.commit();
-    setSetupShop(ref.id);
+    setShopSel(ref.id);
     toast('المحل اتعمل');
   };
 
@@ -56,7 +62,7 @@ export default function StaffApp({ profile }) {
         <div className="topbar-in">
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <img className="logo-mdq" src="./modaqqeq-logo.png" alt="مدقق" />
-            {tab === 'setup' && <ShopPicker shops={shops} value={setupShop} onChange={setSetupShop} onNew={newShop} />}
+            {shops.length > 0 && <ShopPicker shops={shops} value={effSel} onChange={setShopSel} onNew={isAdmin ? newShop : null} />}
           </div>
           <nav className="tabs" aria-label="الأقسام" style={{ boxShadow: 'none', background: 'var(--bg)' }}>
             {tabs.map((t) => <button key={t.id} type="button" className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)} aria-current={tab === t.id ? 'page' : undefined}>{t.label}</button>)}
@@ -70,11 +76,17 @@ export default function StaffApp({ profile }) {
           </div>
         </div>
       </header>
-      {tab === 'review' && <Review profile={profile} shops={shops} />}
-      {tab === 'safes' && <Safes shops={shops} />}
-      {tab === 'reports' && <Reports profile={profile} shops={shops} />}
-      {tab === 'ledger' && <Ledger profile={profile} shops={shops} canReview={canReview} />}
-      {tab === 'setup' && <Setup profile={profile} shops={shops} sel={setupShop} setSel={setSetupShop} />}
+      {shops.length > 1 && !effSel ? (
+        <BranchChooser shops={shops} onPick={setShopSel} onNew={isAdmin ? newShop : null} />
+      ) : (
+        <>
+          {tab === 'review' && <Review key={effSel} profile={profile} shops={viewShops} />}
+          {tab === 'safes' && <Safes key={effSel} shops={viewShops} />}
+          {tab === 'reports' && <Reports key={effSel} profile={profile} shops={viewShops} />}
+          {tab === 'ledger' && <Ledger key={effSel} profile={profile} shops={viewShops} canReview={canReview} />}
+          {tab === 'setup' && <Setup profile={profile} shops={shops} sel={setupShop} setSel={setShopSel} />}
+        </>
+      )}
     </div>
   );
 }
@@ -91,11 +103,11 @@ export function ShopPicker({ shops, value, onChange, onNew }) {
   const cur = shops.find((s) => s.id === value);
   return (
     <div className="shop-picker" ref={ref}>
-      <button type="button" className={'sp-btn' + (cur ? ' on' : '')} onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="listbox">
+      <button type="button" className={'sp-btn' + (cur || value === 'all' ? ' on' : '')} onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="listbox">
         <Icon d="shop" size={20} />
         <span className="stack" style={{ gap: 0, alignItems: 'flex-start' }}>
-          <span className="tiny" style={{ opacity: 0.8 }}>بتعدّل في</span>
-          <strong>{cur ? cur.name : 'اختار المحل'}</strong>
+          <span className="tiny" style={{ opacity: 0.8 }}>الفرع</span>
+          <strong>{value === 'all' ? 'كل الفروع' : cur ? cur.name : 'اختار الفرع'}</strong>
         </span>
         <Icon d="chevron" size={16} style={{ transform: 'rotate(-90deg)' }} />
       </button>
@@ -110,9 +122,48 @@ export function ShopPicker({ shops, value, onChange, onNew }) {
               </button>
             );
           })}
-          <button type="button" className="sp-item add" onClick={() => { setOpen(false); onNew(); }}><Icon d="plus" size={18} />محل جديد</button>
+          {shops.length > 1 && (
+            <button type="button" role="option" aria-selected={value === 'all'} className={'sp-item' + (value === 'all' ? ' on' : '')} onClick={() => { onChange('all'); setOpen(false); }}>
+              <strong>كل الفروع</strong><span className="tiny">في الورديات والخزن والتقارير</span>
+            </button>
+          )}
+          {onNew && <button type="button" className="sp-item add" onClick={() => { setOpen(false); onNew(); }}><Icon d="plus" size={18} />محل جديد</button>}
         </div>
       )}
+    </div>
+  );
+}
+
+export function BranchChooser({ shops, onPick, onNew }) {
+  return (
+    <div className="wrap" style={{ maxWidth: 900 }}>
+      <div className="stack" style={{ gap: 4 }}>
+        <h1 className="title">اختار الفرع</h1>
+        <span className="sub">الفرع اللي تختاره هيفضل فوق جنب لوجو مدقق، وكل الصفحات هتشتغل عليه. تقدر تغيّره في أي وقت.</span>
+      </div>
+      <div className="branch-grid">
+        {shops.map((s) => {
+          const o = allOpen(s);
+          return (
+            <button key={s.id} type="button" className="branch-card" onClick={() => onPick(s.id)}>
+              <span className="bc-ic"><Icon d="shop" size={26} /></span>
+              <strong>{s.name}</strong>
+              <span className={'badge ' + (o.length ? 'warn' : 'ok')}>{o.length ? `شغّال · ${o.map((x) => x.cashierName).join('، ')}` : 'مفيش وردية مفتوحة'}</span>
+            </button>
+          );
+        })}
+        <button type="button" className="branch-card all" onClick={() => onPick('all')}>
+          <span className="bc-ic"><Icon d="dots" size={26} /></span>
+          <strong>كل الفروع</strong>
+          <span className="tiny muted">تشوف الفروع كلها مع بعض</span>
+        </button>
+        {onNew && (
+          <button type="button" className="branch-card add" onClick={onNew}>
+            <span className="bc-ic"><Icon d="plus" size={26} /></span>
+            <strong>محل جديد</strong>
+          </button>
+        )}
+      </div>
     </div>
   );
 }
