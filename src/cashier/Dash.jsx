@@ -119,7 +119,7 @@ export default function Dash({ shop, shift, entries, profile, onHandover, onRece
 
       <section className="card">
         <div className="spread"><h2 style={{ fontSize: 17, fontWeight: 700 }}>أرصدة الخزن دلوقتي</h2><span className="tiny muted">بتتحدث مع كل عملية</span></div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
+        <div className="safes-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
           {shopSafes(shop).filter((x) => x.key !== 'drawer').map((x) => (
             <div key={x.key} style={{ background: x.color, borderRadius: 20, padding: '12px 14px' }}>
               <div className="small" style={{ fontWeight: 600 }}>{x.label}</div>
