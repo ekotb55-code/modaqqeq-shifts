@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, Modal, useToast } from '../ui.jsx';
-import { ENTRY_TYPES, OWNER, SRC_LABEL, WALLETS, WEEKDAYS, fmt, num, pickImage, safeLabel, shopSafes } from '../lib';
+import { ENTRY_TYPES, OWNER, SRC_LABEL, WALLETS, WEEKDAYS, walletModeOf, fmt, num, pickImage, safeLabel, shopSafes } from '../lib';
 
 const META = {
   expense: { title: 'مصروف جديد', icon: 'up' },
@@ -54,13 +54,13 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
   const [custom, setCustom] = useState('');
   const [invoice, setInvoice] = useState('invoice');
   const [reason, setReason] = useState('');
-  const enabledWallets = WALLETS.filter((w) => (shop.wallets || ['insta', 'vf']).includes(w.key));
+  const enabledWallets = WALLETS.filter((w) => (shop.wallets || ['insta', 'vf']).includes(w.key) && walletModeOf(shop, w.key) === 'owner');
   const [wallet, setWallet] = useState(enabledWallets[0]?.key || 'insta');
   const [machine, setMachine] = useState('');
   const [moveTo, setMoveTo] = useState('side');
   const [liqTo, setLiqTo] = useState('');
   const [feeTxt, setFeeTxt] = useState(null);
-  const allSafes = shopSafes(shop);
+  const allSafes = shopSafes(shop).filter((x) => !(x.kind === 'wallet' && x.mode === 'owner'));
   const cashSafes = allSafes.filter((x) => x.kind === 'cash');
   const machineSafes = allSafes.filter((x) => x.kind === 'machine');
   const liqTargets = [...allSafes, { key: OWNER, label: 'صاحب المحل / المحفظة' }];

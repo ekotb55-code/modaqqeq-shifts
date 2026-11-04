@@ -41,7 +41,10 @@ export default function Statements({ c, shift, shop, showDrawer = true }) {
             <Line label={`استلام نقدي${rcv.prevCashier ? ` من درج ${rcv.prevCashier}` : ''}`} amount={d.open} t={shift.openedAt || shift.openedAtLocal} />
             {d.lines.map((l, i) => <Line key={i} {...l} />)}
             <Line label="المبيعات (من السيستم)" amount={c.hasSales ? c.sales : null} />
-            {c.transfers > 0 && <Line label="مبيعات اتدفعت انستاباي / فودافون" amount={-c.transfers} />}
+            {c.transfers > 0 && <Line label="تحويلات محافظ (بتروح لصاحب المحل)" amount={-c.transfers} />}
+            {(c.walletInfo || []).filter((x) => x.mode === 'shop' && x.sales).map((x) => (
+              <Line key={x.key} label={`مبيعات اتدفعت على ${x.label} (الفرق)`} amount={-x.sales} />
+            ))}
             {c.machines.filter((m) => m.affects && m.sales).map((m) => (m.rateFrom === 'cashier' ? [
               <Line key={m.key} label={`${m.label} · ${m.sales > 0 ? 'مبيعات على المكنة' : 'خدمات اتدفعت كاش'}`} amount={m.effect} />,
               m.fee ? <Line key={m.key + 'f'} label={`مصاريف ${m.machine} (${fmt(m.rate)}%)`} amount={m.feeEffect} tone="bad" /> : null,
@@ -67,10 +70,16 @@ export default function Statements({ c, shift, shop, showDrawer = true }) {
         {wallets.map((w) => {
           const s = c.safes[w.key];
           return (
-            <SafeCard key={w.key} title={`خزنة ${w.label}`} tint="tint-violet">
-              <Line label="بداية المدة" amount={s.open} />
+            <SafeCard key={w.key} title={s.mode === 'owner' ? `تحويلات ${w.label} · لصاحب المحل` : `خزنة ${w.label}${s.mode === 'shop' ? ' · تبع المحل' : ''}`} tint="tint-violet"
+              badge={s.mode === 'shop' && s.sales !== null && <span className="badge info">الفرق {fmt(s.sales)}</span>}>
+              {s.mode !== 'owner' && <Line label="بداية المدة" amount={s.open} />}
               {s.lines.map((l, i) => <Line key={i} {...l} />)}
-              <Line label="الرصيد آخر الوردية" amount={s.expected} strong />
+              {s.mode === 'owner' ? <Line label="إجمالي التحويلات" amount={s.inn} strong /> : s.mode === 'shop' ? (
+                <>
+                  <Line label="آخر المدة (الكاشير كتبه)" amount={s.close} strong />
+                  <Line label="الفرق · اتدفع على المحفظة" amount={s.sales} strong tone={s.sales < 0 ? 'bad' : null} />
+                </>
+              ) : <Line label="الرصيد آخر الوردية" amount={s.expected} strong />}
               {w.key === 'insta' && shop?.walletName && <span className="tiny muted" style={{ marginTop: 6 }}>الحساب باسم: {shop.walletName}</span>}
             </SafeCard>
           );

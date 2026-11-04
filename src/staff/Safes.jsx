@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Avatar } from '../ui.jsx';
-import { MAIN_REG, WALLETS, lastOf, openOf, registersOf, shopForRegister, computeShift, dateStr, diffText, fmt, liveBalances, machineKey, machineTotals, num, timeStr, todayKey, toDate } from '../lib';
+import { MAIN_REG, WALLETS, lastOf, openOf, registersOf, shopForRegister, computeShift, dateStr, diffText, fmt, liveBalances, machineKey, machineTotals, walletModeOf, num, timeStr, todayKey, toDate } from '../lib';
 import Statements from './Statements.jsx';
 
 function useEntries(shiftId) {
@@ -53,7 +53,7 @@ function RegBalances({ shop: fullShop, reg, title }) {
   const tiles = [
     ...(reg !== MAIN_REG && !openShift ? [{ key: 'drawer', label: 'الدرج', cls: 'c-orange' }] : []),
     ...(shop.noSide ? [] : [{ key: 'side', label: 'الدرج الجانبي', cls: 'c-lime' }]),
-    ...wallets.map((w) => ({ key: w.key, label: w.label, cls: w.key === 'insta' ? 'c-violet' : 'c-pink' })),
+    ...wallets.map((w) => ({ key: w.key, label: `${w.label} · ${walletModeOf(shop, w.key) === 'owner' ? 'تحويلات' : 'رصيد'}`, cls: w.key === 'insta' ? 'c-violet' : 'c-pink' })),
     ...(shop.machines || []).flatMap((m) => {
       const t = machineTotals(shop, balances.b).find((g) => g.after === machineKey(m));
       const tile = { key: machineKey(m), label: `${m.machine} · ${m.account}`, cls: 'c-yellow' };

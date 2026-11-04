@@ -43,8 +43,13 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
   const preview = filled ? computeShift({ ...shift, handover: { machines: machines.map((m, i) => ({ ...m, value: String(mvals[i]).trim() === '' ? null : num(mvals[i]) })) } }, entries, shop) : null;
   const feeGroups = preview ? preview.machineGroups.filter((g) => g.affects && g.sales && g.rateFrom === 'cashier' && g.fee) : [];
   const expSide = calc.side.expected;
+  const modes = shift.receive?.walletModes || null;
+  const modeOf = (k) => (modes ? modes[k] || 'owner' : 'legacy');
   const walletKeys = WALLETS.filter((w) => (shop.wallets || ['insta', 'vf']).includes(w.key) || num(shift.receive?.wallets?.[w.key]) || calc.safes[w.key]?.lines.length);
-  const walletsClose = Object.fromEntries(walletKeys.map((w) => [w.key, calc.safes[w.key].expected]));
+  const shopWallets = walletKeys.filter((w) => modeOf(w.key) === 'shop');
+  const ownerWallets = walletKeys.filter((w) => modeOf(w.key) !== 'shop');
+  const [wtyped, setWtyped] = useState(() => Object.fromEntries(shopWallets.map((w) => [w.key, ''])));
+  const walletsClose = Object.fromEntries(walletKeys.map((w) => [w.key, modeOf(w.key) === 'shop' ? num(wtyped[w.key]) : calc.safes[w.key].expected]));
   const sideDiff = side === '' ? 0 : Math.round((num(side) - expSide) * 100) / 100;
   const sideOk = side !== '' && Math.abs(sideDiff) < 0.01;
   const fixSide = () => {
@@ -60,6 +65,8 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
   const send = async () => {
     if (side === '') { toast('اكتب مبلغ الدرج الجانبي (ولو صفر اكتب 0)', 'err'); return; }
     if (!sideOk) { toast(`الجانبي لازم يبقى ${fmt(expSide)} ج · ظبطه الأول`, 'err'); return; }
+    const wMissing = shopWallets.find((w) => String(wtyped[w.key] ?? '').trim() === '');
+    if (wMissing) { toast(`اكتب رصيد ${wMissing.label} دلوقتي`, 'err'); return; }
     const missing = mvals.findIndex((v) => String(v).trim() === '');
     if (missing >= 0) { toast(`اكتب رصيد ${machines[missing].machine} · ${machines[missing].account}`, 'err'); return; }
     setBusy(true);
@@ -69,6 +76,7 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
       drawerTotal, side: num(side),
       machines: machines.map((m, i) => ({ ...m, value: num(mvals[i]), photo: !!photos[i] })),
       keepDrawer, keepSide, sideExpected: expSide, sideFix: sideFix || null, wallets: walletsClose,
+      walletsTyped: Object.fromEntries(shopWallets.map((w) => [w.key, num(wtyped[w.key])])),
     };
     try {
       const b = writeBatch(db);
@@ -143,19 +151,30 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
             </div>
           )}
           {sideFix && sideOk && <div className="alert ok small">✓ الجانبي اتظبط · افتكر تعدّ درج الكاشير تاني بعد ما {sideFix.diff < 0 ? 'طلّعت منه' : 'حطيت فيه'} {fmt(Math.abs(sideFix.diff))} ج</div>}
-          {walletKeys.length > 0 && (
+          {shopWallets.length > 0 && (
             <section className="card tint-violet" style={{ gap: 8 }}>
-              <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />رصيد المحافظ آخر الوردية</h2>
-              {walletKeys.map((w) => {
+              <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />رصيد المحافظ دلوقتي</h2>
+              <span className="tiny muted">افتح المحفظة واكتب الرصيد اللي فيها.</span>
+              {shopWallets.map((w) => (
+                <label key={w.key} className="m-row" style={{ padding: '6px 6px 6px 14px' }}>
+                  <span className="lbl"><span className="small"><b>{w.label}</b></span><span className="tiny muted">استلمت {fmt(calc.safes[w.key].open)}</span></span>
+                  <input inputMode="decimal" aria-label={`رصيد ${w.label} دلوقتي`} value={wtyped[w.key] ?? ''} onChange={(e) => setWtyped({ ...wtyped, [w.key]: e.target.value })} onFocus={(e) => e.target.select()} />
+                </label>
+              ))}
+            </section>
+          )}
+          {ownerWallets.length > 0 && ownerWallets.some((w) => calc.safes[w.key]?.inn) && (
+            <section className="card tint-violet" style={{ gap: 8 }}>
+              <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />تحويلات المحافظ</h2>
+              {ownerWallets.filter((w) => calc.safes[w.key]?.inn).map((w) => {
                 const x = calc.safes[w.key];
                 return (
                   <div key={w.key} className="m-row" style={{ padding: '10px 14px' }}>
-                    <span className="lbl"><span className="small"><b>{w.label}</b></span><span className="tiny muted">استلمت {fmt(x.open)} · دخل {fmt(x.inn)} · طلع {fmt(x.out)}</span></span>
-                    <strong style={{ fontSize: 18 }}>{fmt(x.expected)}</strong>
+                    <span className="lbl"><span className="small"><b>{w.label}</b></span><span className="tiny muted">{x.lines.length} تحويل · بتروح لصاحب المحل</span></span>
+                    <strong style={{ fontSize: 18 }}>{fmt(x.inn)}</strong>
                   </div>
                 );
               })}
-              <span className="tiny muted">لو الرصيد اللي في المحفظة مختلف، كلّم المحاسب.</span>
             </section>
           )}
           {(machines.length > 0 || !isSub) && (

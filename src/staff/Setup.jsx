@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { collection, doc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Avatar, Icon, useToast } from '../ui.jsx';
-import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, REG_KIND, newRegister, newExpenseType, RATE_FROM, WALLETS, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, createAccount, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, num, pickImage } from '../lib';
+import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, REG_KIND, newRegister, newExpenseType, RATE_FROM, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, createAccount, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, num, pickImage } from '../lib';
 
 export default function Setup({ profile, shops }) {
   const toast = useToast();
@@ -197,7 +197,7 @@ function ShopEditor({ shop }) {
   const [pub, setPub] = useState(null);
   const [f, setF] = useState(() => ({
     name: shop.name || '', posUrl: shop.posUrl || '', walletName: shop.walletName || '',
-    machineList: machineListOf(shop), wallets: shop.wallets || ['insta', 'vf'], suppliers: shop.suppliers || [], staff: shop.staff || [],
+    machineList: machineListOf(shop), wallets: shop.wallets || ['insta', 'vf'], walletModes: walletModesOf(shop), suppliers: shop.suppliers || [], staff: shop.staff || [],
     shopExpenses: shop.shopExpenses || [], customExpenseTypes: shop.customExpenseTypes || [], hiddenExpenseTypes: shop.hiddenExpenseTypes || [], incomeReasons: shop.incomeReasons || [], advanceDays: shop.advanceDays || [],
     registers: shop.registers || [],
   }));
@@ -260,7 +260,26 @@ function ShopEditor({ shop }) {
             return <button key={w.key} type="button" className={'chip' + (on ? ' on' : '')} aria-pressed={on} onClick={() => set('wallets', on ? f.wallets.filter((x) => x !== w.key) : [...f.wallets, w.key])}>{on ? '✓ ' : ''}{w.label}</button>;
           })}
         </div>
-        <span className="tiny muted">كل محفظة مفعّلة ليها خزنة رصيدها بيزيد بالتحويلات وبينقص بالتسييل والمصروفات.</span>
+        {WALLETS.filter((w) => f.wallets.includes(w.key)).map((w) => {
+          const mode = f.walletModes[w.key] || 'owner';
+          return (
+            <div key={w.key} className="stack" style={{ background: '#fff', borderRadius: 20, padding: '12px 14px', gap: 8 }}>
+              <div className="spread">
+                <strong>{w.label}</strong>
+                <div className="chips">
+                  {Object.entries(WALLET_MODE).map(([k, l]) => (
+                    <button key={k} type="button" className={'chip sm' + (mode === k ? ' on' : '')} aria-pressed={mode === k} onClick={() => set('walletModes', { ...f.walletModes, [w.key]: k })}>{l}</button>
+                  ))}
+                </div>
+              </div>
+              <span className="tiny muted" style={{ lineHeight: 1.7 }}>
+                {mode === 'owner'
+                  ? 'الكاشير مش بيستلم ولا بيسلّم رصيد. بيسجّل كل تحويل لوحده بصورته، والتحويلات بتتخصم من درجه.'
+                  : 'الكاشير بيستلم رصيد أول الوردية ويكتب الرصيد آخر الوردية بس. الفرق بيظهر للمحاسب وبيتخصم من الدرج.'}
+              </span>
+            </div>
+          );
+        })}
       </section>
 
       <MachinesEditor list={f.machineList} onChange={(v) => set('machineList', v)} />

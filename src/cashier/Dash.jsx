@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Avatar, Icon, Modal, NetMeter, useToast } from '../ui.jsx';
-import { ENTRY_TYPES, SRC_LABEL, WALLETS, durationStr, firstName, fmt, liveBalances, machineTotals, num, registersOf, safeLabel, shopSafes, timeStr } from '../lib';
+import { ENTRY_TYPES, SRC_LABEL, WALLETS, durationStr, firstName, fmt, liveBalances, machineTotals, num, walletModeOf, registersOf, safeLabel, shopSafes, timeStr } from '../lib';
 import { Incoming, SendModal } from './Transfers.jsx';
 import EntryModal from './EntryModal.jsx';
 
@@ -32,7 +32,7 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
   const subOf = (arr) => (arr.length ? `${arr.length} عمليات · ${fmt(arr.reduce((a, e) => a + num(e.amount), 0))} ج` : 'لسه مفيش النهارده');
   const out = (src) => sum((e) => (['expense', 'topup', 'withdraw', 'xfer_out'].includes(e.type) || (e.type === 'liquidate' && e.to !== 'drawer' && e.to !== 'side')) && e.src === src);
 
-  const wallets = WALLETS.filter((w) => (shop.wallets || ['insta', 'vf']).includes(w.key)).map((w) => w.key);
+  const wallets = WALLETS.filter((w) => (shop.wallets || ['insta', 'vf']).includes(w.key) && walletModeOf(shop, w.key) === 'owner').map((w) => w.key);
   const ops = !shop.noOps;
   const counters = [
     { label: 'طالع من الدرج', value: out('drawer'), dot: '#fff', cls: 'c-orange' },
@@ -148,7 +148,7 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
           {shopSafes(shop).filter((x) => x.key !== 'drawer').flatMap((x) => {
             const card = (
               <div key={x.key} style={{ background: x.color, borderRadius: 20, padding: '12px 14px' }}>
-                <div className="small" style={{ fontWeight: 600 }}>{x.label}</div>
+                <div className="small" style={{ fontWeight: 600 }}>{x.label}{x.kind === 'wallet' ? <span className="tiny" style={{ fontWeight: 500 }}> · {x.mode === 'owner' ? 'تحويلات لصاحب المحل' : 'رصيد'}</span> : null}</div>
                 <div style={{ fontSize: 24, fontWeight: 800 }}>{fmt(balances[x.key] ?? 0)}<span className="small" style={{ fontWeight: 500 }}> ج</span></div>
               </div>
             );

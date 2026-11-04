@@ -224,6 +224,11 @@ export const WALLETS = [
   { key: 'insta', label: 'انستاباي' },
   { key: 'vf', label: 'فودافون كاش' },
 ];
+// A wallet either belongs to the owner (every transfer is recorded with a photo, no balance is
+// received or handed over) or sits in the shop (opening and closing balance only, the accountant sees the difference).
+export const WALLET_MODE = { owner: 'بتروح لصاحب المحل', shop: 'تبع المحل' };
+export const walletModeOf = (shop, k) => (shop?.walletModes?.[k] === 'shop' ? 'shop' : 'owner');
+export const walletModesOf = (shop) => Object.fromEntries(WALLETS.map((w) => [w.key, walletModeOf(shop, w.key)]));
 export const machineKey = (m) => `m:${m.machine}|${m.account}`;
 export const OWNER = 'out:owner';
 
@@ -243,7 +248,7 @@ export function shopSafes(shop) {
   return [
     { key: 'drawer', label: 'درج الكاشير', kind: 'cash', color: '#FF7A1A' },
     ...(shop?.noSide ? [] : [{ key: 'side', label: 'الدرج الجانبي', kind: 'cash', color: '#B6F000' }]),
-    ...WALLETS.filter((w) => wallets.includes(w.key)).map((w) => ({ ...w, kind: 'wallet', color: w.key === 'insta' ? '#A07CFF' : '#FF4D6D' })),
+    ...WALLETS.filter((w) => wallets.includes(w.key)).map((w) => ({ ...w, kind: 'wallet', mode: walletModeOf(shop, w.key), color: w.key === 'insta' ? '#A07CFF' : '#FF4D6D' })),
     ...(shop?.machines || []).map((m) => ({ key: machineKey(m), label: `${m.machine} · ${m.account}`, kind: 'machine', color: '#FFC800', m })),
   ];
 }
@@ -308,7 +313,7 @@ export function computeShift(shift, entries, shop, sales = null) {
     if (k === 'drawer') open = num(rcv.drawerTotal);
     else if (k === 'side') open = num(rcv.side);
     else if (k.startsWith('m:')) open = num(rm(rcv.machines, k)?.value);
-    else open = num(rcv.wallets?.[k]);
+    else open = rcv.walletModes?.[k] === 'owner' ? 0 : num(rcv.wallets?.[k]);
     safes[k] = { key: k, label: safeLabel(k, shop), open, lines: [], inn: 0, out: 0 };
   });
   const add = (k, label, amount, t) => {
@@ -361,14 +366,29 @@ export function computeShift(shift, entries, shop, sales = null) {
 
   const side = safes.side;
   side.expected = r2(side.open + side.inn - side.out);
-  WALLETS.forEach((w) => { const x = safes[w.key]; x.expected = r2(x.open + x.inn - x.out); });
+  // Shop wallets: the closing balance is typed at handover; what grew by itself was paid by customers.
+  let walletCash = 0;
+  const walletInfo = [];
+  WALLETS.forEach((w) => {
+    const x = safes[w.key];
+    const mode = rcv.walletModes?.[w.key] || 'legacy';
+    x.mode = mode;
+    x.expected = r2(x.open + x.inn - x.out);
+    x.sales = null;
+    if (mode === 'shop') {
+      const typed = hnd?.walletsTyped?.[w.key];
+      x.close = typed === undefined || typed === null ? null : num(typed);
+      if (x.close !== null) { x.sales = r2(x.close - x.expected); walletCash -= x.sales; }
+    } else x.close = x.expected;
+    walletInfo.push(x);
+  });
 
   const drawer = safes.drawer;
   const hasSales = sales !== null && sales !== undefined && sales !== '';
   const salesN = hasSales ? num(sales) : 0;
   // POS sales paid by wallet are already in a wallet, not in the drawer.
   drawer.expectedBase = r2(drawer.open + drawer.inn - drawer.out);
-  drawer.expected = hasSales ? r2(drawer.expectedBase + salesN - transfers + machineCash) : null;
+  drawer.expected = hasSales ? r2(drawer.expectedBase + salesN - transfers + machineCash + walletCash) : null;
   drawer.close = hnd ? num(hnd.drawerTotal) : null;
   side.close = hnd ? num(hnd.side) : null;
 
@@ -380,7 +400,7 @@ export function computeShift(shift, entries, shop, sales = null) {
   const handCash = hnd ? num(hnd.drawerTotal) + num(hnd.side) : 0;
   const outCash = r2(expenses + topups + withdraws);
   return {
-    safes, machines, machineGroups: groupMachines(machines), drawer, side, sales: salesN, hasSales, machineCash: r2(machineCash), machineFees: r2(machineFees), liqFees: r2(liqFees),
+    safes, machines, machineGroups: groupMachines(machines), drawer, side, sales: salesN, hasSales, machineCash: r2(machineCash), machineFees: r2(machineFees), liqFees: r2(liqFees), walletCash: r2(walletCash), walletInfo,
     drawerDiff, sideDiff, diff,
     income, expenses, transfers, insta, vf, topups, withdraws, liquidations, xferIn, xferOut, recvCash, handCash, outCash,
     expected: drawer.expected === null ? null : r2(drawer.expected + side.expected),

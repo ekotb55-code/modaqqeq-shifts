@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { collection, doc, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, useToast } from '../ui.jsx';
-import { MAIN_REG, WALLETS, billsTotal, emptyBills, fmt, lastOf, num, openKey, pickImage, regName, timeStr, todayKey } from '../lib';
+import { MAIN_REG, WALLETS, walletModeOf, walletModesOf, billsTotal, emptyBills, fmt, lastOf, num, openKey, pickImage, regName, timeStr, todayKey } from '../lib';
 import { Bills, MachineRows, SideBox } from './parts.jsx';
 
 export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, editShift, onCancel }) {
@@ -27,8 +27,8 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
 
   const changed = Object.keys(bills).filter((f) => num(bills[f]) !== num(prevBills[f])).length;
   const sideChanged = num(side) !== prevSide;
-  const walletKeys = WALLETS.filter((w) => (shop.wallets || ['insta', 'vf']).includes(w.key));
-  const prevWallets = Object.fromEntries(walletKeys.map((w) => [w.key, num(last?.wallets?.[w.key])]));
+  const walletKeys = WALLETS.filter((w) => (shop.wallets || ['insta', 'vf']).includes(w.key) && walletModeOf(shop, w.key) === 'shop');
+  const prevWallets = Object.fromEntries(walletKeys.map((w) => [w.key, num(last?.walletsTyped?.[w.key] ?? last?.wallets?.[w.key])]));
   const [wallets, setWallets] = useState(() => Object.fromEntries(walletKeys.map((w) => [w.key, String(er ? num(er.wallets?.[w.key]) : prevWallets[w.key])])));
   const wChanged = walletKeys.filter((w) => num(wallets[w.key]) !== prevWallets[w.key]).length;
   const walletsOut = () => Object.fromEntries(walletKeys.map((w) => [w.key, num(wallets[w.key])]));
@@ -47,7 +47,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
         bills: Object.fromEntries(Object.entries(bills).map(([k, v]) => [k, num(v)])),
         drawerTotal: billsTotal(bills), side: num(side),
         machines: machines.map((m, i) => ({ ...m, value: num(mvals[i]), photo: !!photos[i] || !!(er.machines || [])[i]?.photo })),
-        wallets: walletsOut(),
+        wallets: walletsOut(), walletModes: er.walletModes || walletModesOf(shop),
         diffFromPrev: er.diffFromPrev || changed > 0 || sideChanged || mChanged > 0 || wChanged > 0,
         editedAtLocal: new Date().toISOString(),
       };
@@ -79,7 +79,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
         prevCashier: last?.cashierName || null,
         prevDrawerTotal: billsTotal(prevBills),
         prevSide,
-        wallets: walletsOut(), prevWallets,
+        wallets: walletsOut(), prevWallets, walletModes: walletModesOf(shop),
         diffFromPrev: changed > 0 || sideChanged || mChanged > 0 || wChanged > 0,
       };
       const b = writeBatch(db);
@@ -126,7 +126,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
           {walletKeys.length > 0 && (
             <section className="card tint-violet">
               <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />رصيد المحافظ</h2>
-              <span className="tiny muted">الرصيد اللي في المحفظة دلوقتي. لو مختلف عن اللي مكتوب عدّله.</span>
+              <span className="tiny muted">المحافظ اللي تبع المحل: اكتب الرصيد اللي فيها دلوقتي. لو مختلف عن اللي مكتوب عدّله.</span>
               {walletKeys.map((w) => (
                 <label key={w.key} className="m-row" style={{ padding: '6px 6px 6px 14px' }}>
                   <span className="lbl"><span className="small"><b>{w.label}</b></span>{last && num(wallets[w.key]) !== prevWallets[w.key] && <span className="tiny" style={{ color: '#9B1C1C', fontWeight: 600 }}>اتعدّل · كان {fmt(prevWallets[w.key])}</span>}</span>
