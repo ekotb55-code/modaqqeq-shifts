@@ -10,7 +10,7 @@ import Reports from './Reports.jsx';
 import Setup from './Setup.jsx';
 import Safes from './Safes.jsx';
 
-export default function StaffApp({ profile, onLinkDevice, linkedShop }) {
+export default function StaffApp({ profile }) {
   const isAdmin = profile.role === 'admin';
   const canReview = isAdmin || ['reviewer', 'accountant'].includes(profile.role);
   const [shops, setShops] = useState([]);
@@ -58,7 +58,7 @@ export default function StaffApp({ profile, onLinkDevice, linkedShop }) {
       {tab === 'safes' && <Safes shops={shops} />}
       {tab === 'reports' && <Reports profile={profile} shops={shops} />}
       {tab === 'ledger' && <Ledger profile={profile} shops={shops} canReview={canReview} />}
-      {tab === 'setup' && <Setup profile={profile} shops={shops} linkedShop={linkedShop} onLinkDevice={onLinkDevice} />}
+      {tab === 'setup' && <Setup profile={profile} shops={shops} />}
     </div>
   );
 }

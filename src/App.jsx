@@ -3,26 +3,14 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db, SUPER_ADMINS } from './firebase';
 import { Spinner } from './ui.jsx';
-import ShopLogin from './cashier/ShopLogin.jsx';
 import CashierApp from './cashier/CashierApp.jsx';
-import StaffLogin from './staff/StaffLogin.jsx';
+import Login from './staff/StaffLogin.jsx';
 import StaffApp from './staff/StaffApp.jsx';
-
-import { getLinkedShop, setLinkedShop } from './lib';
 
 export default function App() {
   const [user, setUser] = useState(undefined);
   const [profile, setProfile] = useState(null);
   const [err, setErr] = useState('');
-  const [linked, setLinked] = useState(() => {
-    // A shop link like ...?shop=ID opens the cashier login for that shop on this device.
-    try {
-      const q = new URLSearchParams(window.location.search).get('shop');
-      if (q) { setLinkedShop(q); window.history.replaceState(null, '', window.location.pathname); return q; }
-    } catch { /* ignore */ }
-    return getLinkedShop();
-  });
-  const [staffMode, setStaffMode] = useState(false);
 
   useEffect(() => onAuthStateChanged(auth, async (u) => {
     setErr('');
@@ -50,9 +38,8 @@ export default function App() {
 
   if (user && profile) {
     if (profile.role === 'cashier') return <CashierApp profile={profile} />;
-    return <StaffApp profile={profile} onLinkDevice={(id) => setLinked(id)} linkedShop={linked} />;
+    return <StaffApp profile={profile} />;
   }
 
-  if (linked && !staffMode) return <ShopLogin shopId={linked} error={err} onStaff={() => setStaffMode(true)} onUnlink={() => { setLinkedShop(null); setLinked(null); }} />;
-  return <StaffLogin error={err} onBack={linked ? () => setStaffMode(false) : null} onPickShop={(id) => { setLinkedShop(id); setLinked(id); setStaffMode(false); }} />;
+  return <Login error={err} />;
 }

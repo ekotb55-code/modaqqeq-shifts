@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { collection, doc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Avatar, Icon, useToast } from '../ui.jsx';
-import { AVATAR_BG, DEFAULT_SHOP, RATE_FROM, WALLETS, ROLE_LABEL, SETTLE, WEEKDAYS, cashierPassword, createAccount, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, num, pickImage, setLinkedShop, slug } from '../lib';
+import { AVATAR_BG, DEFAULT_SHOP, RATE_FROM, WALLETS, ROLE_LABEL, SETTLE, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, createAccount, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, num, pickImage } from '../lib';
 
-export default function Setup({ profile, shops, linkedShop, onLinkDevice }) {
+export default function Setup({ profile, shops }) {
   const toast = useToast();
   const [sel, setSel] = useState(null);
   const [view, setView] = useState('shops');
@@ -39,13 +39,13 @@ export default function Setup({ profile, shops, linkedShop, onLinkDevice }) {
             <button type="button" className="btn full" onClick={newShop}><Icon d="plus" />محل جديد</button>
             {shops.map((s) => (
               <button key={s.id} type="button" className={'q-item' + (sel === s.id ? ' on' : '')} onClick={() => setSel(s.id)}>
-                <span className="spread"><strong>{s.name}</strong>{linkedShop === s.id && <span className="badge info">الجهاز ده</span>}</span>
+                <span className="spread"><strong>{s.name}</strong></span>
                 <span className="tiny muted">{s.openShift ? `وردية شغالة · ${s.openShift.cashierName}` : 'مفيش وردية مفتوحة'}</span>
               </button>
             ))}
             {shops.length === 0 && <div className="card empty">ابدأ بإضافة أول محل</div>}
           </aside>
-          <div className="grow">{shop ? <ShopEditor key={shop.id} shop={shop} linkedShop={linkedShop} onLinkDevice={onLinkDevice} /> : null}</div>
+          <div className="grow">{shop ? <ShopEditor key={shop.id} shop={shop} /> : null}</div>
         </div>
       )}
     </div>
@@ -134,7 +134,7 @@ function MachinesEditor({ list, onChange }) {
   );
 }
 
-function ShopEditor({ shop, linkedShop, onLinkDevice }) {
+function ShopEditor({ shop }) {
   const toast = useToast();
   const [pub, setPub] = useState(null);
   const [f, setF] = useState(() => ({
@@ -166,19 +166,12 @@ function ShopEditor({ shop, linkedShop, onLinkDevice }) {
     toast('اللوجو اتحفظ');
   };
 
-  const shopLink = `${window.location.origin}${window.location.pathname}?shop=${shop.id}`;
-  const link = () => {
-    setLinkedShop(shop.id);
-    onLinkDevice(shop.id);
-    toast('الجهاز ده اتربط بالمحل · لما تخرج هتظهر شاشة الكاشيرية');
-  };
 
   return (
     <div className="stack" style={{ gap: 16 }}>
       <section className="card tint-blue">
         <div className="spread">
           <h2 className="h2">بيانات المحل</h2>
-          <button type="button" className={'btn sm ' + (linkedShop === shop.id ? 'soft' : 'blue')} onClick={link}>{linkedShop === shop.id ? '✓ الجهاز ده مربوط بالمحل' : 'اربط الجهاز ده بالمحل'}</button>
         </div>
         <div className="row" style={{ gap: 16, alignItems: 'center' }}>
           <div className="stack center" style={{ flex: '0 0 auto' }}>
@@ -192,15 +185,6 @@ function ShopEditor({ shop, linkedShop, onLinkDevice }) {
             <label className="field">لينك برنامج البيع<input className="input" dir="ltr" placeholder="https://" value={f.posUrl} onChange={(e) => set('posUrl', e.target.value)} /></label>
             <label className="field">اسم الحساب اللي بيستلم انستاباي (للمطابقة)<input className="input" value={f.walletName} onChange={(e) => set('walletName', e.target.value)} /></label>
           </div>
-        </div>
-      </section>
-
-      <section className="card tint-blue" style={{ gap: 8 }}>
-        <h2 className="h2">لينك دخول الكاشيرية</h2>
-        <span className="tiny muted">ابعت اللينك ده للكاشير أو افتحه على موبايل المحل. بيفتح على شاشة كاشيرية المحل ده على طول.</span>
-        <div className="m-row" style={{ background: '#fff' }}>
-          <span className="lbl small" dir="ltr" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{shopLink}</span>
-          <button type="button" className="btn sm" onClick={() => { navigator.clipboard?.writeText(shopLink); toast('اللينك اتنسخ'); }}><Icon d="copy" size={16} />نسخ</button>
         </div>
       </section>
 
@@ -249,6 +233,7 @@ const SLOTS = ['صباحي', 'مسائي', 'سهر'];
 function Cashiers({ shop, pub }) {
   const toast = useToast();
   const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
   const [pin, setPin] = useState('');
   const [phone, setPhone] = useState('');
   const [slot, setSlot] = useState('');
@@ -264,17 +249,22 @@ function Cashiers({ shop, pub }) {
 
   const add = async () => {
     if (!name.trim()) { toast('اكتب اسم الكاشير', 'err'); return; }
-    if (!/^[0-9]{4}$/.test(pin)) { toast('الرقم السري لازم 4 أرقام', 'err'); return; }
+    const un = normUsername(username);
+    if (!USERNAME_RE.test(un)) { toast('اسم الدخول لازم يكون حروف إنجليزي أو أرقام (3 على الأقل)، زي shawky أو رقم موبايله', 'err'); return; }
+    if (!/^[0-9]{4,8}$/.test(pin)) { toast('الرقم السري لازم من 4 لـ 8 أرقام', 'err'); return; }
     setBusy(true);
     try {
-      const email = `c-${slug()}@cashier.modaqqeq.app`;
+      const email = cashierEmail(un);
       const uid = await createAccount(email, cashierPassword(pin));
-      const c = { uid, name: name.trim(), email, color, photo: photo || null };
-      await setDoc(doc(db, 'users', uid), { role: 'cashier', name: c.name, email, color, photo: c.photo, phone: phone.trim(), slot, startDate: todayKey(), shopIds: [shop.id], createdAt: serverTimestamp() });
+      const c = { uid, name: name.trim(), username: un, color, photo: photo || null };
+      await setDoc(doc(db, 'users', uid), { role: 'cashier', name: c.name, username: un, email, color, photo: c.photo, phone: phone.trim(), slot, startDate: todayKey(), shopIds: [shop.id], createdAt: serverTimestamp() });
       await writeList([...all, c]);
-      setName(''); setPin(''); setPhone(''); setSlot(''); setPhoto(null);
-      toast(`${c.name} اتضاف · الرقم السري ${pin}`);
-    } catch (e) { console.error(e); toast('مش قادرين نضيف الكاشير، اتأكد من النت', 'err'); }
+      setName(''); setUsername(''); setPin(''); setPhone(''); setSlot(''); setPhoto(null);
+      toast(`${c.name} اتضاف · يدخل بـ ${un} والرقم السري ${pin}`);
+    } catch (e) {
+      console.error(e);
+      toast(e.code === 'auth/email-already-in-use' ? `اسم الدخول ${un} مستخدم قبل كده، اختار اسم تاني` : 'مش قادرين نضيف الكاشير، اتأكد من النت', 'err');
+    }
     setBusy(false);
   };
 
@@ -298,7 +288,8 @@ function Cashiers({ shop, pub }) {
       <div style={{ background: 'rgba(255,255,255,.85)', borderRadius: 22, padding: 14, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}>
         <button type="button" onClick={async () => { const d = await pickImage(300, 0.8); if (d) setPhoto(d); }} style={{ border: 0, background: 'transparent', padding: 0 }} aria-label="صورة الكاشير" title="صورة (اختياري)"><Avatar name={name} photo={photo} color={color} size={52} /></button>
         <label className="field" style={{ flex: '1 1 170px' }}>الاسم<input className="input" value={name} onChange={(e) => setName(e.target.value)} /></label>
-        <label className="field" style={{ width: 120 }}>رقم سري (4 أرقام)<input className="input" inputMode="numeric" maxLength={4} dir="ltr" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} /></label>
+        <label className="field" style={{ width: 160 }}>اسم الدخول<input className="input" dir="ltr" autoCapitalize="none" placeholder="shawky أو 010…" value={username} onChange={(e) => setUsername(e.target.value)} /></label>
+        <label className="field" style={{ width: 120 }}>الرقم السري<input className="input" inputMode="numeric" maxLength={8} dir="ltr" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} /></label>
         <label className="field" style={{ width: 150 }}>الموبايل<input className="input" inputMode="tel" dir="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} /></label>
         <label className="field" style={{ width: 120 }}>الوردية
           <select className="input" value={slot} onChange={(e) => setSlot(e.target.value)}><option value="">—</option>{SLOTS.map((x) => <option key={x}>{x}</option>)}</select>
@@ -308,7 +299,7 @@ function Cashiers({ shop, pub }) {
         </div>
         <button type="button" className="btn sm" onClick={add} disabled={busy}><Icon d="plus" size={16} />{busy ? 'لحظة…' : 'إضافة كاشير'}</button>
       </div>
-      <span className="tiny muted">دوس على اسم الكاشير علشان تشوف تفاصيله. الكاشير يقدر يغيّر رقمه السري بنفسه من جوه حسابه.</span>
+      <span className="tiny muted">الكاشير بيدخل من صفحة الدخول باسم الدخول والرقم السري، وبيفتحله محله على طول. اسم الدخول مينفعش يتكرر في كل المحلات. دوس على اسم الكاشير علشان تشوف تفاصيله.</span>
     </section>
   );
 }
@@ -370,6 +361,7 @@ function CashierRow({ c, shop, all, writeList, open, onToggle, onPhoto }) {
           <button type="button" onClick={onPhoto} style={{ border: 0, background: 'transparent', padding: 0 }} aria-label={`غيّر صورة ${c.name}`} title="غيّر الصورة"><Avatar name={c.name} photo={c.photo} color={c.color} size={44} /></button>
           <button type="button" onClick={onToggle} style={{ border: 0, background: 'transparent', padding: 0, textAlign: 'right' }} aria-expanded={open}>
             <strong>{c.name}</strong>{c.disabled && <span className="badge bad" style={{ marginInlineStart: 6 }}>موقوف</span>}
+            <span className="tiny" dir="ltr" style={{ display: 'block', textAlign: 'right' }}>{c.username ? `دخول: ${c.username}` : 'اتعمل بالطريقة القديمة · امسحه وضيفه تاني'}</span>
             <span className="tiny muted" style={{ display: 'block' }}>{open ? 'اقفل التفاصيل' : 'التفاصيل'}</span>
           </button>
         </span>

@@ -2,8 +2,6 @@ import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { firebaseConfig } from './firebase';
 
-export const getLinkedShop = () => { try { return localStorage.getItem('mdq_shop'); } catch { return null; } };
-export const setLinkedShop = (id) => { try { if (id) localStorage.setItem('mdq_shop', id); else localStorage.removeItem('mdq_shop'); } catch { /* storage blocked */ } };
 
 export const FACES =[200, 100, 50, 20, 10, 5, 1];
 export const BILL_BG = ['#CDF27A', '#B4D2FF', '#FFC1D8', '#A8EEC8', '#FFC9A8', '#D3C0FF', '#FFE68A'];
@@ -108,7 +106,10 @@ export const initial = (n) => String(n || '?').trim().charAt(0);
 
 // Cashiers sign in with name + 4-digit PIN. Behind the scenes each has an email/password account.
 export const cashierPassword = (pin) => `mdq-${pin}-shift`;
-export const slug = () => Math.random().toString(36).slice(2, 10);
+// Cashiers sign in with a username (English letters/numbers or their phone number) and a PIN.
+export const USERNAME_RE = /^[a-z0-9][a-z0-9._-]{2,30}$/;
+export const normUsername = (u) => String(u || '').trim().toLowerCase().replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\s+/g, '');
+export const cashierEmail = (u) => `${normUsername(u)}@cashier.modaqqeq.app`;
 
 // Create an auth account without signing the current admin out.
 export async function createAccount(email, password) {

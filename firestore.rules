@@ -17,9 +17,9 @@ service cloud.firestore {
     }
     function shiftData(shiftId) { return get(/databases/$(database)/documents/shifts/$(shiftId)).data; }
 
-    // Shop name, logo and cashier list — needed on the shop device before anyone signs in.
+    // Shop name, logo and cashier list — only that shop's people and Modaqqeq admins can see it.
     match /shopsPublic/{shopId} {
-      allow read: if true;
+      allow read: if isAdmin() || inShop(shopId);
       allow write: if isAdmin();
     }
 

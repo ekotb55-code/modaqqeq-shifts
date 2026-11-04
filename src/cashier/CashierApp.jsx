@@ -96,7 +96,7 @@ function PinModal({ onClose }) {
   const [b, setB] = useState('');
   const [busy, setBusy] = useState(false);
   const save = async () => {
-    if (!/^[0-9]{4}$/.test(a)) { toast('الرقم السري لازم 4 أرقام', 'err'); return; }
+    if (!/^[0-9]{4,8}$/.test(a)) { toast('الرقم السري لازم من 4 لـ 8 أرقام', 'err'); return; }
     if (a !== b) { toast('الرقمين مش زي بعض', 'err'); return; }
     setBusy(true);
     try {
@@ -110,8 +110,8 @@ function PinModal({ onClose }) {
   };
   return (
     <Modal title="غيّر الرقم السري" icon="lock" color="var(--violet)" onClose={onClose} width={420}>
-      <label className="field">الرقم الجديد (4 أرقام)<input className="input" inputMode="numeric" type="password" maxLength={4} dir="ltr" value={a} onChange={(e) => setA(e.target.value.replace(/\D/g, ''))} autoFocus /></label>
-      <label className="field">اكتبه تاني<input className="input" inputMode="numeric" type="password" maxLength={4} dir="ltr" value={b} onChange={(e) => setB(e.target.value.replace(/\D/g, ''))} /></label>
+      <label className="field">الرقم الجديد (من 4 لـ 8 أرقام)<input className="input" inputMode="numeric" type="password" maxLength={8} dir="ltr" value={a} onChange={(e) => setA(e.target.value.replace(/\D/g, ''))} autoFocus /></label>
+      <label className="field">اكتبه تاني<input className="input" inputMode="numeric" type="password" maxLength={8} dir="ltr" value={b} onChange={(e) => setB(e.target.value.replace(/\D/g, ''))} /></label>
       <button type="button" className="btn full" onClick={save} disabled={busy}>{busy ? 'لحظة…' : 'حفظ'}</button>
     </Modal>
   );
