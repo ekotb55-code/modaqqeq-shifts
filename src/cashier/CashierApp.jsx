@@ -1,15 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
 import { signOut, updatePassword } from 'firebase/auth';
-import { collection, doc, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { collection, doc, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Icon, Avatar, Modal, Spinner, useToast } from '../ui.jsx';
-import { DEFAULT_SHOP, cashierPassword, firstName, timeStr } from '../lib';
+import { DEFAULT_SHOP, cashierPassword, firstName, pickImage, timeStr } from '../lib';
 import { Topbar } from './parts.jsx';
 import Receive from './Receive.jsx';
 import Dash from './Dash.jsx';
 import Handover from './Handover.jsx';
 
+async function changeMyPhoto(shopId, profile, toast) {
+  const data = await pickImage(300, 0.8);
+  if (!data) return;
+  try {
+    await updateDoc(doc(db, 'shopsPublic', shopId), { [`photos.${profile.id}`]: data });
+    toast('صورتك اتغيرت');
+  } catch (e) { console.error(e); toast('مش قادرين نغيّر الصورة، اتأكد من النت', 'err'); }
+}
+
 export default function CashierApp({ profile }) {
+  const toast = useToast();
   const shopId = profile.shopIds?.[0];
   const [shop, setShop] = useState(undefined);
   const [pub, setPub] = useState(null);
@@ -58,16 +68,19 @@ export default function CashierApp({ profile }) {
   if (shop === undefined) return <Spinner text="بنحمّل المحل…" />;
   if (shop === null) return <NoShop />;
 
-  const top = <Topbar shopPub={pub} profile={profile} steps={open && !mine && !done ? null : steps} onLogout={logout} posUrl={shop.posUrl} onPin={() => setPinOpen(true)} />;
+  const me = { ...profile, photo: pub?.photos?.[profile.id] || profile.photo };
+  const active = entries.filter((e) => !e.deleted);
+  const deleted = entries.filter((e) => e.deleted);
+  const top = <Topbar shopPub={pub} profile={me} onPhoto={() => changeMyPhoto(shopId, profile, toast)} steps={open && !mine && !done ? null : steps} onLogout={logout} posUrl={shop.posUrl} onPin={() => setPinOpen(true)} />;
 
   let body;
-  if (done) body = <Done info={done} profile={profile} />;
+  if (done) body = <Done info={done} profile={me} />;
   else if (open && !mine) body = <Blocked open={open} pub={pub} />;
   else if (!mine) body = <Receive shop={shop} profile={profile} onStarted={() => setScreen('dash')} />;
   else if (!shift) body = <Spinner text="بنفتح ورديتك…" />;
   else if (screen === 'receive') body = <Receive key="edit" shop={shop} profile={profile} editShift={shift} onStarted={() => setScreen('dash')} onCancel={() => setScreen('dash')} />;
-  else if (screen === 'handover') body = <Handover shop={shop} shift={shift} entries={entries} profile={profile} onBack={() => setScreen('dash')} onDone={setDone} />;
-  else body = <Dash shop={shop} shift={shift} entries={entries} profile={profile} onHandover={() => setScreen('handover')} onReceive={() => setScreen('receive')} />;
+  else if (screen === 'handover') body = <Handover shop={shop} shift={shift} entries={active} profile={me} onBack={() => setScreen('dash')} onDone={setDone} />;
+  else body = <Dash shop={shop} shift={shift} entries={active} deleted={deleted} profile={me} onHandover={() => setScreen('handover')} onReceive={() => setScreen('receive')} />;
 
   return (
     <div>
@@ -138,7 +151,7 @@ function Blocked({ open, pub }) {
         <h1 style={{ fontSize: 26, fontWeight: 700 }}>مينفعش تستلم دلوقتي</h1>
         <span className="muted" style={{ lineHeight: 1.7 }}>الوردية اللي قبلك لسه مفتوحة ومتسلّمتش. لازم صاحبها يسلّمها الأول، وبعدها تقدر تستلم إنت.</span>
         <div className="m-row" style={{ width: '100%', padding: 12, textAlign: 'right' }}>
-          <Avatar name={open.cashierName} photo={owner?.photo} color={owner?.color} size={54} />
+          <Avatar name={open.cashierName} photo={pub?.photos?.[open.cashierUid] || owner?.photo} color={owner?.color} size={54} />
           <span className="stack" style={{ gap: 0, flexGrow: 1 }}><strong>{open.cashierName}</strong><span className="small muted">مفتوحة من {timeStr(open.openedAt)}</span></span>
         </div>
         <button type="button" className="btn full" onClick={() => signOut(auth)}>خروج علشان {firstName(open.cashierName)} يدخل ويسلّم</button>

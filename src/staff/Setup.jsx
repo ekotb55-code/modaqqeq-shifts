@@ -295,7 +295,7 @@ function Cashiers({ shop, pub }) {
   const [photo, setPhoto] = useState(null);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(null);
-  const all = pub?.cashiers || [];
+  const all = (pub?.cashiers || []).map((c) => ({ ...c, photo: pub?.photos?.[c.uid] || c.photo || null }));
   const active = all.filter((c) => !c.disabled);
   const stopped = all.filter((c) => c.disabled);
 
@@ -326,7 +326,7 @@ function Cashiers({ shop, pub }) {
     const data = await pickImage(300, 0.8);
     if (!data) return;
     await updateDoc(doc(db, 'users', c.uid), { photo: data });
-    await writeList(all.map((x) => (x.uid === c.uid ? { ...x, photo: data } : x)));
+    await setDoc(doc(db, 'shopsPublic', shop.id), { cashiers: all.map((x) => (x.uid === c.uid ? { ...x, photo: data } : x)), photos: { [c.uid]: data } }, { merge: true });
     toast('الصورة اتغيرت');
   };
 

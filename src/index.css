@@ -325,3 +325,6 @@ img { max-width: 100%; }
 @media (max-width: 370px) {
   body { zoom: 0.8; }
 }
+
+.del-btn { width: 34px; height: 34px; background: #FFE4E4; color: #C62828; }
+.del-btn:hover { background: #FFCDCD; }

@@ -4,7 +4,7 @@ import { db } from '../firebase';
 import { Avatar, CopyBtn, Icon, PhotoView, useToast } from '../ui.jsx';
 import { SRC_LABEL, computeShift, diffText, durationStr, fmt, minutesBetween, num, safeLabel, timeStr, toDate, dateStr } from '../lib';
 import Statements from './Statements.jsx';
-import { entryTitle } from '../cashier/Dash.jsx';
+import { DeletedList, entryTitle } from '../cashier/Dash.jsx';
 
 const STATUS = {
   open: { label: 'شغالة', cls: 'info' },
@@ -68,8 +68,12 @@ export default function Review({ profile, shops }) {
 
 export function ShiftDetail({ shift, shop, profile, canReview }) {
   const toast = useToast();
-  const [entries, setEntries] = useState([]);
-  const [photos, setPhotos] = useState([]);
+  const [allEntries, setEntries] = useState([]);
+  const [allPhotos, setPhotos] = useState([]);
+  const entries = allEntries.filter((e) => !e.deleted);
+  const deletedEntries = allEntries.filter((e) => e.deleted);
+  const deletedIds = new Set(deletedEntries.map((e) => e.id));
+  const photos = allPhotos.filter((p) => !p.entryId || !deletedIds.has(p.entryId));
   const [review, setReview] = useState(null);
   const [sales, setSales] = useState('');
   const [view, setView] = useState(null);
@@ -157,7 +161,8 @@ export function ShiftDetail({ shift, shop, profile, canReview }) {
 
   const log = [
     { t: shift.openedAt || shift.openedAtLocal, text: `${shift.cashierName} استلم الوردية${rcv.prevCashier ? ` من ${rcv.prevCashier}` : ''}${rcv.diffFromPrev ? ' · عدّل في أرقام الاستلام' : ''}` },
-    ...entries.map((e) => ({ t: e.createdAt || e.createdAtLocal, text: `${entryTitle(e)} · ${fmt(e.amount)} ج` })),
+    ...allEntries.map((e) => ({ t: e.createdAt || e.createdAtLocal, text: `${entryTitle(e)} · ${fmt(e.amount)} ج` })),
+    ...deletedEntries.map((e) => ({ t: e.deletedAt || e.deletedAtLocal, text: `🗑 ${e.deletedByName || shift.cashierName} مسح: ${entryTitle(e)} · ${fmt(e.amount)} ج${e.deleteReason ? ` · السبب: ${e.deleteReason}` : ''}` })),
     shift.submittedAt && { t: shift.submittedAt, text: shift.forced ? `${shift.forcedBy} قفل الوردية بالنيابة` : `${shift.cashierName} سلّم الوردية` },
     review?.startedAt && { t: review.startedAt, text: `${review.accountantName} بدأ المراجعة` },
     review?.closedAt && { t: review.closedAt, text: `${review.accountantName} قفل الوردية · ${diffText(review.diff)}` },
@@ -238,6 +243,13 @@ export function ShiftDetail({ shift, shop, profile, canReview }) {
           );
         })}
       </section>
+
+      {deletedEntries.length > 0 && (
+        <section className="card" style={{ gap: 0, background: '#FFF1F1' }}>
+          <h2 className="h2" style={{ marginBottom: 4 }}>المحذوفات ({deletedEntries.length}) <span className="tiny muted" style={{ fontWeight: 500 }}>· الكاشير مسحها قبل التسليم ومش داخلة في الحساب</span></h2>
+          <DeletedList items={deletedEntries} shop={shop} />
+        </section>
+      )}
 
       {photos.length > 0 && (
         <section className="card">

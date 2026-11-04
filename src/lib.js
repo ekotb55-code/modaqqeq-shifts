@@ -51,6 +51,7 @@ export const BUILTIN_EXPENSE_TYPES = [
   { id: 'advance', label: 'سلفة موظف', icon: 'person' },
   { id: 'shop', label: 'مصروف محل', icon: 'shop' },
   { id: 'wage', label: 'يومية / مرتب', icon: 'cash' },
+  { id: 'delivery', label: 'قبض دليفري', icon: 'truck' },
   { id: 'refund', label: 'مرتجع لعميل', icon: 'undo' },
   { id: 'other', label: 'حاجة تانية', icon: 'dots' },
 ];

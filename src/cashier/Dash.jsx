@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Avatar, Icon, NetMeter } from '../ui.jsx';
+import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { db } from '../firebase';
+import { Avatar, Icon, Modal, NetMeter, useToast } from '../ui.jsx';
 import { ENTRY_TYPES, SRC_LABEL, durationStr, firstName, fmt, liveBalances, num, safeLabel, shopSafes, timeStr } from '../lib';
 import EntryModal from './EntryModal.jsx';
 
@@ -14,8 +16,10 @@ export function entryTitle(e) {
   return e.type;
 }
 
-export default function Dash({ shop, shift, entries, profile, onHandover, onReceive }) {
+export default function Dash({ shop, shift, entries, deleted = [], profile, onHandover, onReceive }) {
   const [modal, setModal] = useState(null);
+  const [del, setDel] = useState(null);
+  const [showDeleted, setShowDeleted] = useState(false);
   const [, tick] = useState(0);
   useEffect(() => { const id = setInterval(() => tick((x) => x + 1), 60000); return () => clearInterval(id); }, []);
 
@@ -111,9 +115,21 @@ export default function Dash({ shop, shift, entries, profile, onHandover, onRece
                   <span className="tiny muted">{timeStr(e.createdAt || e.createdAtLocal)} · {SRC_LABEL[e.src] || SRC_LABEL[e.wallet] || safeLabel(e.src, shop)}{e.hasPendingWrites ? ' · لسه بيترفع' : ''}</span>
                 </span>
               </span>
-              <span style={{ fontSize: 17, fontWeight: 700, whiteSpace: 'nowrap' }}>{ENTRY_TYPES[e.type]?.sign < 0 ? '−' : ENTRY_TYPES[e.type]?.sign > 0 ? '+' : ''}{fmt(e.amount)}</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 17, fontWeight: 700, whiteSpace: 'nowrap' }}>{ENTRY_TYPES[e.type]?.sign < 0 ? '−' : ENTRY_TYPES[e.type]?.sign > 0 ? '+' : ''}{fmt(e.amount)}</span>
+                {shift.status === 'open' && <button type="button" className="icon-btn del-btn" aria-label={`امسح ${entryTitle(e)}`} title="امسح العملية" onClick={() => setDel(e)}><Icon d="trash" size={17} /></button>}
+              </span>
             </div>
           ))}
+          {deleted.length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <button type="button" className="extra" style={{ background: 'var(--bad-soft, #FFE4E4)' }} onClick={() => setShowDeleted(!showDeleted)} aria-expanded={showDeleted}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 12 }}><span className="circ" style={{ background: '#FF8A8A' }}><Icon d="trash" /></span>المحذوفات ({deleted.length})</span>
+                <Icon d="chevron" size={18} />
+              </button>
+              {showDeleted && <DeletedList items={deleted} shop={shop} />}
+            </div>
+          )}
         </section>
       </div>
 
@@ -129,7 +145,50 @@ export default function Dash({ shop, shift, entries, profile, onHandover, onRece
         </div>
       </section>
 
+      {del && <DeleteModal entry={del} shift={shift} profile={profile} onClose={() => setDel(null)} />}
       {modal && <EntryModal type={modal} shop={shop} shift={shift} profile={profile} balances={balances} onClose={() => setModal(null)} />}
     </div>
+  );
+}
+
+export function DeletedList({ items, shop }) {
+  return (
+    <div className="stack" style={{ gap: 0, marginTop: 6 }}>
+      {items.map((e) => (
+        <div key={e.id} className="feed-row" style={{ opacity: 0.85 }}>
+          <span className="stack" style={{ gap: 0, minWidth: 0 }}>
+            <span style={{ fontSize: 15, fontWeight: 600, textDecoration: 'line-through' }}>{entryTitle(e)}</span>
+            <span className="tiny muted">اتسجلت {timeStr(e.createdAt || e.createdAtLocal)} · {SRC_LABEL[e.src] || SRC_LABEL[e.wallet] || safeLabel(e.src, shop)} · اتمسحت {timeStr(e.deletedAt || e.deletedAtLocal)}{e.deletedByName ? ` بواسطة ${e.deletedByName}` : ''}</span>
+            {e.deleteReason && <span className="tiny" style={{ fontWeight: 600 }}>السبب: {e.deleteReason}</span>}
+          </span>
+          <span style={{ fontSize: 16, fontWeight: 700, whiteSpace: 'nowrap', textDecoration: 'line-through', color: 'var(--muted)' }}>{fmt(e.amount)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DeleteModal({ entry, shift, profile, onClose }) {
+  const toast = useToast();
+  const [reason, setReason] = useState('');
+  const go = () => {
+    updateDoc(doc(db, 'shifts', shift.id, 'entries', entry.id), {
+      deleted: true, deletedAt: serverTimestamp(), deletedAtLocal: Date.now(),
+      deletedBy: profile.id, deletedByName: profile.name, deleteReason: reason.trim(),
+    }).catch((err) => { console.error(err); toast('مش قادرين نمسحها، جرّب تاني', 'err'); });
+    toast('العملية اتمسحت واتحطت في المحذوفات');
+    onClose();
+  };
+  return (
+    <Modal title="تمسح العملية دي؟" icon="trash" color="#FF8A8A" onClose={onClose} width={440}>
+      <div className="m-row" style={{ padding: 12 }}>
+        <span className="stack" style={{ gap: 0, flexGrow: 1 }}><strong>{entryTitle(entry)}</strong><span className="small muted">{timeStr(entry.createdAt || entry.createdAtLocal)}</span></span>
+        <strong style={{ fontSize: 18 }}>{fmt(entry.amount)} ج</strong>
+      </div>
+      <span className="small muted" style={{ lineHeight: 1.7 }}>هتتشال من الحساب، بس هتفضل باينة في «المحذوفات» والمحاسب هيشوفها.</span>
+      <label className="field">ليه بتمسحها؟ (اختياري)<input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="مثلاً: اتسجلت مرتين" /></label>
+      <button type="button" className="btn full" style={{ background: '#E5484D' }} onClick={go}>امسحها</button>
+      <button type="button" className="link" onClick={onClose}>رجوع</button>
+    </Modal>
   );
 }

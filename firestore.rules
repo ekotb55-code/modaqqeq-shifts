@@ -21,6 +21,10 @@ service cloud.firestore {
     match /shopsPublic/{shopId} {
       allow read: if isAdmin() || inShop(shopId);
       allow write: if isAdmin();
+      // A cashier may change only his own photo.
+      allow update: if inShop(shopId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['photos'])
+        && request.resource.data.get('photos', {}).diff(resource.data.get('photos', {})).affectedKeys().hasOnly([request.auth.uid]);
     }
 
     match /shops/{shopId} {
@@ -49,7 +53,10 @@ service cloud.firestore {
       match /entries/{entryId} {
         allow read: if staffOf(shiftData(shiftId).shopId) || shiftData(shiftId).cashierUid == request.auth.uid;
         allow create: if signedIn() && shiftData(shiftId).cashierUid == request.auth.uid && shiftData(shiftId).status == 'open';
-        allow update, delete: if reviewerOf(shiftData(shiftId).shopId);
+        allow update: if reviewerOf(shiftData(shiftId).shopId)
+          || (signedIn() && shiftData(shiftId).cashierUid == request.auth.uid && shiftData(shiftId).status == 'open'
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deleted', 'deletedAt', 'deletedAtLocal', 'deletedBy', 'deletedByName', 'deleteReason']));
+        allow delete: if reviewerOf(shiftData(shiftId).shopId);
       }
 
       match /photos/{photoId} {

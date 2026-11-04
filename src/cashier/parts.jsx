@@ -1,7 +1,7 @@
 import { Avatar, Icon } from '../ui.jsx';
 import { BILL_BG, FACES, fmt, num } from '../lib';
 
-export function Topbar({ shopPub, profile, steps, onLogout, posUrl, onPin }) {
+export function Topbar({ shopPub, profile, steps, onLogout, posUrl, onPin, onPhoto }) {
   return (
     <header className="topbar">
       <div className="topbar-in">
@@ -26,7 +26,12 @@ export function Topbar({ shopPub, profile, steps, onLogout, posUrl, onPin }) {
           {shopPub?.logo ? <img className="logo-shop" src={shopPub.logo} alt={shopPub.name} /> : <strong>{shopPub?.name}</strong>}
           <span className="vsep" aria-hidden="true" />
           <span className="who">
-            <Avatar name={profile.name} photo={profile.photo} color={profile.color} size={50} />
+            {onPhoto ? (
+              <button type="button" onClick={onPhoto} aria-label="غيّر صورتك" title="غيّر صورتك" style={{ border: 0, background: 'transparent', padding: 0, position: 'relative' }}>
+                <Avatar name={profile.name} photo={profile.photo} color={profile.color} size={50} />
+                <span style={{ position: 'absolute', bottom: -2, left: -2, width: 20, height: 20, borderRadius: 999, background: 'var(--blue)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #fff' }}><Icon d="cam" size={11} stroke={2.4} /></span>
+              </button>
+            ) : <Avatar name={profile.name} photo={profile.photo} color={profile.color} size={50} />}
             <span className="stack" style={{ gap: 0 }}><strong style={{ fontSize: 15 }}>{profile.name}</strong><span className="tiny muted">كاشير</span></span>
           </span>
           {onPin && <button type="button" className="icon-btn" aria-label="غيّر الرقم السري" title="غيّر الرقم السري" onClick={onPin}><Icon d="lock" /></button>}

@@ -16,7 +16,7 @@ const shop = { id: 's1', name: 'مخبوزات لوفان', posUrl: 'https://x',
   shopExpenses: ['مياه', 'كهربا'], incomeReasons: ['سداد آجل'], staff: ['أحمد'], suppliers: ['مطاحن النيل'] };
 const pub = { name: 'مخبوزات لوفان', logo: './levain-logo.png' };
 const profile = { id: 'u1', name: 'شوقي محمد', color: '#A07CFF' };
-const shift = { id: 'sh1', cashierName: 'شوقي محمد', openedAtLocal: new Date(Date.now() - 4 * 3600e3).toISOString(), receive: { drawerTotal: 1500, side: 5000, wallets: { insta: 300, vf: 0 }, machines: [{ machine: 'فوري', account: 'الحساب الرئيسي', value: 3250 }, { machine: 'فوري', account: 'كاش أوت', value: 0 }, { machine: 'فيزا', account: 'الرصيد', value: 0 }], prevCashier: 'محمود سعيد' },
+const shift = { id: 'sh1', status: 'open', cashierName: 'شوقي محمد', openedAtLocal: new Date(Date.now() - 4 * 3600e3).toISOString(), receive: { drawerTotal: 1500, side: 5000, wallets: { insta: 300, vf: 0 }, machines: [{ machine: 'فوري', account: 'الحساب الرئيسي', value: 3250 }, { machine: 'فوري', account: 'كاش أوت', value: 0 }, { machine: 'فيزا', account: 'الرصيد', value: 0 }], prevCashier: 'محمود سعيد' },
   handover: { drawerTotal: 2400, side: 2500, machines: [{ machine: 'فوري', account: 'الحساب الرئيسي', value: 2900 }, { machine: 'فوري', account: 'كاش أوت', value: 0 }, { machine: 'فيزا', account: 'الرصيد', value: 700 }] } };
 const entries = [
   { id: 'e1', type: 'expense', src: 'side', amount: 2500, kindLabel: 'مورد', sub: 'مطاحن النيل', kind: 'supplier', invoice: 'invoice', createdAtLocal: new Date().toISOString() },
@@ -31,5 +31,5 @@ else if (v === 'expense') body = <EntryModal type="expense" shop={shop} shift={s
 else if (v === 'receive') body = <Receive shop={shop} profile={profile} onStarted={() => {}} />;
 else if (v === 'handover') body = <Handover shop={shop} shift={{ ...shift, handover: null }} entries={entries} profile={profile} onBack={() => {}} onDone={() => {}} />;
 else if (v === 'statements') body = <div className="wrap"><Statements c={computeShift(shift, entries, shop, 4000)} shift={shift} shop={shop} /></div>;
-else body = <Dash shop={shop} shift={shift} entries={entries} profile={profile} onHandover={() => {}} onReceive={() => {}} />;
-createRoot(document.getElementById('root')).render(<ToastProvider>{v !== 'login' && <Topbar shopPub={pub} profile={profile} steps={steps} onLogout={() => {}} posUrl={shop.posUrl} onPin={() => {}} />}{body}</ToastProvider>);
+else body = <Dash shop={shop} shift={shift} entries={entries} deleted={[{ id: 'd1', type: 'expense', kind: 'delivery', kindLabel: 'قبض دليفري', sub: 'أحمد', src: 'drawer', amount: 50, deleted: true, deletedByName: 'شوقي محمد', deleteReason: 'اتسجلت مرتين', createdAtLocal: new Date().toISOString(), deletedAtLocal: Date.now() }]} profile={profile} onHandover={() => {}} onReceive={() => {}} />;
+createRoot(document.getElementById('root')).render(<ToastProvider>{v !== 'login' && <Topbar shopPub={pub} profile={profile} steps={steps} onLogout={() => {}} posUrl={shop.posUrl} onPin={() => {}} onPhoto={() => {}} />}{body}</ToastProvider>);

@@ -41,6 +41,7 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
     { id: 'advance', label: 'سلفة موظف', icon: 'person', q: 'لمين السلفة؟', subs: staff, allowNew: 'اسم تاني' },
     { id: 'shop', label: 'مصروف محل', icon: 'shop', q: 'المصروف ده على إيه؟', subs: shop.shopExpenses || [], allowNew: 'نوع جديد' },
     { id: 'wage', label: 'يومية / مرتب', icon: 'cash', q: 'لمين؟', subs: staff, allowNew: 'اسم تاني' },
+    { id: 'delivery', label: 'قبض دليفري', icon: 'truck', q: 'مين الدليفري؟', subs: staff, allowNew: 'اسم تاني' },
     { id: 'refund', label: 'مرتجع لعميل', icon: 'undo', q: '', subs: [] },
     { id: 'other', label: 'حاجة تانية', icon: 'dots', q: '', subs: [] },
   ].filter((k) => !(shop.hiddenExpenseTypes || []).includes(k.id)).concat((shop.customExpenseTypes || []).filter((c) => c.label).map((c) => ({

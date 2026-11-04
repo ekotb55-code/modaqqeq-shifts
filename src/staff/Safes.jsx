@@ -9,7 +9,7 @@ function useEntries(shiftId) {
   const [list, setList] = useState([]);
   useEffect(() => {
     if (!shiftId) { setList([]); return undefined; }
-    return onSnapshot(query(collection(db, 'shifts', shiftId, 'entries'), orderBy('createdAt', 'asc')), (q) => setList(q.docs.map((d) => ({ id: d.id, ...d.data() }))), () => {});
+    return onSnapshot(query(collection(db, 'shifts', shiftId, 'entries'), orderBy('createdAt', 'asc')), (q) => setList(q.docs.map((d) => ({ id: d.id, ...d.data() })).filter((e) => !e.deleted)), () => {});
   }, [shiftId]);
   return list;
 }
@@ -63,7 +63,7 @@ function ShopSafes({ shop }) {
     ...(shop.machines || []).map((m) => ({ key: machineKey(m), label: `${m.machine} · ${m.account}`, cls: 'c-yellow' })),
   ];
 
-  const cashiers = (pub?.cashiers || []).filter((c) => !c.disabled);
+  const cashiers = (pub?.cashiers || []).filter((c) => !c.disabled).map((c) => ({ ...c, photo: pub?.photos?.[c.uid] || c.photo }));
   const lastOf = (uid) => shifts.filter((s) => s.cashierUid === uid).sort((a, b) => toDate(b.openedAt || b.openedAtLocal) - toDate(a.openedAt || a.openedAtLocal))[0];
   const selShift = shifts.find((s) => s.id === sel) || (sel && openShift?.id === sel ? openShift : null);
 
