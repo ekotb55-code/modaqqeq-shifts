@@ -398,3 +398,8 @@ img { max-width: 100%; }
 .assets-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; align-items: start; }
 .assets-grid .ps-frame img { max-height: 280px; }
 .assets-grid .machine-card .photo-slot.ps-empty { background: rgba(255,255,255,.7); }
+.mc-acc { padding: 8px; gap: 6px; min-width: 0; }
+.mc-in { padding: 2px 8px; }
+.mc-in input { height: 42px; font-size: 18px; }
+@media (min-width: 900px) { .assets-grid .machine-card.multi { grid-column: span 2; } }
+.mc-in input { font-size: 17px; }

@@ -73,7 +73,7 @@ export function MachineRows({ machines, values, setValues, photos, onPhoto, prev
     const total = g.items.reduce((a, i) => a + num(values[i]), 0);
     const first = g.items[0];
     return (
-      <div key={g.name} className="machine-card" style={{ background: look.bg }}>
+      <div key={g.name} className={"machine-card" + (g.items.length > 1 ? " multi" : "")} style={{ background: look.bg }}>
         <div className="mc-head" style={{ background: look.head, color: look.ink }}>
           <MachineMark name={g.name} size={38} />
           <span className="stack" style={{ gap: 0, flexGrow: 1 }}>
@@ -82,12 +82,12 @@ export function MachineRows({ machines, values, setValues, photos, onPhoto, prev
           </span>
           {g.items.length > 1 && <span className="mc-total">إجمالي {fmt(total)} ج</span>}
         </div>
-        <div className="mc-accounts">
+        <div className="mc-accounts" style={{ gridTemplateColumns: `repeat(${Math.min(g.items.length, 3)}, minmax(0, 1fr))` }}>
           {g.items.map((i) => {
             const m = machines[i];
             return (
               <div key={i} className="mc-acc">
-                <span className="spread" style={{ gap: 6 }}>
+                <span className="stack" style={{ gap: 0 }}>
                   <span className="small" style={{ fontWeight: 700 }}>{m.account}</span>
                   {prev && prev[i] !== '' && <span className="tiny muted">{prevName ? `${prevName} سلّم` : 'اتسلّم'} {fmt(prev[i])}</span>}
                 </span>
