@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Icon, useToast, WalletField, WalletMark } from '../ui.jsx';
-import { MAIN_REG, WALLETS, machineGroupsOf, machinePhotoLabel, walletModeOf, walletModesOf, billsTotal, computeShift, durationStr, emptyBills, fmt, lastKey, num, openKey, pickImage, timeStr } from '../lib';
+import { Icon, useToast, WalletField, WalletMark, clearDraft, useDraft } from '../ui.jsx';
+import { MAIN_REG, WALLETS, colsFor, machineGroupsOf, machinePhotoLabel, walletModeOf, walletModesOf, billsTotal, computeShift, durationStr, emptyBills, fmt, lastKey, num, openKey, pickImage, timeStr } from '../lib';
 import { newTransfer } from './Transfers.jsx';
 import { Bills, MachineRows, SideBox } from './parts.jsx';
 
@@ -27,12 +27,13 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
   const isSub = reg !== MAIN_REG;
   const noSide = !!shop.noSide;
   const machines = shop.machines || [];
-  const [bills, setBills] = useState(emptyBills());
-  const [side, setSide] = useState(noSide ? '0' : '');
-  const [mvals, setMvals] = useState(machines.map(() => ''));
-  const [photos, setPhotos] = useState({});
-  const [keepDrawer, setKeepDrawer] = useState(isSub ? 'main' : 'stay');
-  const [keepSide, setKeepSide] = useState('stay');
+  const dkey = `mdq-draft-hand-${shift.id}`;
+  const [bills, setBills] = useDraft(dkey, 'bills', emptyBills());
+  const [side, setSide] = useDraft(dkey, 'side', noSide ? '0' : '');
+  const [mvals, setMvals] = useDraft(dkey, 'mvals', machines.map(() => ''));
+  const [photos, setPhotos] = useDraft(dkey, 'photos', {});
+  const [keepDrawer, setKeepDrawer] = useDraft(dkey, 'keepDrawer', isSub ? 'main' : 'stay');
+  const [keepSide, setKeepSide] = useDraft(dkey, 'keepSide', 'stay');
   const opts = isSub ? ['main', 'stay'] : ['stay', 'shop'];
   const [busy, setBusy] = useState(false);
   const [sideFix, setSideFix] = useState(null);
@@ -49,8 +50,8 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
   const walletKeys = WALLETS.filter((w) => (shop.wallets || ['insta', 'vf']).includes(w.key) || num(shift.receive?.wallets?.[w.key]) || calc.safes[w.key]?.lines.length);
   const shopWallets = walletKeys.filter((w) => modeOf(w.key) === 'shop');
   const ownerWallets = walletKeys.filter((w) => modeOf(w.key) !== 'shop');
-  const [wtyped, setWtyped] = useState(() => Object.fromEntries(shopWallets.map((w) => [w.key, ''])));
-  const [wopen, setWopen] = useState(() => Object.fromEntries(shopWallets.filter((w) => needsOpen(w.key)).map((w) => [w.key, shift.receive?.wallets?.[w.key] !== undefined ? String(num(shift.receive.wallets[w.key])) : ''])));
+  const [wtyped, setWtyped] = useDraft(dkey, 'wtyped', () => Object.fromEntries(shopWallets.map((w) => [w.key, ''])));
+  const [wopen, setWopen] = useDraft(dkey, 'wopen', () => Object.fromEntries(shopWallets.filter((w) => needsOpen(w.key)).map((w) => [w.key, shift.receive?.wallets?.[w.key] !== undefined ? String(num(shift.receive.wallets[w.key])) : ''])));
   const walletsClose = Object.fromEntries(walletKeys.map((w) => [w.key, modeOf(w.key) === 'shop' ? num(wtyped[w.key]) : calc.safes[w.key].expected]));
   const sideDiff = side === '' ? 0 : Math.round((num(side) - expSide) * 100) / 100;
   const sideOk = side !== '' && Math.abs(sideDiff) < 0.01;
@@ -59,7 +60,7 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
     setSide(String(expSide));
     toast(sideDiff < 0 ? `حط ${fmt(-sideDiff)} ج من درجك في الجانبي، وبعدين عدّ الدرج تاني` : `رجّع ${fmt(sideDiff)} ج من الجانبي لدرجك، وبعدين عدّ الدرج تاني`);
   };
-  const [wphotos, setWphotos] = useState({});
+  const [wphotos, setWphotos] = useDraft(dkey, 'wphotos', {});
   const addWalletPhoto = async (k) => {
     const data = await pickImage(1000, 0.65);
     if (data) { setWphotos((p) => ({ ...p, [k]: data })); toast('الصورة اترفعت · كمّل عادي'); }
@@ -108,6 +109,7 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
       const p = b.commit();
       const offline = !navigator.onLine;
       if (offline) p.catch(() => {}); else await p;
+      clearDraft(dkey);
       onDone({
         offline,
         stats: [
@@ -189,7 +191,7 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
             <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />المحافظ والمكن دلوقتي</h2>
             <span className="tiny muted">اكتب رصيد كل واحدة وصوّر شاشتها. المحاسب هيراجع الصور.</span>
           </div>
-          <div className="assets-grid" style={{ '--cols': Math.max(1, Math.min(4, shopWallets.length + shopWallets.filter((w) => needsOpen(w.key)).length + machineGroupsOf(machines).length)) }}>
+          <div className="assets-grid" style={{ '--cols': colsFor(shopWallets.length + shopWallets.filter((w) => needsOpen(w.key)).length + machineGroupsOf(machines).length) }}>
             {shopWallets.map((w) => [
               needsOpen(w.key) && <WalletField key={w.key + ':o'} k={w.key} label={`${w.label} · أول الوردية`} hint="كان فيها كام لما استلمت؟" value={wopen[w.key] ?? ''} onChange={(v) => setWopen({ ...wopen, [w.key]: v })} ariaLabel={`رصيد ${w.label} أول الوردية`} />,
               <WalletField key={w.key} k={w.key} label={w.label} hint={needsOpen(w.key) ? 'الرصيد اللي فيها دلوقتي' : `استلمت ${fmt(calc.safes[w.key].open)} · اكتب اللي فيها دلوقتي`} value={wtyped[w.key] ?? ''} onChange={(v) => setWtyped({ ...wtyped, [w.key]: v })} ariaLabel={`رصيد ${w.label} دلوقتي`} onPhoto={() => addWalletPhoto(w.key)} photo={wphotos[w.key]} />,

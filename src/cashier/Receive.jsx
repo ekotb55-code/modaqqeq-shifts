@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { collection, doc, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Icon, useToast, WalletField } from '../ui.jsx';
-import { MAIN_REG, WALLETS, machineGroupsOf, machinePhotoLabel, walletModeOf, walletModesOf, billsTotal, emptyBills, fmt, lastOf, num, openKey, pickImage, regName, timeStr, todayKey } from '../lib';
+import { Icon, useToast, WalletField, clearDraft, useDraft } from '../ui.jsx';
+import { MAIN_REG, WALLETS, colsFor, machineGroupsOf, machinePhotoLabel, walletModeOf, walletModesOf, billsTotal, emptyBills, fmt, lastOf, num, openKey, pickImage, regName, timeStr, todayKey } from '../lib';
 import { Bills, MachineRows, SideBox } from './parts.jsx';
 
 export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, editShift, onCancel }) {
@@ -19,18 +19,19 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
   });
 
   const er = editShift?.receive;
-  const [bills, setBills] = useState(er ? { ...emptyBills(), ...er.bills } : prevBills);
-  const [side, setSide] = useState(String(er ? num(er.side) : prevSide));
-  const [mvals, setMvals] = useState(er ? machines.map((m) => { const f = (er.machines || []).find((x) => x.machine === m.machine && x.account === m.account); return f ? String(f.value ?? '') : ''; }) : machines.map(() => ''));
-  const [photos, setPhotos] = useState({});
-  const [wphotos, setWphotos] = useState({});
+  const dkey = `mdq-draft-recv-${shop.id}-${reg}-${profile.id}-${editShift ? editShift.id : last?.shiftId || 'first'}`;
+  const [bills, setBills] = useDraft(dkey, 'bills', er ? { ...emptyBills(), ...er.bills } : prevBills);
+  const [side, setSide] = useDraft(dkey, 'side', String(er ? num(er.side) : prevSide));
+  const [mvals, setMvals] = useDraft(dkey, 'mvals', er ? machines.map((m) => { const f = (er.machines || []).find((x) => x.machine === m.machine && x.account === m.account); return f ? String(f.value ?? '') : ''; }) : machines.map(() => ''));
+  const [photos, setPhotos] = useDraft(dkey, 'photos', {});
+  const [wphotos, setWphotos] = useDraft(dkey, 'wphotos', {});
   const [busy, setBusy] = useState(false);
 
   const changed = Object.keys(bills).filter((f) => num(bills[f]) !== num(prevBills[f])).length;
   const sideChanged = num(side) !== prevSide;
   const walletKeys = WALLETS.filter((w) => (shop.wallets || ['insta', 'vf']).includes(w.key) && walletModeOf(shop, w.key) === 'shop');
   const prevWallets = Object.fromEntries(walletKeys.map((w) => [w.key, num(last?.walletsTyped?.[w.key] ?? last?.wallets?.[w.key])]));
-  const [wallets, setWallets] = useState(() => Object.fromEntries(walletKeys.map((w) => [w.key, er ? String(num(er.wallets?.[w.key])) : ''])));
+  const [wallets, setWallets] = useDraft(dkey, 'wallets', () => Object.fromEntries(walletKeys.map((w) => [w.key, er ? String(num(er.wallets?.[w.key])) : ''])));
   const wChanged = walletKeys.filter((w) => String(wallets[w.key] ?? '').trim() !== '' && num(wallets[w.key]) !== prevWallets[w.key]).length;
   const walletsOut = () => Object.fromEntries(walletKeys.map((w) => [w.key, num(wallets[w.key])]));
   const mChanged = mvals.filter((v, i) => String(v).trim() !== '' && num(v) !== num(prevMachines[i])).length;
@@ -75,6 +76,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
       }), (() => { const pb = writeBatch(db); walletPhotoDocs(pb, editShift.id); return pb.commit(); })()])).catch(() => {});
       if (navigator.onLine) await p; else p.catch(() => {});
       toast('الاستلام اتعدّل · المحاسب هيشوف التعديل');
+      clearDraft(dkey);
       onStarted();
     } catch (e) { console.error(e); toast('حصلت مشكلة، جرّب تاني', 'err'); }
     setBusy(false);
@@ -115,6 +117,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
       }), (() => { const pb = writeBatch(db); walletPhotoDocs(pb, shiftRef.id); return pb.commit(); })()])).catch(() => {});
       if (!navigator.onLine) toast('اتحفظ على الجهاز وهيترفع لما النت يرجع');
       else { await p; toast('اتأكد الاستلام · الوردية بدأت'); }
+      clearDraft(dkey);
       onStarted();
     } catch (e) {
       console.error(e);
@@ -144,7 +147,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
             <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />المحافظ والمكن</h2>
             <span className="tiny muted">اكتب رصيد كل واحدة بإيدك وصوّر شاشتها. المحاسب هيراجع الصور.</span>
           </div>
-          <div className="assets-grid" style={{ '--cols': Math.max(1, Math.min(4, walletKeys.length + machineGroupsOf(machines).length)) }}>
+          <div className="assets-grid" style={{ '--cols': colsFor(walletKeys.length + machineGroupsOf(machines).length) }}>
             {walletKeys.map((w) => (
               <WalletField key={w.key} k={w.key} label={w.label} value={wallets[w.key]} onChange={(v) => setWallets({ ...wallets, [w.key]: v })}
                 hint={last ? `${last.cashierName} سلّم ${fmt(prevWallets[w.key])}` : 'الرصيد اللي في المحفظة دلوقتي'} warn={last && String(wallets[w.key] ?? '').trim() !== '' && num(wallets[w.key]) !== prevWallets[w.key] ? `مختلف عن اللي اتسلّم (${fmt(prevWallets[w.key])})` : null}

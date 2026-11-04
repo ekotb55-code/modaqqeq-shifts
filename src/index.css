@@ -406,11 +406,10 @@ img { max-width: 100%; }
 
 /* Equal, centered cards: 3 in a row stay 3 equal, 4 stay 4 equal, extra ones centered. */
 .assets-grid { display: flex !important; flex-wrap: wrap; justify-content: center; align-items: stretch; gap: 14px; --cols: 3; }
-.assets-grid > * { flex: 0 1 calc((100% - (var(--cols) - 1) * 14px) / var(--cols)); min-width: 0; grid-column: auto !important; }
+.assets-grid > * { --c: min(var(--cols), var(--maxcols, 5)); flex: 0 1 calc((100% - (var(--c) - 1) * 14px) / var(--c)); min-width: 0; grid-column: auto !important; }
 .assets-grid > .wallet-field, .assets-grid > .machine-card { display: flex; flex-direction: column; }
 .assets-grid > * > .photo-slot { margin-top: auto; }
-@media (max-width: 1100px) { .assets-grid { --cols: 2 !important; } }
-@media (max-width: 700px) { .assets-grid { --cols: 1 !important; } }
+
 
 .shop-tabs { display: flex; gap: 10px; overflow-x: auto; padding: 4px 2px 8px; scrollbar-width: thin; }
 .shop-tab { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 170px; padding: 12px 18px; border-radius: 22px; border: 2px solid transparent; background: #fff; color: var(--ink); font-family: inherit; cursor: pointer; text-align: right; box-shadow: 0 2px 10px rgba(30,40,90,.06); }
@@ -420,3 +419,18 @@ img { max-width: 100%; }
 .shop-tab.on { background: var(--blue); color: #fff; border-color: var(--blue); }
 .shop-tab.on .tiny { color: rgba(255,255,255,.85); }
 .shop-tab.add { flex-direction: row; align-items: center; gap: 8px; min-width: 0; background: var(--blue-soft, #E6EEFF); color: var(--blue); font-weight: 800; font-size: 16px; }
+.machine-card, .wallet-field { container-type: inline-size; }
+@container (max-width: 300px) {
+  .mc-in { padding: 2px 6px; }
+  .mc-in .small { display: none; }
+  .mc-in input { font-size: 15px; height: 40px; }
+  .mc-acc { padding: 6px; }
+  .mc-total { font-size: 12px; padding: 3px 8px; }
+  .wf-in input { font-size: 18px; }
+  .wf-name { font-size: 16px; }
+}
+@container (max-width: 210px) { .mc-accounts { grid-template-columns: 1fr !important; } }
+@media (max-width: 1100px) { .assets-grid { --maxcols: 3; } }
+@media (max-width: 900px) { .assets-grid { --maxcols: 2; } }
+@media (max-width: 600px) { .assets-grid { --maxcols: 1; } }
+@container (max-width: 300px) { .mc-head { flex-wrap: wrap; } .mc-total { order: 3; flex: 1 1 100%; text-align: center; } }

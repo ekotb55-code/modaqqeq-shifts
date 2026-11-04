@@ -205,12 +205,16 @@ export function pickImage(maxSide, quality, type) {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
-    if (/Android|iPhone|iPad/i.test(navigator.userAgent)) input.setAttribute('capture', 'environment');
+    input.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;opacity:0';
+    // Kept in the page while the camera/gallery is open; some phones drop detached inputs.
+    document.body.appendChild(input);
+    const done = (v) => { input.remove(); resolve(v); };
     input.onchange = async () => {
       const f = input.files?.[0];
-      if (!f) return resolve(null);
-      try { resolve(await compressImage(f, maxSide, quality, type)); } catch { resolve(null); }
+      if (!f) return done(null);
+      try { done(await compressImage(f, maxSide, quality, type)); } catch { done(null); }
     };
+    input.addEventListener('cancel', () => done(null));
     input.click();
   });
 }
@@ -242,6 +246,8 @@ export function machineGroupsOf(machines) {
   });
   return groups;
 }
+// Cards per row: up to 5 in one row; more than that split into even rows.
+export const colsFor = (n) => (n <= 5 ? Math.max(1, n) : Math.ceil(n / Math.ceil(n / 5)));
 export function machinePhotoLabel(machines, i) {
   const m = machines[i];
   const n = machines.filter((x) => x.machine === m.machine).length;

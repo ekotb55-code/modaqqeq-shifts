@@ -337,3 +337,40 @@ export function PhotoSlot({ data, onPick, label = 'صوّر الشاشة', tone 
     </div>
   );
 }
+
+// Drafts: if the phone reloads the page while the camera is open (common on Android),
+// the numbers and photos typed so far come back instead of disappearing.
+const draftCache = {};
+function readDraft(key) {
+  if (!(key in draftCache)) {
+    try { draftCache[key] = JSON.parse(localStorage.getItem(key) || 'null') || {}; } catch { draftCache[key] = {}; }
+  }
+  return draftCache[key];
+}
+function writeDraft(key) {
+  try { localStorage.setItem(key, JSON.stringify({ ...draftCache[key], _at: Date.now() })); } catch {
+    try {
+      const d = { ...draftCache[key] };
+      Object.keys(d).forEach((k) => { if (/photo/i.test(k)) delete d[k]; });
+      localStorage.setItem(key, JSON.stringify(d));
+    } catch { /* storage unavailable */ }
+  }
+}
+export function useDraft(key, name, init) {
+  const [v, setV] = useState(() => {
+    const d = key ? readDraft(key) : null;
+    const fresh = d && (!d._at || Date.now() - d._at < 24 * 3600e3);
+    return fresh && name in d ? d[name] : typeof init === 'function' ? init() : init;
+  });
+  useEffect(() => {
+    if (!key) return;
+    readDraft(key)[name] = v;
+    writeDraft(key);
+  }, [key, name, v]);
+  return [v, setV];
+}
+export function clearDraft(key) {
+  if (!key) return;
+  delete draftCache[key];
+  try { localStorage.removeItem(key); } catch { /* ignore */ }
+}
