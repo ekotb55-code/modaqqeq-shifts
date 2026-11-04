@@ -144,7 +144,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
             <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />المحافظ والمكن</h2>
             <span className="tiny muted">اكتب رصيد كل واحدة بإيدك وصوّر شاشتها. المحاسب هيراجع الصور.</span>
           </div>
-          <div className="assets-grid">
+          <div className="assets-grid" style={{ '--cols': Math.max(1, Math.min(4, walletKeys.length + machineGroupsOf(machines).length)) }}>
             {walletKeys.map((w) => (
               <WalletField key={w.key} k={w.key} label={w.label} value={wallets[w.key]} onChange={(v) => setWallets({ ...wallets, [w.key]: v })}
                 hint={last ? `${last.cashierName} سلّم ${fmt(prevWallets[w.key])}` : 'الرصيد اللي في المحفظة دلوقتي'} warn={last && String(wallets[w.key] ?? '').trim() !== '' && num(wallets[w.key]) !== prevWallets[w.key] ? `مختلف عن اللي اتسلّم (${fmt(prevWallets[w.key])})` : null}
