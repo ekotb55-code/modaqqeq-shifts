@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, useToast, WalletField, WalletMark } from '../ui.jsx';
-import { MAIN_REG, WALLETS, walletModeOf, walletModesOf, billsTotal, computeShift, durationStr, emptyBills, fmt, lastKey, num, openKey, pickImage, timeStr } from '../lib';
+import { MAIN_REG, WALLETS, machinePhotoLabel, walletModeOf, walletModesOf, billsTotal, computeShift, durationStr, emptyBills, fmt, lastKey, num, openKey, pickImage, timeStr } from '../lib';
 import { newTransfer } from './Transfers.jsx';
 import { Bills, MachineRows, SideBox } from './parts.jsx';
 
@@ -92,7 +92,7 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
     try {
       const b = writeBatch(db);
       Object.entries(photos).forEach(([i, data]) => {
-        b.set(doc(collection(db, 'shifts', shift.id, 'photos')), { kind: 'machine', stage: 'handover', label: `${machines[i].machine} · ${machines[i].account}`, data, check: 'pending', createdAt: serverTimestamp() });
+        b.set(doc(collection(db, 'shifts', shift.id, 'photos')), { kind: 'machine', stage: 'handover', label: machinePhotoLabel(machines, i), data, check: 'pending', createdAt: serverTimestamp() });
       });
       Object.entries(wphotos).forEach(([k, data]) => {
         const w = shopWallets.find((x) => x.key === k);
@@ -166,20 +166,6 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
             </div>
           )}
           {sideFix && sideOk && <div className="alert ok small">✓ الجانبي اتظبط · افتكر تعدّ درج الكاشير تاني بعد ما {sideFix.diff < 0 ? 'طلّعت منه' : 'حطيت فيه'} {fmt(Math.abs(sideFix.diff))} ج</div>}
-          {shopWallets.length > 0 && (
-            <section className="card tint-violet" style={{ gap: 8 }}>
-              <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />رصيد المحافظ دلوقتي</h2>
-              <span className="tiny muted">افتح المحفظة واكتب الرصيد اللي فيها.</span>
-              {shopWallets.map((w) => (
-                <div key={w.key} className="stack" style={{ gap: 8 }}>
-                  {needsOpen(w.key) && (
-                    <WalletField k={w.key} label={`${w.label} · أول الوردية`} hint="كان فيها كام لما استلمت؟" value={wopen[w.key] ?? ''} onChange={(v) => setWopen({ ...wopen, [w.key]: v })} ariaLabel={`رصيد ${w.label} أول الوردية`} />
-                  )}
-                  <WalletField k={w.key} label={w.label} hint={needsOpen(w.key) ? 'الرصيد اللي فيها دلوقتي' : `استلمت ${fmt(calc.safes[w.key].open)} · اكتب اللي فيها دلوقتي`} value={wtyped[w.key] ?? ''} onChange={(v) => setWtyped({ ...wtyped, [w.key]: v })} ariaLabel={`رصيد ${w.label} دلوقتي`} onPhoto={() => addWalletPhoto(w.key)} photo={wphotos[w.key]} />
-                </div>
-              ))}
-            </section>
-          )}
           {ownerWallets.length > 0 && ownerWallets.some((w) => calc.safes[w.key]?.inn) && (
             <section className="card tint-violet" style={{ gap: 8 }}>
               <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />تحويلات المحافظ</h2>
@@ -195,33 +181,43 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
               })}
             </section>
           )}
-          {(machines.length > 0 || !isSub) && (
-            <section className="card tint-yellow">
-              <h2 className="h2"><span className="dot" style={{ background: 'var(--yellow)' }} />قراية المكن دلوقتي</h2>
-              <span className="tiny muted">اكتب الرقم وصوّر الشاشة، وكمّل. المحاسب هيراجع الصور.</span>
-              <MachineRows machines={machines} values={mvals} setValues={setMvals} photos={photos} onPhoto={addPhoto} />
-            </section>
-          )}
+        </div>
+      </div>
+      {(shopWallets.length > 0 || machines.length > 0) && (
+        <section className="card" style={{ gap: 12 }}>
+          <div className="stack" style={{ gap: 2 }}>
+            <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />المحافظ والمكن دلوقتي</h2>
+            <span className="tiny muted">اكتب رصيد كل واحدة وصوّر شاشتها. المحاسب هيراجع الصور.</span>
+          </div>
+          <div className="assets-grid">
+            {shopWallets.map((w) => [
+              needsOpen(w.key) && <WalletField key={w.key + ':o'} k={w.key} label={`${w.label} · أول الوردية`} hint="كان فيها كام لما استلمت؟" value={wopen[w.key] ?? ''} onChange={(v) => setWopen({ ...wopen, [w.key]: v })} ariaLabel={`رصيد ${w.label} أول الوردية`} />,
+              <WalletField key={w.key} k={w.key} label={w.label} hint={needsOpen(w.key) ? 'الرصيد اللي فيها دلوقتي' : `استلمت ${fmt(calc.safes[w.key].open)} · اكتب اللي فيها دلوقتي`} value={wtyped[w.key] ?? ''} onChange={(v) => setWtyped({ ...wtyped, [w.key]: v })} ariaLabel={`رصيد ${w.label} دلوقتي`} onPhoto={() => addWalletPhoto(w.key)} photo={wphotos[w.key]} />,
+            ])}
+            <MachineRows inline machines={machines} values={mvals} setValues={setMvals} photos={photos} onPhoto={addPhoto} />
+          </div>
+        </section>
+      )}
           {feeGroups.length > 0 && (
-            <section className="card" style={{ background: '#FFE4E4', gap: 8 }}>
-              <h2 className="h2">مصاريف المكن</h2>
-              {feeGroups.map((g) => (
-                <div key={g.machine} className="m-row" style={{ padding: '10px 14px', background: '#fff' }}>
-                  <span className="lbl">
-                    <span className="small"><b>مصاريف {g.machine}</b> ({fmt(g.rate)}%)</span>
-                    <span className="tiny muted">استلمت {fmt(g.open)} · بتسلّم {fmt(g.close ?? 0)} · {g.sales > 0 ? 'مبيعات' : 'خدمات'} {fmt(Math.abs(g.sales))}</span>
-                  </span>
-                  <strong style={{ fontSize: 18, color: '#9B1C1C' }}>{fmt(g.fee)} ج</strong>
-                </div>
-              ))}
-              <span className="tiny muted">المصاريف دي بتتحسب من درجك كبند لوحده، مش عجز عليك.</span>
-            </section>
-          )}
+        <section className="card" style={{ background: '#FFE4E4', gap: 8 }}>
+          <h2 className="h2">مصاريف المكن</h2>
+          {feeGroups.map((g) => (
+            <div key={g.machine} className="m-row" style={{ padding: '10px 14px', background: '#fff' }}>
+              <span className="lbl">
+                <span className="small"><b>مصاريف {g.machine}</b> ({fmt(g.rate)}%)</span>
+                <span className="tiny muted">استلمت {fmt(g.open)} · بتسلّم {fmt(g.close ?? 0)} · {g.sales > 0 ? 'مبيعات' : 'خدمات'} {fmt(Math.abs(g.sales))}</span>
+              </span>
+              <strong style={{ fontSize: 18, color: '#9B1C1C' }}>{fmt(g.fee)} ج</strong>
+            </div>
+          ))}
+          <span className="tiny muted">المصاريف دي بتتحسب من درجك كبند لوحده، مش عجز عليك.</span>
+        </section>
+      )}
+      <div className="recv-done">
           <button type="button" className="btn full" style={{ height: 66, fontSize: 20 }} onClick={send} disabled={busy}>
             <span className="ic"><Icon d="send" size={18} /></span>{busy ? 'لحظة…' : 'سلّم وابعت للمحاسب'}
           </button>
           <span className="small muted" style={{ textAlign: 'center' }}>العجز أو الزيادة بيطلعوا عند المحاسب</span>
-        </div>
       </div>
     </div>
   );

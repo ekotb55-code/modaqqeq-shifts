@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { collection, doc, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, useToast, WalletField } from '../ui.jsx';
-import { MAIN_REG, WALLETS, walletModeOf, walletModesOf, billsTotal, emptyBills, fmt, lastOf, num, openKey, pickImage, regName, timeStr, todayKey } from '../lib';
+import { MAIN_REG, WALLETS, machineGroupsOf, machinePhotoLabel, walletModeOf, walletModesOf, billsTotal, emptyBills, fmt, lastOf, num, openKey, pickImage, regName, timeStr, todayKey } from '../lib';
 import { Bills, MachineRows, SideBox } from './parts.jsx';
 
 export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, editShift, onCancel }) {
@@ -39,7 +39,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
     ...walletKeys.filter((w) => String(wallets[w.key] ?? '').trim() === '').map((w) => `اكتب رصيد ${w.label}`),
     ...walletKeys.filter((w) => !wphotos[w.key]).map((w) => `صوّر ${w.label}`),
     ...machines.map((m, i) => (String(mvals[i] ?? '').trim() === '' ? `اكتب رصيد ${m.machine} · ${m.account}` : null)).filter(Boolean),
-    ...machines.map((m, i) => (!photos[i] ? `صوّر ${m.machine} · ${m.account}` : null)).filter(Boolean),
+    ...machineGroupsOf(machines).filter((g) => !photos[g.items[0]]).map((g) => `صوّر ${g.name}`),
   ];
 
   const addWalletPhoto = async (k) => {
@@ -70,7 +70,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
       const p = updateDoc(doc(db, 'shifts', editShift.id), { receive, receiveEdits: (editShift.receiveEdits || 0) + 1 });
       p.then(() => Promise.all([...Object.entries(photos).map(([i, data]) => {
         const pb = writeBatch(db);
-        pb.set(doc(collection(db, 'shifts', editShift.id, 'photos')), { kind: 'machine', stage: 'receive', label: `${machines[i].machine} · ${machines[i].account}`, data, check: 'pending', createdAt: serverTimestamp() });
+        pb.set(doc(collection(db, 'shifts', editShift.id, 'photos')), { kind: 'machine', stage: 'receive', label: machinePhotoLabel(machines, i), data, check: 'pending', createdAt: serverTimestamp() });
         return pb.commit();
       }), (() => { const pb = writeBatch(db); walletPhotoDocs(pb, editShift.id); return pb.commit(); })()])).catch(() => {});
       if (navigator.onLine) await p; else p.catch(() => {});
@@ -110,7 +110,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
       // Photos go after the shift so the security rules can see who owns it.
       p.then(() => Promise.all([...Object.entries(photos).map(([i, data]) => {
         const pb = writeBatch(db);
-        pb.set(doc(collection(db, 'shifts', shiftRef.id, 'photos')), { kind: 'machine', stage: 'receive', label: `${machines[i].machine} · ${machines[i].account}`, data, check: 'pending', createdAt: serverTimestamp() });
+        pb.set(doc(collection(db, 'shifts', shiftRef.id, 'photos')), { kind: 'machine', stage: 'receive', label: machinePhotoLabel(machines, i), data, check: 'pending', createdAt: serverTimestamp() });
         return pb.commit();
       }), (() => { const pb = writeBatch(db); walletPhotoDocs(pb, shiftRef.id); return pb.commit(); })()])).catch(() => {});
       if (!navigator.onLine) toast('اتحفظ على الجهاز وهيترفع لما النت يرجع');
@@ -137,31 +137,23 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
         </div>
         <Bills bills={bills} setBills={setBills} orig={last ? prevBills : null} noSteppers />
       </section>
-      <div className="recv-grid">
-        {(!shop.noSide || walletKeys.length > 0) && (
-          <div className="stack">
-            {!shop.noSide && <SideBox value={side} setValue={setSide} hint={sideChanged && last ? `اتعدّل · كان ${fmt(prevSide)} ج` : 'المبلغ كله · من غير فئات'} />}
-            {walletKeys.length > 0 && (
-              <section className="card tint-violet">
-                <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />رصيد المحافظ</h2>
-                <span className="tiny muted">اكتب الرصيد اللي في المحفظة دلوقتي وصوّر الشاشة. لو مختلف عن اللي مكتوب عدّله.</span>
-                {walletKeys.map((w) => (
-                  <WalletField key={w.key} k={w.key} label={w.label} value={wallets[w.key]} onChange={(v) => setWallets({ ...wallets, [w.key]: v })}
-                    hint={last ? `اكتب الرصيد اللي في المحفظة دلوقتي · ${last.cashierName} سلّم ${fmt(prevWallets[w.key])}` : 'اكتب الرصيد اللي في المحفظة دلوقتي'} warn={last && String(wallets[w.key] ?? '').trim() !== '' && num(wallets[w.key]) !== prevWallets[w.key] ? `مختلف عن اللي اتسلّم (${fmt(prevWallets[w.key])})` : null}
-                    onPhoto={() => addWalletPhoto(w.key)} photo={wphotos[w.key]} />
-                ))}
-              </section>
-            )}
+      {!shop.noSide && <SideBox value={side} setValue={setSide} hint={sideChanged && last ? `اتعدّل · كان ${fmt(prevSide)} ج` : 'المبلغ كله · من غير فئات'} />}
+      {(walletKeys.length > 0 || machines.length > 0) && (
+        <section className="card" style={{ gap: 12 }}>
+          <div className="stack" style={{ gap: 2 }}>
+            <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />المحافظ والمكن</h2>
+            <span className="tiny muted">اكتب رصيد كل واحدة بإيدك وصوّر شاشتها. المحاسب هيراجع الصور.</span>
           </div>
-        )}
-        {(machines.length > 0 || !isSub) && (
-          <section className="card tint-yellow">
-            <h2 className="h2"><span className="dot" style={{ background: 'var(--yellow)' }} />أرصدة المكن</h2>
-            <span className="tiny muted">اكتب الرصيد اللي على كل مكنة بإيدك، وصوّر شاشتها. المحاسب هيراجع الصور.</span>
-            <MachineRows machines={machines} values={mvals} setValues={setMvals} photos={photos} onPhoto={addPhoto} prev={last ? prevMachines : null} prevName={last?.cashierName} />
-          </section>
-        )}
-      </div>
+          <div className="assets-grid">
+            {walletKeys.map((w) => (
+              <WalletField key={w.key} k={w.key} label={w.label} value={wallets[w.key]} onChange={(v) => setWallets({ ...wallets, [w.key]: v })}
+                hint={last ? `${last.cashierName} سلّم ${fmt(prevWallets[w.key])}` : 'الرصيد اللي في المحفظة دلوقتي'} warn={last && String(wallets[w.key] ?? '').trim() !== '' && num(wallets[w.key]) !== prevWallets[w.key] ? `مختلف عن اللي اتسلّم (${fmt(prevWallets[w.key])})` : null}
+                onPhoto={() => addWalletPhoto(w.key)} photo={wphotos[w.key]} />
+            ))}
+            <MachineRows inline machines={machines} values={mvals} setValues={setMvals} photos={photos} onPhoto={addPhoto} prev={last ? prevMachines : null} prevName={last?.cashierName} />
+          </div>
+        </section>
+      )}
       <div className="recv-done">
         {missing.length > 0 && (
           <span className="badge warn" style={{ whiteSpace: 'normal', textAlign: 'center', lineHeight: 1.7, padding: '8px 14px' }}>

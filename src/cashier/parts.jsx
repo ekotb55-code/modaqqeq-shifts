@@ -1,5 +1,5 @@
 import { Avatar, Icon, MachineMark, PhotoSlot, machineLook } from '../ui.jsx';
-import { BILL_BG, FACES, fmt, num } from '../lib';
+import { BILL_BG, FACES, fmt, machineGroupsOf, num } from '../lib';
 
 export function Topbar({ shopPub, profile, steps, onLogout, posUrl, onPin, onPhoto, regLabel }) {
   return (
@@ -66,48 +66,47 @@ export function Bills({ bills, setBills, orig, noSteppers }) {
   );
 }
 
-export function MachineRows({ machines, values, setValues, photos, onPhoto, prev, prevName }) {
-  const groups = [];
-  machines.forEach((m, i) => {
-    const g = groups.find((x) => x.name === m.machine);
-    if (g) g.items.push(i); else groups.push({ name: m.machine, items: [i] });
+export function MachineRows({ machines, values, setValues, photos, onPhoto, prev, prevName, inline }) {
+  const groups = machineGroupsOf(machines);
+  const cards = groups.map((g) => {
+    const look = machineLook(g.name);
+    const total = g.items.reduce((a, i) => a + num(values[i]), 0);
+    const first = g.items[0];
+    return (
+      <div key={g.name} className="machine-card" style={{ background: look.bg }}>
+        <div className="mc-head" style={{ background: look.head, color: look.ink }}>
+          <MachineMark name={g.name} size={38} />
+          <span className="stack" style={{ gap: 0, flexGrow: 1 }}>
+            <strong style={{ fontSize: 18 }}>{g.name}</strong>
+            {look.latin && <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.1em', opacity: 0.85 }}>{look.latin}</span>}
+          </span>
+          {g.items.length > 1 && <span className="mc-total">إجمالي {fmt(total)} ج</span>}
+        </div>
+        <div className="mc-accounts">
+          {g.items.map((i) => {
+            const m = machines[i];
+            return (
+              <div key={i} className="mc-acc">
+                <span className="spread" style={{ gap: 6 }}>
+                  <span className="small" style={{ fontWeight: 700 }}>{m.account}</span>
+                  {prev && prev[i] !== '' && <span className="tiny muted">{prevName ? `${prevName} سلّم` : 'اتسلّم'} {fmt(prev[i])}</span>}
+                </span>
+                <label className="mc-in">
+                  <input inputMode="decimal" aria-label={`رصيد ${m.machine} ${m.account}`} value={values[i] ?? ''} onChange={(e) => { const v = [...values]; v[i] = e.target.value; setValues(v); }} onFocus={(e) => e.target.select()} placeholder="الرصيد" />
+                  <span className="small muted">ج</span>
+                </label>
+              </div>
+            );
+          })}
+        </div>
+        <PhotoSlot data={photos[first]} onPick={() => onPhoto(first)} label={g.items.length > 1 ? `صورة واحدة لشاشة ${g.name} (فيها الحسابين)` : `صوّر شاشة ${g.name}`} tone={look.ink === '#fff' ? '#1A2B6B' : look.ink} />
+      </div>
+    );
   });
+  if (inline) return <>{cards}</>;
   return (
     <div className="stack" style={{ gap: 12 }}>
-      {groups.map((g) => {
-        const look = machineLook(g.name);
-        const total = g.items.reduce((a, i) => a + num(values[i]), 0);
-        return (
-          <div key={g.name} className="machine-card" style={{ background: look.bg }}>
-            <div className="mc-head" style={{ background: look.head, color: look.ink }}>
-              <MachineMark name={g.name} size={38} />
-              <span className="stack" style={{ gap: 0, flexGrow: 1 }}>
-                <strong style={{ fontSize: 18 }}>{g.name}</strong>
-                {look.latin && <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.1em', opacity: 0.85 }}>{look.latin}</span>}
-              </span>
-              {g.items.length > 1 && <span className="mc-total">إجمالي {fmt(total)} ج</span>}
-            </div>
-            <div className="mc-accounts">
-              {g.items.map((i) => {
-                const m = machines[i];
-                return (
-                  <div key={i} className="mc-acc">
-                    <span className="spread" style={{ gap: 6 }}>
-                      <span className="small" style={{ fontWeight: 700 }}>{m.account}</span>
-                      {prev && prev[i] !== '' && <span className="tiny muted">{prevName ? `${prevName} سلّم` : 'اتسلّم'} {fmt(prev[i])}</span>}
-                    </span>
-                    <label className="mc-in">
-                      <input inputMode="decimal" aria-label={`رصيد ${m.machine} ${m.account}`} value={values[i] ?? ''} onChange={(e) => { const v = [...values]; v[i] = e.target.value; setValues(v); }} onFocus={(e) => e.target.select()} placeholder="الرصيد" />
-                      <span className="small muted">ج</span>
-                    </label>
-                    <PhotoSlot data={photos[i]} onPick={() => onPhoto(i)} label="صوّر شاشة المكنة" />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
+      {cards}
       {machines.length === 0 && <span className="muted small">مفيش مكن متسجلة للمحل.</span>}
     </div>
   );

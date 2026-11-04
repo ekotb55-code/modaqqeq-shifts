@@ -175,7 +175,9 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
     if (p.kind !== 'machine') return p.amount ?? null;
     const list = (p.stage === 'receive' ? rcv.machines : hnd.machines) || [];
     const m = list.find((x) => `${x.machine} · ${x.account}` === p.label);
-    return m ? m.value : null;
+    if (m) return m.value;
+    const g = list.filter((x) => x.machine === p.label);
+    return g.length ? g.reduce((a, x) => a + num(x.value), 0) : null;
   };
 
   const log = [

@@ -233,6 +233,21 @@ export const machineKey = (m) => `m:${m.machine}|${m.account}`;
 export const OWNER = 'out:owner';
 
 // Machine totals for machines that have more than one account.
+// One photo per machine: Fawry's main + cash-out accounts share a single screen photo.
+export function machineGroupsOf(machines) {
+  const groups = [];
+  (machines || []).forEach((m, i) => {
+    const g = groups.find((x) => x.name === m.machine);
+    if (g) g.items.push(i); else groups.push({ name: m.machine, items: [i] });
+  });
+  return groups;
+}
+export function machinePhotoLabel(machines, i) {
+  const m = machines[i];
+  const n = machines.filter((x) => x.machine === m.machine).length;
+  return n > 1 ? m.machine : `${m.machine} · ${m.account}`;
+}
+
 export function machineTotals(shop, balances) {
   const map = {};
   (shop?.machines || []).forEach((m) => { (map[m.machine] ||= []).push(m); });
