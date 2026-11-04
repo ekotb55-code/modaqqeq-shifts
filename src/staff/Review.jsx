@@ -325,7 +325,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
                 <div key={p.id} style={{ background: 'var(--bg)', borderRadius: 20, padding: 10, display: 'flex', flexDirection: 'column', gap: 8, border: `2px solid ${ok ? 'var(--lime)' : bad ? 'var(--red)' : 'transparent'}` }}>
                   <ZoomImage src={p.data} alt={p.label} height={340} />
                   <button type="button" className="link" style={{ alignSelf: 'flex-start', fontSize: 13 }} onClick={() => setView(p.data)}>افتحها كبيرة</button>
-                  <span className="small"><b>{{ transfer: 'تحويل', invoice: 'فاتورة', machine: p.stage === 'receive' ? 'مكنة · استلام' : 'مكنة · تسليم' }[p.kind]}</b> · {p.label}</span>
+                  <span className="small"><b>{{ transfer: 'تحويل', invoice: 'فاتورة', machine: p.stage === 'receive' ? 'مكنة · استلام' : 'مكنة · تسليم', wallet: p.stage === 'receive' ? 'محفظة · استلام' : 'محفظة · تسليم' }[p.kind]}</b> · {p.label}</span>
                   {typed !== null && <span className="small">الكاشير كتب: <b>{fmt(typed)}</b></span>}
                   {p.kind === 'transfer' && shop?.walletName && <span className="tiny muted">لازم يكون المستلم: {shop.walletName}</span>}
                   {canReview ? (

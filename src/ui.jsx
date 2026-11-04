@@ -23,6 +23,7 @@ export const IC = {
   print: 'M6 9V3h12v6M3 9h18v8H3zM6 14h12v7H6z',
   truck: 'M3 7h11v9H3zM14 10h4l3 3v3h-7zM7 19a2 2 0 1 0 0-.1M17 19a2 2 0 1 0 0-.1',
   shop: 'M3 9l1-5h16l1 5M4 9v11h16V9M9 20v-6h6v6',
+  card: 'M3 6h18v12H3zM3 10h18M7 15h4',
   cash: 'M3 6h18v12H3zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
   undo: 'M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3',
   dots: 'M5 12h.01M12 12h.01M19 12h.01',
@@ -275,7 +276,7 @@ export function WalletMark({ k, size = 44 }) {
 }
 
 // A wallet balance field: coloured card, name, hint and a big clear input.
-export function WalletField({ k, label, hint, value, onChange, ariaLabel, warn }) {
+export function WalletField({ k, label, hint, value, onChange, ariaLabel, warn, onPhoto, hasPhoto }) {
   const look = WALLET_LOOK[k] || WALLET_LOOK.insta;
   return (
     <label className="wallet-field" style={{ background: look.bg }}>
@@ -291,7 +292,30 @@ export function WalletField({ k, label, hint, value, onChange, ariaLabel, warn }
       <span className="wf-in">
         <input inputMode="decimal" aria-label={ariaLabel || `رصيد ${label}`} value={value} onChange={(e) => onChange(e.target.value)} onFocus={(e) => e.target.select()} placeholder="اكتب الرصيد" />
         <span className="small" style={{ color: look.ink, fontWeight: 700 }}>ج</span>
+        {onPhoto && (
+          <button type="button" className={'cam' + (hasPhoto ? ' ok' : '')} aria-label={`صورة رصيد ${label}`} onClick={(e) => { e.preventDefault(); onPhoto(); }} style={{ width: 42, height: 42, background: hasPhoto ? undefined : look.soft, color: look.ink }}>
+            <Icon d={hasPhoto ? 'check' : 'cam'} />
+          </button>
+        )}
       </span>
+      {onPhoto && <span className="wf-hint" style={{ fontSize: 12 }}>{hasPhoto ? '✓ الصورة اترفعت · المحاسب هيراجعها' : 'صوّر شاشة المحفظة بالرصيد'}</span>}
     </label>
+  );
+}
+
+// Machines: Fawry yellow/blue, card machines navy, others warm yellow.
+export function machineLook(name = '') {
+  const n = String(name).toLowerCase();
+  if (/فوري|fawry/.test(n)) return { bg: '#FFD21F', head: 'linear-gradient(135deg, #FFD21F 0%, #FFC400 100%)', ink: '#0F5C9E', mark: '#0F5C9E', latin: 'FAWRY' };
+  if (/فيزا|visa|ماستر|master|بنك|bank|ميزة|meeza/.test(n)) return { bg: '#E6ECFF', head: 'linear-gradient(135deg, #1A2B6B 0%, #2D4BB8 100%)', ink: '#fff', mark: '#F5B400', latin: 'CARD' };
+  return { bg: '#FFF4C2', head: 'linear-gradient(135deg, #FFE27A 0%, #FFC94D 100%)', ink: '#5A4300', mark: '#5A4300', latin: '' };
+}
+
+export function MachineMark({ name, size = 40 }) {
+  const look = machineLook(name);
+  return (
+    <span aria-hidden="true" style={{ width: size, height: size, borderRadius: 999, background: '#fff', color: look.mark, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 3px 10px rgba(0,0,0,.15)' }}>
+      <Icon d={/فيزا|visa|ماستر|master|ميزة|meeza/i.test(name) ? 'card' : 'up'} size={size * 0.5} stroke={2.6} />
+    </span>
   );
 }

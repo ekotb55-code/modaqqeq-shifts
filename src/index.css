@@ -364,3 +364,17 @@ img { max-width: 100%; }
 .zoom-ctl span { min-width: 44px; text-align: center; }
 .zoom-ctl button { width: 34px; height: 34px; border-radius: 999px; border: 0; background: rgba(255,255,255,.16); color: #fff; font-size: 20px; font-weight: 800; cursor: pointer; font-family: inherit; }
 .zoom-ctl button:disabled { opacity: .35; cursor: default; }
+
+.bills.compact { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.bills.compact .bill { padding: 10px 6px; gap: 6px; border-radius: 18px; flex: none; }
+.bills.compact .bill .face { font-size: 24px; }
+.bills.compact .bill .small { font-size: 11px; }
+.bills.compact .stepper.bare input { height: 34px; font-size: 18px; }
+@media (max-width: 700px) { .bills.compact { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.recv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start; }
+.recv-grid > .stack { gap: 16px; }
+.recv-done { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.recv-done .btn { max-width: 520px; }
+.machine-card { border-radius: 22px; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+.mc-head { display: flex; align-items: center; gap: 10px; border-radius: 16px; padding: 8px 12px; }
+.mc-total { background: #fff; color: #0F5C9E; border-radius: 999px; padding: 4px 12px; font-weight: 800; font-size: 14px; white-space: nowrap; }

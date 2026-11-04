@@ -59,6 +59,11 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
     setSide(String(expSide));
     toast(sideDiff < 0 ? `حط ${fmt(-sideDiff)} ج من درجك في الجانبي، وبعدين عدّ الدرج تاني` : `رجّع ${fmt(sideDiff)} ج من الجانبي لدرجك، وبعدين عدّ الدرج تاني`);
   };
+  const [wphotos, setWphotos] = useState({});
+  const addWalletPhoto = async (k) => {
+    const data = await pickImage(1000, 0.65);
+    if (data) { setWphotos((p) => ({ ...p, [k]: data })); toast('الصورة اترفعت · كمّل عادي'); }
+  };
   const addPhoto = async (i) => {
     const data = await pickImage(1000, 0.65);
     if (data) { setPhotos((p) => ({ ...p, [i]: data })); toast('الصورة اترفعت · كمّل عادي'); }
@@ -88,6 +93,10 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
       const b = writeBatch(db);
       Object.entries(photos).forEach(([i, data]) => {
         b.set(doc(collection(db, 'shifts', shift.id, 'photos')), { kind: 'machine', stage: 'handover', label: `${machines[i].machine} · ${machines[i].account}`, data, check: 'pending', createdAt: serverTimestamp() });
+      });
+      Object.entries(wphotos).forEach(([k, data]) => {
+        const w = shopWallets.find((x) => x.key === k);
+        b.set(doc(collection(db, 'shifts', shift.id, 'photos')), { kind: 'wallet', stage: 'handover', wallet: k, label: w?.label || k, amount: num(wtyped[k]), data, check: 'pending', createdAt: serverTimestamp() });
       });
       b.update(doc(db, 'shifts', shift.id), { status: 'submitted', submittedAt: serverTimestamp(), submittedAtLocal: now.toISOString(), handover, entryCount: entries.length });
       b.update(doc(db, 'shops', shop.id), {
@@ -125,7 +134,7 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
         <button type="button" className="btn soft sm" onClick={onBack}>رجوع للعمليات</button>
       </div>
       <div className="row">
-        <div className="grow">
+        <div className="grow" style={{ flex: '3 1 520px' }}>
           <section className="card tint-orange" style={{ gap: 16 }}>
             <div className="spread">
               <h2 className="h2"><span className="dot" style={{ background: 'var(--orange)' }} />عدّ درج الكاشير</h2>
@@ -140,7 +149,7 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
             {isSub && (keepDrawer === 'main' || keepSide === 'main') && <span className="small muted">الكاشير الأساسي هيأكد إنه استلم المبلغ.</span>}
           </section>
         </div>
-        <div className="side">
+        <div className="side" style={{ flex: '2 1 380px' }}>
           {incoming.length > 0 && <div className="alert warn small">فيه {incoming.length} مبلغ جاي ليك من كاشير تاني لسه ما أكدتهوش ({incoming.map((t) => `${t.fromName}: ${fmt(t.amount)} ج`).join('، ')}). أكّده من شاشة العمليات قبل ما تعدّ، أو هيفضل للوردية اللي بعدك.</div>}
           {!noSide && <SideBox value={side} setValue={(v) => { setSide(v); }} hint={`المفروض يبقى فيه ${fmt(expSide)} ج`} />}
           {side !== '' && !sideOk && (
@@ -166,7 +175,7 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
                   {needsOpen(w.key) && (
                     <WalletField k={w.key} label={`${w.label} · أول الوردية`} hint="كان فيها كام لما استلمت؟" value={wopen[w.key] ?? ''} onChange={(v) => setWopen({ ...wopen, [w.key]: v })} ariaLabel={`رصيد ${w.label} أول الوردية`} />
                   )}
-                  <WalletField k={w.key} label={w.label} hint={needsOpen(w.key) ? 'الرصيد اللي فيها دلوقتي' : `استلمت ${fmt(calc.safes[w.key].open)} · اكتب اللي فيها دلوقتي`} value={wtyped[w.key] ?? ''} onChange={(v) => setWtyped({ ...wtyped, [w.key]: v })} ariaLabel={`رصيد ${w.label} دلوقتي`} />
+                  <WalletField k={w.key} label={w.label} hint={needsOpen(w.key) ? 'الرصيد اللي فيها دلوقتي' : `استلمت ${fmt(calc.safes[w.key].open)} · اكتب اللي فيها دلوقتي`} value={wtyped[w.key] ?? ''} onChange={(v) => setWtyped({ ...wtyped, [w.key]: v })} ariaLabel={`رصيد ${w.label} دلوقتي`} onPhoto={() => addWalletPhoto(w.key)} hasPhoto={!!wphotos[w.key]} />
                 </div>
               ))}
             </section>
