@@ -44,7 +44,7 @@ export default function Dash({ shop, shift, entries, profile, onHandover, onRece
   const opened = shift.openedAt || shift.openedAtLocal;
 
   return (
-    <div className="wrap">
+    <div className="wrap dash">
       <div className="row" style={{ alignItems: 'stretch' }}>
         <section className="hero">
           <div className="spread" style={{ alignItems: 'flex-start' }}>
