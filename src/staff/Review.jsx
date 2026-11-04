@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Avatar, CopyBtn, Icon, PhotoView, ZoomImage, useToast } from '../ui.jsx';
-import { BILL_BG, FACES, SRC_LABEL, shopForRegister, computeShift, diffText, durationStr, fmt, minutesBetween, num, safeLabel, timeStr, toDate, dateStr } from '../lib';
+import { BILL_BG, FACES, SRC_LABEL, WALLETS, shopForRegister, computeShift, diffText, durationStr, fmt, minutesBetween, num, safeLabel, timeStr, toDate, dateStr } from '../lib';
 import Statements from './Statements.jsx';
 import { DeletedList, entryTitle } from '../cashier/Dash.jsx';
 
@@ -120,11 +120,21 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
 
   const unchecked = photos.filter((p) => p.check !== 'ok' && p.check !== 'bad').length;
   const cashierSafe = `خزنة ${shift.cashierName}`;
-  const moves = systemMoves(shift, sum, cashierSafe);
+  // Owner wallets: all transfers of one wallet are posted as one statement (700 + 67 …).
+  const transferEntries = entries.filter((e) => e.type === 'transfer');
+  const opEntries = entries.filter((e) => e.type !== 'transfer');
+  const transferMoves = WALLETS.map((w) => {
+    const list = transferEntries.filter((e) => e.wallet === w.key);
+    if (!list.length) return null;
+    return { id: 'tr:' + w.key, title: `تحويلات ${w.label}`, from: cashierSafe, to: w.label, amount: list.reduce((a, e) => a + num(e.amount), 0), parts: list };
+  }).filter(Boolean);
+  const allMoves = systemMoves(shift, sum, cashierSafe);
+  const moves = [...allMoves.filter((m) => m.id !== 'close'), ...transferMoves];
+  const endMoves = allMoves.filter((m) => m.id === 'close');
   const autoPosted = review?.autoPosted || {};
   const toggleMove = (m) => setDoc(doc(db, 'reviews', shift.id), { shopId: shift.shopId, autoPosted: { [m.id]: !autoPosted[m.id] } }, { merge: true }).catch(() => toast('مش قادرين نحفظ', 'err'));
-  const leftEntries = entries.filter((e) => !e.posted).length;
-  const leftMoves = moves.filter((m) => !autoPosted[m.id]).length;
+  const leftEntries = opEntries.filter((e) => !e.posted).length;
+  const leftMoves = [...moves, ...endMoves].filter((m) => !autoPosted[m.id]).length;
   const [typedDiff, setTypedDiff] = useState('');
   const expectAbs = sum.diff === null ? null : Math.round(Math.abs(sum.diff) * 100) / 100;
   const typedOk = expectAbs !== null && typedDiff.trim() !== '' && Math.round(num(typedDiff) * 100) / 100 === expectAbs;
@@ -255,21 +265,10 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
           {leftMoves + leftEntries > 0 ? <span className="badge warn">فاضل {leftMoves + leftEntries}</span> : <span className="badge ok">✓ كله اتعلّم</span>}
         </div>
         {moves.length > 0 && <div className="tiny muted" style={{ fontWeight: 700, padding: '6px 0' }}>حركات الخزن (المحاسب بيعملها)</div>}
-        {moves.map((m) => (
-          <div key={m.id} className="list-row" style={{ background: autoPosted[m.id] ? undefined : '#F2F7FF' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '1 1 260px', minWidth: 0 }}>
-              <input type="checkbox" checked={!!autoPosted[m.id]} onChange={() => toggleMove(m)} disabled={!canReview} style={{ width: 20, height: 20, accentColor: 'var(--blue)' }} />
-              <span className="stack" style={{ gap: 1 }}>
-                <span style={{ fontWeight: 700 }}>{m.title}</span>
-                <span className="tiny muted">{m.from} ← {m.to}</span>
-              </span>
-            </label>
-            <span style={{ display: 'flex', alignItems: 'center', fontWeight: 700, fontSize: 16, minWidth: 90, justifyContent: 'flex-end' }}>{fmt(m.amount)}<CopyBtn value={fmt(m.amount)} label="نسخ المبلغ" /></span>
-          </div>
-        ))}
-        {moves.length > 0 && entries.length > 0 && <div className="tiny muted" style={{ fontWeight: 700, padding: '10px 0 6px' }}>عمليات الكاشير</div>}
-        {entries.length === 0 && moves.length === 0 && <div className="empty">مفيش عمليات في الوردية دي</div>}
-        {entries.map((e) => {
+        {moves.map((m) => <MoveRow key={m.id} m={m} on={!!autoPosted[m.id]} onToggle={() => toggleMove(m)} canReview={canReview} photoOf={photoOf} onView={setView} />)}
+        {moves.length > 0 && opEntries.length > 0 && <div className="tiny muted" style={{ fontWeight: 700, padding: '10px 0 6px' }}>عمليات الكاشير</div>}
+        {opEntries.length === 0 && moves.length === 0 && endMoves.length === 0 && <div className="empty">مفيش عمليات في الوردية دي</div>}
+        {opEntries.map((e) => {
           const ph = e.photoId && photoOf(e.photoId);
           const name = e.sub || e.reason || e.machine || '';
           return (
@@ -287,6 +286,8 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
             </div>
           );
         })}
+        {endMoves.length > 0 && <div className="tiny muted" style={{ fontWeight: 700, padding: '10px 0 6px' }}>في الآخر خالص</div>}
+        {endMoves.map((m) => <MoveRow key={m.id} m={m} on={!!autoPosted[m.id]} onToggle={() => toggleMove(m)} canReview={canReview} photoOf={photoOf} onView={setView} />)}
       </section>
 
       {xfers.filter((t) => t.status !== 'cancelled').length > 0 && (
@@ -371,6 +372,27 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
         )}
       </div>
       <PhotoView src={view} onClose={() => setView(null)} />
+    </div>
+  );
+}
+
+function MoveRow({ m, on, onToggle, canReview, photoOf, onView }) {
+  return (
+    <div className="list-row" style={{ background: on ? undefined : '#F2F7FF', flexWrap: 'wrap' }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '1 1 260px', minWidth: 0 }}>
+        <input type="checkbox" checked={on} onChange={onToggle} disabled={!canReview} style={{ width: 20, height: 20, accentColor: 'var(--blue)' }} />
+        <span className="stack" style={{ gap: 1 }}>
+          <span style={{ fontWeight: 700 }}>{m.title}{m.parts ? <span className="tiny muted" style={{ fontWeight: 500 }}> · {m.parts.length} تحويل</span> : null}</span>
+          <span className="tiny muted">{m.from} ← {m.to}</span>
+          {m.parts && <span className="small" style={{ fontWeight: 700, direction: 'ltr', textAlign: 'right' }}>{m.parts.map((e) => fmt(e.amount)).join(' + ')}</span>}
+        </span>
+      </label>
+      {m.parts && (
+        <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          {m.parts.map((e) => { const ph = e.photoId && photoOf(e.photoId); return ph ? <img key={e.id} className="thumb" style={{ width: 38, height: 38 }} src={ph.data} alt={`صورة تحويل ${fmt(e.amount)}`} title={fmt(e.amount)} onClick={() => onView(ph.data)} /> : null; })}
+        </span>
+      )}
+      <span style={{ display: 'flex', alignItems: 'center', fontWeight: 700, fontSize: 16, minWidth: 90, justifyContent: 'flex-end' }}>{fmt(m.amount)}<CopyBtn value={fmt(m.amount)} label="نسخ المبلغ" /></span>
     </div>
   );
 }
