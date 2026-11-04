@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Avatar, Icon, Modal, NetMeter, useToast } from '../ui.jsx';
-import { ENTRY_TYPES, SRC_LABEL, WALLETS, durationStr, firstName, fmt, liveBalances, num, registersOf, safeLabel, shopSafes, timeStr } from '../lib';
+import { ENTRY_TYPES, SRC_LABEL, WALLETS, durationStr, firstName, fmt, liveBalances, machineTotals, num, registersOf, safeLabel, shopSafes, timeStr } from '../lib';
 import { Incoming, SendModal } from './Transfers.jsx';
 import EntryModal from './EntryModal.jsx';
 
@@ -145,12 +145,21 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
       {shopSafes(shop).some((x) => x.key !== 'drawer') && <section className="card">
         <div className="spread"><h2 style={{ fontSize: 17, fontWeight: 700 }}>أرصدة الخزن دلوقتي</h2><span className="tiny muted">بتتحدث مع كل عملية</span></div>
         <div className="safes-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
-          {shopSafes(shop).filter((x) => x.key !== 'drawer').map((x) => (
-            <div key={x.key} style={{ background: x.color, borderRadius: 20, padding: '12px 14px' }}>
-              <div className="small" style={{ fontWeight: 600 }}>{x.label}</div>
-              <div style={{ fontSize: 24, fontWeight: 800 }}>{fmt(balances[x.key] ?? 0)}<span className="small" style={{ fontWeight: 500 }}> ج</span></div>
-            </div>
-          ))}
+          {shopSafes(shop).filter((x) => x.key !== 'drawer').flatMap((x) => {
+            const card = (
+              <div key={x.key} style={{ background: x.color, borderRadius: 20, padding: '12px 14px' }}>
+                <div className="small" style={{ fontWeight: 600 }}>{x.label}</div>
+                <div style={{ fontSize: 24, fontWeight: 800 }}>{fmt(balances[x.key] ?? 0)}<span className="small" style={{ fontWeight: 500 }}> ج</span></div>
+              </div>
+            );
+            const t = machineTotals(shop, balances).find((g) => g.after === x.key);
+            return t ? [card, (
+              <div key={t.key} style={{ background: '#FFE27A', border: '2px solid #E5B800', borderRadius: 20, padding: '12px 14px' }}>
+                <div className="small" style={{ fontWeight: 700 }}>{t.label} <span className="tiny muted">({t.accounts} حسابات)</span></div>
+                <div style={{ fontSize: 24, fontWeight: 800 }}>{fmt(t.value ?? 0)}<span className="small" style={{ fontWeight: 500 }}> ج</span></div>
+              </div>
+            )] : [card];
+          })}
         </div>
       </section>}
 

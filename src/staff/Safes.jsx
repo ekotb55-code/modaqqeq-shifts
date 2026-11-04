@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Avatar } from '../ui.jsx';
-import { MAIN_REG, WALLETS, lastOf, openOf, registersOf, shopForRegister, computeShift, dateStr, diffText, fmt, liveBalances, machineKey, num, timeStr, todayKey, toDate } from '../lib';
+import { MAIN_REG, WALLETS, lastOf, openOf, registersOf, shopForRegister, computeShift, dateStr, diffText, fmt, liveBalances, machineKey, machineTotals, num, timeStr, todayKey, toDate } from '../lib';
 import Statements from './Statements.jsx';
 
 function useEntries(shiftId) {
@@ -54,7 +54,11 @@ function RegBalances({ shop: fullShop, reg, title }) {
     ...(reg !== MAIN_REG && !openShift ? [{ key: 'drawer', label: 'الدرج', cls: 'c-orange' }] : []),
     ...(shop.noSide ? [] : [{ key: 'side', label: 'الدرج الجانبي', cls: 'c-lime' }]),
     ...wallets.map((w) => ({ key: w.key, label: w.label, cls: w.key === 'insta' ? 'c-violet' : 'c-pink' })),
-    ...(shop.machines || []).map((m) => ({ key: machineKey(m), label: `${m.machine} · ${m.account}`, cls: 'c-yellow' })),
+    ...(shop.machines || []).flatMap((m) => {
+      const t = machineTotals(shop, balances.b).find((g) => g.after === machineKey(m));
+      const tile = { key: machineKey(m), label: `${m.machine} · ${m.account}`, cls: 'c-yellow' };
+      return t ? [tile, { key: t.key, label: t.label, cls: 'c-yellow', total: t.value }] : [tile];
+    }),
   ];
   if (!tiles.length) return null;
   return (
@@ -62,9 +66,9 @@ function RegBalances({ shop: fullShop, reg, title }) {
       <div className="spread"><h2 className="h2">{title}</h2><span className="tiny muted">{balances.from}</span></div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
         {tiles.map((t) => (
-          <div key={t.key} className={'counter ' + t.cls}>
+          <div key={t.key} className={'counter ' + t.cls} style={t.key.startsWith('t:') ? { outline: '3px solid #E5B800' } : undefined}>
             <span className="small muted">{t.label}</span>
-            <span className="v">{balances.b[t.key] === undefined || balances.b[t.key] === null ? '—' : fmt(balances.b[t.key])}<span className="small muted" style={{ fontWeight: 500 }}> ج</span></span>
+            <span className="v">{t.key.startsWith('t:') ? (t.total === null ? '—' : fmt(t.total)) : balances.b[t.key] === undefined || balances.b[t.key] === null ? '—' : fmt(balances.b[t.key])}<span className="small muted" style={{ fontWeight: 500 }}> ج</span></span>
           </div>
         ))}
       </div>

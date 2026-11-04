@@ -42,9 +42,12 @@ export default function Statements({ c, shift, shop, showDrawer = true }) {
             {d.lines.map((l, i) => <Line key={i} {...l} />)}
             <Line label="المبيعات (من السيستم)" amount={c.hasSales ? c.sales : null} />
             {c.transfers > 0 && <Line label="مبيعات اتدفعت انستاباي / فودافون" amount={-c.transfers} />}
-            {c.machines.filter((m) => m.affects && m.sales).map((m) => (
-              <Line key={m.key} label={`${m.label} · ${m.sales > 0 ? 'مبيعات على المكنة' : 'خدمات اتدفعت كاش'}${m.fee && m.rateFrom !== 'cashier' ? ` (شامل نسبة ${fmt(m.rate)}%)` : ''}`} amount={m.effect} />
-            ))}
+            {c.machines.filter((m) => m.affects && m.sales).map((m) => (m.rateFrom === 'cashier' ? [
+              <Line key={m.key} label={`${m.label} · ${m.sales > 0 ? 'مبيعات على المكنة' : 'خدمات اتدفعت كاش'}`} amount={m.effect} />,
+              m.fee ? <Line key={m.key + 'f'} label={`مصاريف ${m.machine} (${fmt(m.rate)}%)`} amount={m.feeEffect} tone="bad" /> : null,
+            ] : (
+              <Line key={m.key} label={`${m.label} · ${m.sales > 0 ? 'مبيعات على المكنة' : 'خدمات اتدفعت كاش'}${m.fee ? ` (شامل نسبة ${fmt(m.rate)}%)` : ''}`} amount={m.total} />
+            )))}
             <Line label="المفروض يتسلّم" amount={d.expected} strong />
             <Line label="اتسلّم فعلًا" amount={d.close} strong />
             <Line label="النتيجة" amount={c.drawerDiff} strong tone={resultTone} />
@@ -81,21 +84,33 @@ export default function Statements({ c, shift, shop, showDrawer = true }) {
             <table className="table">
               <thead><tr><th>المكنة</th><th>استلام</th><th>دخل</th><th>طلع</th><th>تسليم</th><th>حركة المكنة</th><th>النسبة</th><th>أثرها على الدرج</th></tr></thead>
               <tbody>
-                {c.machines.map((m) => (
-                  <tr key={m.key}>
-                    <td><b>{m.label}</b></td><td>{fmt(m.open)}</td><td>{fmt(m.inn)}</td><td>{fmt(m.out)}</td>
-                    <td>{m.close === null ? '—' : fmt(m.close)}</td>
-                    <td>{m.sales === null ? '—' : fmt(m.sales)}<CopyBtn value={m.sales === null ? 0 : fmt(Math.abs(m.sales))} /></td>
-                    <td>{m.rate ? `${fmt(m.rate)}% · ${fmt(m.fee)}` : '—'}</td>
-                    <td>{m.affects ? fmt(m.effect) : 'مش بتأثر'}</td>
-                  </tr>
-                ))}
+                {c.machineGroups.map((g) => [
+                  ...g.accounts.map((m) => (
+                    <tr key={m.key}>
+                      <td><b>{g.accounts.length > 1 ? `↳ ${m.account || m.label}` : m.label}</b></td><td>{fmt(m.open)}</td><td>{fmt(m.inn)}</td><td>{fmt(m.out)}</td>
+                      <td>{m.close === null ? '—' : fmt(m.close)}</td>
+                      <td>{m.sales === null ? '—' : fmt(m.sales)}<CopyBtn value={m.sales === null ? 0 : fmt(Math.abs(m.sales))} /></td>
+                      <td>{m.rate ? `${fmt(m.rate)}% · ${fmt(m.fee)}` : '—'}</td>
+                      <td>{m.affects ? fmt(m.total) : 'مش بتأثر'}</td>
+                    </tr>
+                  )),
+                  g.accounts.length > 1 && (
+                    <tr key={g.machine + ':t'} style={{ background: 'rgba(255,200,0,.25)', fontWeight: 800 }}>
+                      <td>إجمالي {g.machine}</td><td>{fmt(g.open)}</td><td></td><td></td>
+                      <td>{g.close === null ? '—' : fmt(g.close)}</td>
+                      <td>{g.sales === null ? '—' : fmt(g.sales)}</td>
+                      <td>{g.rate ? fmt(g.fee) : '—'}</td>
+                      <td>{g.affects ? fmt(g.effect + g.feeEffect) : '—'}</td>
+                    </tr>
+                  ),
+                ])}
               </tbody>
             </table>
           </div>
-          {[...new Map(c.machines.filter((m) => m.rate || m.settle).map((m) => [m.label.split(' · ')[0], m])).entries()].map(([name, m]) => (
-            <span key={name} className="tiny"><b>{name}</b> · {m.rate ? `نسبة ${fmt(m.rate)}% ${RATE_FROM[m.rateFrom] || ''}` : 'من غير نسبة'} · {SETTLE[m.settle] || ''}</span>
+          {c.machineGroups.map((g) => (
+            <span key={g.machine} className="tiny"><b>{g.machine}</b> · {g.rate ? `نسبة ${fmt(g.rate)}% ${RATE_FROM[g.rateFrom] || ''}` : 'من غير نسبة'} · {SETTLE[g.settle] || ''}</span>
           ))}
+          {c.liqFees > 0 && <span className="tiny" style={{ fontWeight: 700 }}>مصاريف تسييل في الوردية: {fmt(c.liqFees)} ج</span>}
         </section>
       )}
     </div>

@@ -20,12 +20,13 @@ export const DEFAULT_SHOP = {
   wallets: ['insta', 'vf'],
 };
 
-export const RATE_FROM = { cashier: 'بتتخصم من الكاشير', posting: 'بتتحسب عند الترحيل' };
-export const SETTLE = { owner: 'بتترحل لصاحب المحل تلقائي', daily: 'بتتقفل يوميًا' };
+export const RATE_FROM = { cashier: 'بتتخصم من درج الكاشير (بند مصاريف)', posting: 'بتتحسب عند الترحيل' };
+export const SETTLE = { carry: 'مستمرة · بتترحل تلقائي', liquidate: 'بتتسيّل' };
+export const settleOf = (m) => (m?.settle === 'liquidate' || m?.settle === 'daily' ? 'liquidate' : 'carry');
 
 // Machines are configured per shop: name, sub-accounts (or one account), commission rate and how it's settled.
 export function newMachine() {
-  return { id: Math.random().toString(36).slice(2, 9), name: '', active: true, hasSubs: false, accounts: [], ratePct: 0, rateFrom: 'posting', settle: 'owner', inCash: true };
+  return { id: Math.random().toString(36).slice(2, 9), name: '', active: true, hasSubs: false, accounts: [], ratePct: 0, rateFrom: 'posting', settle: 'carry', liqFeePct: 0, inCash: true };
 }
 export function machineListOf(shop) {
   if (Array.isArray(shop?.machineList) && shop.machineList.length) return shop.machineList;
@@ -40,7 +41,7 @@ export function machineListOf(shop) {
 }
 export function flattenMachines(list) {
   return list.filter((m) => m.active && m.name.trim()).flatMap((m) => {
-    const base = { machine: m.name.trim(), machineId: m.id, ratePct: num(m.ratePct), rateFrom: m.rateFrom, settle: m.settle, inCash: m.inCash !== false };
+    const base = { machine: m.name.trim(), machineId: m.id, ratePct: num(m.ratePct), rateFrom: m.rateFrom, settle: settleOf(m), liqFeePct: settleOf(m) === 'liquidate' ? num(m.liqFeePct) : 0, inCash: m.inCash !== false };
     const accs = m.hasSubs ? m.accounts.map((a) => a.trim()).filter(Boolean) : [];
     return accs.length ? accs.map((a) => ({ ...base, account: a })) : [{ ...base, account: 'الرصيد' }];
   });
@@ -226,6 +227,17 @@ export const WALLETS = [
 export const machineKey = (m) => `m:${m.machine}|${m.account}`;
 export const OWNER = 'out:owner';
 
+// Machine totals for machines that have more than one account.
+export function machineTotals(shop, balances) {
+  const map = {};
+  (shop?.machines || []).forEach((m) => { (map[m.machine] ||= []).push(m); });
+  return Object.entries(map).filter(([, l]) => l.length > 1).map(([name, l]) => ({
+    key: 't:' + name, label: `إجمالي ${name}`, accounts: l.length,
+    value: l.some((m) => balances[machineKey(m)] === undefined || balances[machineKey(m)] === null) ? null : l.reduce((a, m) => a + num(balances[machineKey(m)]), 0),
+    after: machineKey(l[l.length - 1]),
+  }));
+}
+
 export function shopSafes(shop) {
   const wallets = shop?.wallets || ['insta', 'vf'];
   return [
@@ -238,6 +250,7 @@ export function shopSafes(shop) {
 export function safeLabel(key, shop) {
   if (key === OWNER) return 'صاحب المحل / المحفظة';
   if (key === 'out:expense') return 'مصروف';
+  if (key === 'out:fees') return 'مصاريف تسييل';
   if (key === 'in:income') return 'إيراد';
   if (key === 'in:customer') return 'عميل';
   if (key === 'out:reg' || key === 'in:reg') return 'كاشير تاني';
@@ -267,7 +280,10 @@ export function flows(e, shop) {
       return [{ from: e.src || (to === 'side' ? 'drawer' : 'side'), to, a }];
     }
     case 'withdraw': return [{ from: e.src, to: OWNER, a }];
-    case 'liquidate': return [{ from: e.src, to: e.to, a }];
+    case 'liquidate': {
+      const fee = num(e.fee);
+      return fee > 0 ? [{ from: e.src, to: e.to, a: a - fee }, { from: e.src, to: 'out:fees', a: fee }] : [{ from: e.src, to: e.to, a }];
+    }
     case 'xfer_out': return [{ from: e.src || 'drawer', to: 'out:reg', a }];
     case 'xfer_in': return [{ from: 'in:reg', to: e.src || 'drawer', a }];
     default: return [];
@@ -301,7 +317,7 @@ export function computeShift(shift, entries, shop, sales = null) {
     if (amount >= 0) safes[k].inn += amount; else safes[k].out -= amount;
   };
 
-  let income = 0, expenses = 0, transfers = 0, insta = 0, vf = 0, topups = 0, withdraws = 0, liquidations = 0, xferIn = 0, xferOut = 0;
+  let income = 0, expenses = 0, transfers = 0, insta = 0, vf = 0, topups = 0, withdraws = 0, liquidations = 0, xferIn = 0, xferOut = 0, liqFees = 0;
   entries.forEach((e) => {
     const a = num(e.amount);
     if (e.type === 'expense') expenses += a;
@@ -309,7 +325,7 @@ export function computeShift(shift, entries, shop, sales = null) {
     if (e.type === 'transfer') { transfers += a; if (e.wallet === 'insta') insta += a; if (e.wallet === 'vf') vf += a; }
     if (e.type === 'topup') topups += a;
     if (e.type === 'withdraw' || (e.type === 'liquidate' && e.to === OWNER)) withdraws += a;
-    if (e.type === 'liquidate') liquidations += a;
+    if (e.type === 'liquidate') { liquidations += a; liqFees += num(e.fee); }
     if (e.type === 'xfer_in') xferIn += a;
     if (e.type === 'xfer_out') xferOut += a;
     flows(e, shop).forEach((f) => {
@@ -321,22 +337,25 @@ export function computeShift(shift, entries, shop, sales = null) {
 
   // Machines: the reading tells us how much the balance moved by itself (card / service sales).
   const machines = [];
-  let machineCash = 0;
+  let machineCash = 0, machineFees = 0;
   Object.values(safes).filter((s) => s.key.startsWith('m:')).forEach((s) => {
     const cfg = rm(rcv.machines, s.key) || rm(hnd?.machines, s.key) || (shop?.machines || []).find((x) => machineKey(x) === s.key) || {};
     const closeRead = hnd ? rm(hnd.machines, s.key) : null;
-    const close = closeRead ? num(closeRead.value) : null;
+    const close = closeRead && closeRead.value !== null && closeRead.value !== undefined ? num(closeRead.value) : null;
     const sales = close === null ? null : r2(close - s.open - s.inn + s.out);
     const rate = num(cfg.ratePct);
     const fee = sales === null || !rate ? 0 : r2((Math.abs(sales) * rate) / (100 - rate));
     const affects = cfg.inCash !== false;
-    let effect = 0;
+    // A card sale of 100 at 2% lands 98 on the machine: the POS counted 100, so the drawer
+    // expects 100 less — 98 as the machine sale and 2 as the machine's fee.
+    let effect = 0, feeEffect = 0;
     if (sales !== null && affects) {
       effect = -sales;
-      if (cfg.rateFrom !== 'cashier') effect += sales > 0 ? -fee : fee;
-      machineCash += effect;
+      feeEffect = sales > 0 ? -fee : fee;
+      machineCash += effect + feeEffect;
+      if (cfg.rateFrom === 'cashier') machineFees += feeEffect;
     }
-    machines.push({ ...s, close, sales, rate, fee, rateFrom: cfg.rateFrom, settle: cfg.settle, affects, effect: r2(effect) });
+    machines.push({ ...s, machine: cfg.machine || s.label.split(' · ')[0], account: cfg.account, close, sales, rate, fee, rateFrom: cfg.rateFrom, settle: settleOf(cfg), affects, effect: r2(effect), feeEffect: r2(feeEffect), total: r2(effect + feeEffect) });
     s.expected = close;
   });
 
@@ -361,11 +380,27 @@ export function computeShift(shift, entries, shop, sales = null) {
   const handCash = hnd ? num(hnd.drawerTotal) + num(hnd.side) : 0;
   const outCash = r2(expenses + topups + withdraws);
   return {
-    safes, machines, drawer, side, sales: salesN, hasSales, machineCash: r2(machineCash),
+    safes, machines, machineGroups: groupMachines(machines), drawer, side, sales: salesN, hasSales, machineCash: r2(machineCash), machineFees: r2(machineFees), liqFees: r2(liqFees),
     drawerDiff, sideDiff, diff,
     income, expenses, transfers, insta, vf, topups, withdraws, liquidations, xferIn, xferOut, recvCash, handCash, outCash,
     expected: drawer.expected === null ? null : r2(drawer.expected + side.expected),
   };
+}
+
+// Machines with several accounts (Fawry main + cash-out) shown as one total.
+export function groupMachines(list) {
+  const map = new Map();
+  list.forEach((m) => {
+    const k = m.machine || m.label;
+    if (!map.has(k)) map.set(k, { machine: k, accounts: [], open: 0, close: 0, hasClose: true, sales: 0, hasSales: true, fee: 0, effect: 0, feeEffect: 0, rate: m.rate, rateFrom: m.rateFrom, settle: m.settle, affects: m.affects });
+    const g = map.get(k);
+    g.accounts.push(m);
+    g.open = r2(g.open + num(m.open));
+    if (m.close === null) g.hasClose = false; else g.close = r2(g.close + m.close);
+    if (m.sales === null) g.hasSales = false; else g.sales = r2(g.sales + m.sales);
+    g.fee = r2(g.fee + num(m.fee)); g.effect = r2(g.effect + num(m.effect)); g.feeEffect = r2(g.feeEffect + num(m.feeEffect));
+  });
+  return [...map.values()].map((g) => ({ ...g, close: g.hasClose ? g.close : null, sales: g.hasSales ? g.sales : null }));
 }
 
 function opLabel(e) {
@@ -375,7 +410,7 @@ function opLabel(e) {
   if (e.type === 'topup') return 'شحن رصيد';
   if (e.type === 'move') return 'نقل';
   if (e.type === 'withdraw') return 'سحب';
-  if (e.type === 'liquidate') return ['تسييل / تحويل', e.note].filter(Boolean).join(' · ');
+  if (e.type === 'liquidate') return ['تسييل / تحويل', num(e.fee) ? `مصاريف ${fmt(e.fee)}` : '', e.note].filter(Boolean).join(' · ');
   if (e.type === 'xfer_out') return `فلوس لـ ${e.toName || 'كاشير تاني'}`;
   if (e.type === 'xfer_in') return `فلوس من ${e.fromName || 'كاشير تاني'}`;
   return e.type;

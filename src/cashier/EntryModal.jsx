@@ -59,12 +59,17 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
   const [machine, setMachine] = useState('');
   const [moveTo, setMoveTo] = useState('side');
   const [liqTo, setLiqTo] = useState('');
+  const [feeTxt, setFeeTxt] = useState(null);
   const allSafes = shopSafes(shop);
   const cashSafes = allSafes.filter((x) => x.kind === 'cash');
   const machineSafes = allSafes.filter((x) => x.kind === 'machine');
   const liqTargets = [...allSafes, { key: OWNER, label: 'صاحب المحل / المحفظة' }];
   const [note, setNote] = useState('');
   const [amount, setAmount] = useState('');
+  const srcMachine = type === 'liquidate' ? machineSafes.find((x) => x.key === src)?.m : null;
+  const liqPct = srcMachine && srcMachine.settle === 'liquidate' ? num(srcMachine.liqFeePct) : 0;
+  const autoFee = Math.round(num(amount) * liqPct) / 100;
+  const fee = type !== 'liquidate' || !srcMachine ? 0 : feeTxt === null ? autoFee : num(feeTxt);
   const [photo, setPhoto] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -95,6 +100,7 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
     if (type === 'topup' && !machine) return 'اختار المكنة';
     if (type === 'liquidate' && !liqTo) return 'اختار الفلوس رايحة فين';
     if (type === 'liquidate' && liqTo === src) return 'اختار خزنة تانية';
+    if (type === 'liquidate' && fee >= num(amount) && fee > 0) return 'مصاريف التسييل أكبر من المبلغ';
     if (needsPhoto && !photo) return type === 'transfer' ? 'لازم ترفع صورة التحويل' : kind === 'supplier' ? 'صوّر الفاتورة' : 'صوّر الإيصال';
     return null;
   };
@@ -112,7 +118,7 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
     if (type === 'income') Object.assign(entry, { src, reason: reasonValue, note: note.trim(), newItem: reason === '__new' });
     if (type === 'transfer') Object.assign(entry, { wallet, src: wallet });
     if (type === 'topup') { const mm = machineSafes.find((x) => x.key === machine); Object.assign(entry, { src, machineKey: machine, machine: mm?.m?.machine || '', account: mm?.m?.account || '' }); }
-    if (type === 'liquidate') Object.assign(entry, { src, to: liqTo, note: note.trim(), fromLabel: safeLabel(src, shop), toLabel: safeLabel(liqTo, shop) });
+    if (type === 'liquidate') Object.assign(entry, { src, to: liqTo, note: note.trim(), fromLabel: safeLabel(src, shop), toLabel: safeLabel(liqTo, shop), fee: fee > 0 ? fee : 0, net: Math.round((num(amount) - fee) * 100) / 100 });
     if (type === 'move') Object.assign(entry, { src: moveTo === 'side' ? 'drawer' : 'side', to: moveTo });
     if (type === 'withdraw') Object.assign(entry, { src, note: note.trim() });
     try {
@@ -161,6 +167,12 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
           <span className="small muted">رايحة فين؟</span>
           <SafePick safes={liqTargets} value={liqTo} onPick={setLiqTo} balances={balances} exclude={src} />
           <input className="input white" placeholder="ملاحظة (اختياري): مثلًا صاحب المحل طلب تسييل انستاباي" value={note} onChange={(e) => setNote(e.target.value)} />
+          {srcMachine && (
+            <label className="field">مصاريف التسييل{liqPct ? ` (${liqPct}%)` : ''}
+              <input className="input white" inputMode="decimal" value={feeTxt === null ? (autoFee ? String(autoFee) : '') : feeTxt} onChange={(e) => setFeeTxt(e.target.value)} placeholder="0 لو مفيش مصاريف" />
+              {fee > 0 && num(amount) > 0 && <span className="tiny" style={{ fontWeight: 600 }}>هيطلع {fmt(amount)} من {safeLabel(src, shop)} · يوصل {fmt(num(amount) - fee)} · مصاريف {fmt(fee)}</span>}
+            </label>
+          )}
           {balances?.[src] !== undefined && balances?.[src] !== null && num(amount) > num(balances[src]) && <span className="badge warn">المبلغ أكبر من رصيد {safeLabel(src, shop)} ({fmt(balances[src])})</span>}
         </div>
       )}

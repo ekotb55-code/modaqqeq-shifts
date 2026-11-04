@@ -67,20 +67,31 @@ export function Bills({ bills, setBills, orig }) {
 }
 
 export function MachineRows({ machines, values, setValues, photos, onPhoto }) {
+  const counts = machines.reduce((a, m) => ({ ...a, [m.machine]: (a[m.machine] || 0) + 1 }), {});
   return (
     <div className="stack">
       {machines.map((m, i) => {
         const has = !!photos[i];
+        const lastOfGroup = counts[m.machine] > 1 && machines[i + 1]?.machine !== m.machine;
+        const total = lastOfGroup ? machines.reduce((a, x, j) => (x.machine === m.machine ? a + num(values[j]) : a), 0) : 0;
         return (
-          <div key={i} className="m-row">
-            <span className="lbl">
-              <span className="small"><b>{m.machine}</b> · {m.account}</span>
-              <span className="tiny" style={{ color: has ? '#3D6B00' : 'var(--muted)', fontWeight: 600 }}>{has ? '✓ الصورة اترفعت · المحاسب هيراجعها' : 'صوّر شاشة المكنة'}</span>
-            </span>
-            <input inputMode="decimal" aria-label={`رصيد ${m.machine} ${m.account}`} value={values[i] ?? ''} onChange={(e) => { const v = [...values]; v[i] = e.target.value; setValues(v); }} onFocus={(e) => e.target.select()} />
-            <button type="button" className={'cam' + (has ? ' ok' : '')} aria-label={`صورة شاشة ${m.machine} ${m.account}`} onClick={() => onPhoto(i)}>
-              <Icon d={has ? 'check' : 'cam'} />
-            </button>
+          <div key={i} className="stack" style={{ gap: 6 }}>
+            <div className="m-row">
+              <span className="lbl">
+                <span className="small"><b>{m.machine}</b> · {m.account}</span>
+                <span className="tiny" style={{ color: has ? '#3D6B00' : 'var(--muted)', fontWeight: 600 }}>{has ? '✓ الصورة اترفعت · المحاسب هيراجعها' : 'صوّر شاشة المكنة'}</span>
+              </span>
+              <input inputMode="decimal" aria-label={`رصيد ${m.machine} ${m.account}`} value={values[i] ?? ''} onChange={(e) => { const v = [...values]; v[i] = e.target.value; setValues(v); }} onFocus={(e) => e.target.select()} />
+              <button type="button" className={'cam' + (has ? ' ok' : '')} aria-label={`صورة شاشة ${m.machine} ${m.account}`} onClick={() => onPhoto(i)}>
+                <Icon d={has ? 'check' : 'cam'} />
+              </button>
+            </div>
+            {lastOfGroup && (
+              <div className="spread" style={{ background: 'rgba(255,200,0,.35)', borderRadius: 16, padding: '8px 14px' }}>
+                <span className="small" style={{ fontWeight: 700 }}>إجمالي {m.machine}</span>
+                <strong style={{ fontSize: 18 }}>{fmt(total)} ج</strong>
+              </div>
+            )}
           </div>
         );
       })}

@@ -39,6 +39,9 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
 
   const drawerTotal = billsTotal(bills);
   const calc = computeShift(shift, entries, shop);
+  const filled = machines.some((_, i) => String(mvals[i]).trim() !== '');
+  const preview = filled ? computeShift({ ...shift, handover: { machines: machines.map((m, i) => ({ ...m, value: String(mvals[i]).trim() === '' ? null : num(mvals[i]) })) } }, entries, shop) : null;
+  const feeGroups = preview ? preview.machineGroups.filter((g) => g.affects && g.sales && g.rateFrom === 'cashier' && g.fee) : [];
   const expSide = calc.side.expected;
   const walletKeys = WALLETS.filter((w) => (shop.wallets || ['insta', 'vf']).includes(w.key) || num(shift.receive?.wallets?.[w.key]) || calc.safes[w.key]?.lines.length);
   const walletsClose = Object.fromEntries(walletKeys.map((w) => [w.key, calc.safes[w.key].expected]));
@@ -160,6 +163,21 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
               <h2 className="h2"><span className="dot" style={{ background: 'var(--yellow)' }} />قراية المكن دلوقتي</h2>
               <span className="tiny muted">اكتب الرقم وصوّر الشاشة، وكمّل. المحاسب هيراجع الصور.</span>
               <MachineRows machines={machines} values={mvals} setValues={setMvals} photos={photos} onPhoto={addPhoto} />
+            </section>
+          )}
+          {feeGroups.length > 0 && (
+            <section className="card" style={{ background: '#FFE4E4', gap: 8 }}>
+              <h2 className="h2">مصاريف المكن</h2>
+              {feeGroups.map((g) => (
+                <div key={g.machine} className="m-row" style={{ padding: '10px 14px', background: '#fff' }}>
+                  <span className="lbl">
+                    <span className="small"><b>مصاريف {g.machine}</b> ({fmt(g.rate)}%)</span>
+                    <span className="tiny muted">استلمت {fmt(g.open)} · بتسلّم {fmt(g.close ?? 0)} · {g.sales > 0 ? 'مبيعات' : 'خدمات'} {fmt(Math.abs(g.sales))}</span>
+                  </span>
+                  <strong style={{ fontSize: 18, color: '#9B1C1C' }}>{fmt(g.fee)} ج</strong>
+                </div>
+              ))}
+              <span className="tiny muted">المصاريف دي بتتحسب من درجك كبند لوحده، مش عجز عليك.</span>
             </section>
           )}
           <button type="button" className="btn full" style={{ height: 66, fontSize: 20 }} onClick={send} disabled={busy}>

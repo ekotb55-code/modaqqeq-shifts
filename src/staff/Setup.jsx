@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { collection, doc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Avatar, Icon, useToast } from '../ui.jsx';
-import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, REG_KIND, newRegister, newExpenseType, RATE_FROM, WALLETS, ROLE_LABEL, SETTLE, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, createAccount, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, num, pickImage } from '../lib';
+import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, REG_KIND, newRegister, newExpenseType, RATE_FROM, WALLETS, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, createAccount, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, num, pickImage } from '../lib';
 
 export default function Setup({ profile, shops }) {
   const toast = useToast();
@@ -125,7 +125,13 @@ function MachinesEditor({ list, onChange }) {
             </div>
             <div className="stack" style={{ flex: '1 1 240px' }}>
               <span className="small muted">الرصيد</span>
-              <div className="chips">{Object.entries(SETTLE).map(([k, l]) => <button key={k} type="button" className={'chip sm' + (m.settle === k ? ' on' : '')} onClick={() => upd(m.id, { settle: k })}>{l}</button>)}</div>
+              <div className="chips">{Object.entries(SETTLE).map(([k, l]) => <button key={k} type="button" className={'chip sm' + (settleOf(m) === k ? ' on' : '')} onClick={() => upd(m.id, { settle: k })}>{l}</button>)}</div>
+              {settleOf(m) === 'liquidate' && (
+                <label className="small" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>مصاريف التسييل %
+                  <input className="input" style={{ width: 90, height: 40 }} inputMode="decimal" value={m.liqFeePct ?? ''} onChange={(e) => upd(m.id, { liqFeePct: e.target.value })} placeholder="0" />
+                  <span className="tiny muted">لو مفيش سيبها 0</span>
+                </label>
+              )}
             </div>
           </div>
         </div>
@@ -202,7 +208,7 @@ function ShopEditor({ shop }) {
 
   const save = async () => {
     try {
-      const machineList = f.machineList.filter((m) => m.name.trim()).map((m) => ({ ...m, name: m.name.trim(), ratePct: num(m.ratePct), accounts: m.accounts.map((a) => a.trim()).filter(Boolean) }));
+      const machineList = f.machineList.filter((m) => m.name.trim()).map((m) => ({ ...m, name: m.name.trim(), ratePct: num(m.ratePct), liqFeePct: num(m.liqFeePct), settle: settleOf(m), accounts: m.accounts.map((a) => a.trim()).filter(Boolean) }));
       const registers = f.registers.filter((r) => r.name.trim()).map((r) => ({ ...r, name: r.name.trim() }));
       await updateDoc(doc(db, 'shops', shop.id), { ...f, registers, machineList, machines: flattenMachines(machineList), name: f.name.trim() });
       await setDoc(doc(db, 'shopsPublic', shop.id), { name: f.name.trim() }, { merge: true });
