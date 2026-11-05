@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { signOut } from 'firebase/auth';
 import { collection, doc, onSnapshot, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
-import { auth, db } from '../firebase';
+import { auth, db, SUPER_ADMINS } from '../firebase';
+import Activity from './Activity.jsx';
 import { Avatar, Icon, Modal, useToast } from '../ui.jsx';
 import { DEFAULT_SHOP, ROLE_LABEL, allOpen, isAdminRole } from '../lib';
 import Review from './Review.jsx';
@@ -13,10 +14,13 @@ import Safes from './Safes.jsx';
 import { NetStrip, ThemePicker, useTheme } from '../theme.jsx';
 import { HelpButton, TourHost, useTour } from '../Tour.jsx';
 import { STAFF_PAGE, staffShell } from '../tours.js';
+import { logAct, logout } from '../activity.js';
 
 export default function StaffApp({ profile }) {
   const isAdmin = isAdminRole(profile.role);
   const canReview = isAdmin || ['reviewer', 'accountant'].includes(profile.role);
+  // the login & activity log: Modaqqeq's owner and support only
+  const canSeeLog = SUPER_ADMINS.includes((auth.currentUser?.email || profile.email || '').toLowerCase()) || profile.role === 'support';
   const [shops, setShops] = useState([]);
   const tabs = [
     canReview && { id: 'review', label: 'الورديات' },
@@ -24,11 +28,15 @@ export default function StaffApp({ profile }) {
     { id: 'reports', label: 'التقارير' },
     { id: 'ledger', label: 'العجز والزيادة' },
     isAdmin && { id: 'setup', label: 'الإعداد' },
+    canSeeLog && { id: 'activity', label: 'سجل الدخول' },
   ].filter(Boolean);
   const [tab, setTab] = useState(tabs[0].id);
   const [theme, setTheme] = useTheme(profile);
   const [themeOpen, setThemeOpen] = useState(false);
   useTour('s-shell', staffShell(tabs), { uid: profile.id, prio: 0 });
+  // what each staff member opened, for the activity log
+  const tabLabel = tabs.find((t) => t.id === tab)?.label;
+  useEffect(() => { if (tabLabel) logAct('view', `فتح صفحة ${tabLabel}`); }, [tabLabel]);
   useTour(`s-${tab}`, STAFF_PAGE[tab] || [], { uid: profile.id, prio: 1, enabled: !!STAFF_PAGE[tab] });
   const [pwOpen, setPwOpen] = useState(false);
   // The branch chosen at the top applies to every tab. 'all' = every branch.
@@ -38,6 +46,8 @@ export default function StaffApp({ profile }) {
   const effSel = validSel || (shops.length === 1 ? shops[0].id : null);
   const viewShops = effSel && effSel !== 'all' ? shops.filter((x) => x.id === effSel) : shops;
   const setupShop = effSel && effSel !== 'all' ? effSel : null;
+  const selName = effSel === 'all' ? 'كل الفروع' : shops.find((x) => x.id === effSel)?.name;
+  useEffect(() => { if (selName && shops.length > 1) logAct('branch', `اختار ${selName === 'كل الفروع' ? 'كل الفروع' : `فرع ${selName}`}`, { shopId: effSel !== 'all' ? effSel : null }); }, [selName]); // eslint-disable-line react-hooks/exhaustive-deps
   const toast = useToast();
   const newShop = async () => {
     const name = window.prompt('اسم المحل الجديد');
@@ -88,7 +98,7 @@ export default function StaffApp({ profile }) {
             <button type="button" className="icon-btn" aria-label="غيّر الباسورد بتاعي" title="غيّر الباسورد بتاعي" onClick={() => setPwOpen(true)}><Icon d="lock" /></button>
             <button type="button" className="icon-btn" aria-label="غيّر شكل التطبيق" title="غيّر شكل التطبيق" onClick={() => setThemeOpen(true)}><Icon d="palette" /></button>
             <HelpButton />
-            <button type="button" className="icon-btn" aria-label="تسجيل خروج" title="تسجيل خروج" onClick={() => signOut(auth)}><Icon d="logout" /></button>
+            <button type="button" className="icon-btn" aria-label="تسجيل خروج" title="تسجيل خروج" onClick={logout}><Icon d="logout" /></button>
           </div>
         </div>
       </header>
@@ -100,6 +110,7 @@ export default function StaffApp({ profile }) {
           {tab === 'safes' && <Safes key={effSel} shops={viewShops} />}
           {tab === 'reports' && <Reports key={effSel} profile={profile} shops={viewShops} />}
           {tab === 'ledger' && <Ledger key={effSel} profile={profile} shops={viewShops} canReview={canReview} />}
+          {tab === 'activity' && canSeeLog && <Activity shops={shops} branch={effSel} />}
           {tab === 'setup' && <Setup profile={profile} shops={shops} sel={setupShop} setSel={setShopSel} />}
         </>
       )}
@@ -199,6 +210,7 @@ function MyPassword({ onClose }) {
       await reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, cur));
       await updatePassword(u, a);
       setDoc(doc(db, 'cashierSecrets', u.uid), { password: a, updatedAt: serverTimestamp() }, { merge: true }).catch(() => {});
+      logAct('password', 'غيّر الباسورد بتاعه');
       toast('الباسورد اتغيّر');
       onClose();
     } catch (e) {

@@ -3,6 +3,7 @@ import { addDoc, collection, doc, onSnapshot, orderBy, query, serverTimestamp, u
 import { db } from './firebase';
 import { Icon, useToast } from './ui.jsx';
 import { timeStr } from './lib';
+import { logAct } from './activity.js';
 
 // Chat between the accountant and the cashier, kept inside the shift.
 // side = 'staff' or 'cashier'. A new message flags the other side on the shift doc.
@@ -27,6 +28,7 @@ export default function ShiftChat({ shift, profile, side, compact }) {
     setText('');
     try {
       await addDoc(collection(db, 'shifts', shift.id, 'messages'), { text: t, byUid: profile.id, byName: profile.name, side, createdAt: serverTimestamp(), createdAtLocal: new Date().toISOString() });
+      logAct('chat', `بعت رسالة في وردية ${shift.cashierName}: ${t.slice(0, 80)}`, { shopId: shift.shopId, shiftId: shift.id });
       await updateDoc(doc(db, 'shifts', shift.id), side === 'cashier'
         ? { staffUnread: true, lastMsg: { text: t.slice(0, 120), side, byName: profile.name, at: new Date().toISOString() } }
         : { cashierUnread: true, cashierAttention: true, lastMsg: { text: t.slice(0, 120), side, byName: profile.name, at: new Date().toISOString() } });

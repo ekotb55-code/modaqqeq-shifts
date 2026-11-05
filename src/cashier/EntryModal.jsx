@@ -4,6 +4,7 @@ import { db } from '../firebase';
 import { Icon, Modal, useToast, WALLET_LOOK, WalletMark } from '../ui.jsx';
 import { captureDocument } from '../DocCamera.jsx';
 import { ENTRY_TYPES, OWNER, SRC_LABEL, WALLETS, WEEKDAYS, walletModeOf, fmt, num, safeLabel, shopSafes } from '../lib';
+import { logAct } from '../activity.js';
 
 const META = {
   expense: { title: 'مصروف جديد', icon: 'up' },
@@ -135,6 +136,7 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
       b.set(eref, entry);
       const p = b.commit();
       if (navigator.onLine) await p; else p.catch(() => {});
+      logAct('entry', `سجّل ${META[type].title}${entry.kindLabel ? ` (${entry.kindLabel}${entry.sub ? ` · ${entry.sub}` : ''})` : ''} · ${fmt(entry.amount)} ج`, { shopId: shop.id, shiftId: shift.id });
       if (print) printReceipt({ shop, profile, entry, title: META[type].title });
       toast(navigator.onLine ? (print ? 'اتسجل والإيصال بيتطبع' : 'اتسجل') : 'اتحفظ وهيترفع لما النت يرجع');
       onClose();

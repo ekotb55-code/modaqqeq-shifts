@@ -3,6 +3,7 @@ import { browserLocalPersistence, browserSessionPersistence, createUserWithEmail
 import { auth, SUPER_ADMINS } from '../firebase';
 import { InstallButton, useToast } from '../ui.jsx';
 import { cashierEmail, cashierPassword } from '../lib';
+import { markLogin } from '../activity.js';
 
 const MSG = {
   'auth/invalid-credential': 'اسم الدخول أو الباسورد غلط',
@@ -38,11 +39,14 @@ export default function Login({ error }) {
         if (!SUPER_ADMINS.includes(user.trim().toLowerCase())) { setMsg('إنشاء الحساب هنا لإدارة مدقق بس. باقي الحسابات بتتعمل من جوه التطبيق.'); return; }
         await createUserWithEmailAndPassword(auth, user.trim(), pass);
       } else if (isEmail) {
+        markLogin();
         await signInWithEmailAndPassword(auth, user.trim(), pass);
       } else {
+        markLogin();
         await signInWithEmailAndPassword(auth, cashierEmail(user), cashierPassword(pass.trim()));
       }
     } catch (err) {
+      try { sessionStorage.removeItem('mdq-login-mark'); } catch { /* ignore */ }
       setMsg(MSG[err.code] || 'حصلت مشكلة، جرّب تاني');
     } finally { setBusy(false); }
   };

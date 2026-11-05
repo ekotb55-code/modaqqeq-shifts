@@ -130,5 +130,15 @@ service cloud.firestore {
       allow update: if reviewerOf(resource.data.shopId);
       allow delete: if isAdmin();
     }
+
+    // Login & activity log. Everyone writes only lines about himself; nobody edits or deletes.
+    // Only Modaqqeq's owner and support can read it.
+    match /activity/{id} {
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'role', 'shopIds', 'action', 'text', 'shopId', 'shiftId', 'device', 'deviceLabel', 'deviceId', 'day', 'at', 'atLocal'])
+        && request.resource.data.text is string && request.resource.data.text.size() <= 300;
+      allow read: if isSuper() || (hasProfile() && me().role == 'support');
+      allow update, delete: if false;
+    }
   }
 }

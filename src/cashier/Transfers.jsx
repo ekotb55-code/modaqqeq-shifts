@@ -4,6 +4,7 @@ import { db } from '../firebase';
 import { Icon, Modal, useToast } from '../ui.jsx';
 import { MAIN_REG, allOpen, fmt, num, registersOf, regName, shopSafes, timeStr } from '../lib';
 import { SafePick } from './EntryModal.jsx';
+import { logAct } from '../activity.js';
 
 // Money moving between two registers in the same shop (float from the main cashier,
 // or a sub/delivery cashier handing his money to the main one). The receiver confirms.
@@ -61,6 +62,7 @@ export function SendModal({ shop, shift, profile, balances, onClose }) {
     const p = b.commit();
     try {
       if (navigator.onLine) await p; else p.catch(() => {});
+      logAct('xfer_send', `بعت ${fmt(num(amount))} ج لـ ${toOpen?.cashierName || 'كاشير تاني'}`, { shopId: shift.shopId, shiftId: shift.id });
       toast(`اتسجل · مستني ${toOpen?.cashierName || 'الكاشير'} يأكد إنه استلم`);
       onClose();
     } catch (e) { console.error(e); toast('حصلت مشكلة، جرّب تاني', 'err'); setBusy(false); }
@@ -145,6 +147,7 @@ function AcceptModal({ t, shop, shift, profile, onClose }) {
     const p = b.commit();
     try {
       if (navigator.onLine) await p; else p.catch(() => {});
+      logAct('xfer_accept', `أكّد إنه استلم ${fmt(got)} ج من ${t.fromName}${diff ? ` · فرق ${fmt(diff)} ج` : ''}`, { shopId: shift.shopId, shiftId: shift.id });
       toast(diff ? `اتسجل · فيه فرق ${fmt(Math.abs(diff))} ج والمحاسب هيشوفه` : 'اتسجل إنك استلمت');
       onClose();
     } catch (e) { console.error(e); toast('حصلت مشكلة، جرّب تاني', 'err'); setBusy(false); }

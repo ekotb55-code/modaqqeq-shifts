@@ -4,6 +4,7 @@ import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { Avatar, Icon, Modal, useToast } from '../ui.jsx';
 import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, REG_KIND, allOpen, isAdminRole, newRegister, newExpenseType, RATE_FROM, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, num, pickImage } from '../lib';
+import { logAct } from '../activity.js';
 
 export default function Setup({ profile, shops, sel, setSel }) {
   const [view, setView] = useState('shops');
@@ -190,6 +191,7 @@ function ShopEditor({ shop }) {
       const registers = f.registers.filter((r) => r.name.trim()).map((r) => ({ ...r, name: r.name.trim() }));
       await updateDoc(doc(db, 'shops', shop.id), { ...f, registers, machineList, machines: flattenMachines(machineList), name: f.name.trim() });
       await setDoc(doc(db, 'shopsPublic', shop.id), { name: f.name.trim() }, { merge: true });
+      logAct('setup', `حفظ إعدادات محل ${f.name.trim()}`, { shopId: shop.id });
       setDirty(false);
       toast('اتحفظ');
     } catch (e) { console.error(e); toast('مش قادرين نحفظ', 'err'); }
@@ -201,6 +203,7 @@ function ShopEditor({ shop }) {
     if (data.length > 600000) { toast('الصورة كبيرة، جرّب صورة أصغر', 'err'); return; }
     await setDoc(doc(db, 'shopsPublic', shop.id), { logo: data }, { merge: true });
     await updateDoc(doc(db, 'shops', shop.id), { logo: data });
+    logAct('setup', `غيّر لوجو محل ${shop.name}`, { shopId: shop.id });
     toast('اللوجو اتحفظ');
   };
 
@@ -389,6 +392,7 @@ function Cashiers({ shop, pub }) {
       await setDoc(doc(db, 'users', uid), { role: 'cashier', name: c.name, username: un, email, color, photo: c.photo, phone: phone.trim(), slot, startDate: todayKey(), shopIds: [shop.id], createdAt: serverTimestamp() });
       setDoc(doc(db, 'cashierSecrets', uid), { pin, updatedAt: serverTimestamp() }).catch(() => {});
       await writeList([...all, c]);
+      logAct('cashier_add', `ضاف الكاشير ${c.name} (${un}) في ${shop.name}`, { shopId: shop.id });
       setName(''); setUsername(''); setPin(''); setPhone(''); setSlot(''); setPhoto(null);
       toast(`${c.name} اتضاف · يدخل بـ ${un} والرقم السري ${pin}`);
     } catch (e) {
@@ -403,6 +407,7 @@ function Cashiers({ shop, pub }) {
     if (!data) return;
     await updateDoc(doc(db, 'users', c.uid), { photo: data });
     await setDoc(doc(db, 'shopsPublic', shop.id), { cashiers: all.map((x) => (x.uid === c.uid ? { ...x, photo: data } : x)), photos: { [c.uid]: data } }, { merge: true });
+    logAct('cashier_edit', `غيّر صورة الكاشير ${c.name}`, { shopId: shop.id });
     toast('الصورة اتغيرت');
   };
 
@@ -463,13 +468,14 @@ function CashierRow({ c, shop, all, writeList, open, onToggle, onPhoto }) {
   }, [open, c.uid, shop.id]);
 
   const save = async () => {
-    try { await updateDoc(doc(db, 'users', c.uid), form); toast('اتحفظ'); } catch { toast('مش قادرين نحفظ', 'err'); }
+    try { await updateDoc(doc(db, 'users', c.uid), form); logAct('cashier_edit', `عدّل بيانات الكاشير ${c.name}`); toast('اتحفظ'); } catch { toast('مش قادرين نحفظ', 'err'); }
   };
   const setDisabled = async (disabled) => {
     if (disabled && !window.confirm(`توقف ${c.name}؟ مش هيقدر يدخل، ووردياته هتفضل محفوظة.`)) return;
     try {
       await updateDoc(doc(db, 'users', c.uid), { disabled });
       await writeList(all.map((x) => (x.uid === c.uid ? { ...x, disabled } : x)));
+      logAct('cashier_edit', `${disabled ? 'وقّف' : 'فعّل'} الكاشير ${c.name}`);
       toast(disabled ? 'اتوقف' : 'اتفعّل تاني');
     } catch { toast('مش قادرين نحفظ', 'err'); }
   };
@@ -480,6 +486,7 @@ function CashierRow({ c, shop, all, writeList, open, onToggle, onPhoto }) {
     try {
       await updateDoc(doc(db, 'users', c.uid), { disabled: true, deleted: true });
       await writeList(all.filter((x) => x.uid !== c.uid));
+      logAct('cashier_edit', `حذف الكاشير ${c.name}`);
       toast('اتحذف');
     } catch { toast('مش قادرين نحذف', 'err'); }
   };
@@ -562,6 +569,7 @@ function StaffPassChange({ u, onClose }) {
     try {
       await changeAccountPassword(u.email, cur, a);
       await setDoc(doc(db, 'cashierSecrets', u.id), { password: a, updatedAt: serverTimestamp() }, { merge: true });
+      logAct('password', `غيّر باسورد ${u.name}`);
       toast(`الباسورد بتاع ${u.name} اتغيّر · ابعتهوله`);
       onClose();
     } catch (e) {
@@ -571,7 +579,7 @@ function StaffPassChange({ u, onClose }) {
     }
   };
   const reset = async () => {
-    try { await sendPasswordResetEmail(auth, u.email); toast(`بعتنا رابط تغيير الباسورد على ${u.email}`); onClose(); } catch { toast('مش قادرين نبعت الإيميل · اتأكد إن الإيميل حقيقي', 'err'); }
+    try { await sendPasswordResetEmail(auth, u.email); logAct('password', `بعت رابط تغيير باسورد لـ ${u.name}`); toast(`بعتنا رابط تغيير الباسورد على ${u.email}`); onClose(); } catch { toast('مش قادرين نبعت الإيميل · اتأكد إن الإيميل حقيقي', 'err'); }
   };
   return (
     <Modal title={`باسورد ${u.name}`} icon="lock" color="var(--violet)" onClose={onClose} width={440}>
@@ -617,6 +625,7 @@ function PinChange({ c, info, onClose }) {
     try {
       await changeAccountPassword(info?.email || cashierEmail(c.username), cashierPassword(old), cashierPassword(a));
       await setDoc(doc(db, 'cashierSecrets', c.uid), { pin: a, updatedAt: serverTimestamp() });
+      logAct('password', `غيّر الرقم السري بتاع الكاشير ${c.name}`);
       toast(`الرقم السري بتاع ${c.name} اتغيّر · يدخل بـ ${c.username} والرقم ${a}`);
       onClose();
     } catch (e) {
@@ -662,6 +671,7 @@ function ShopPeople({ shop }) {
     const on = ids.includes(shop.id);
     try {
       await updateDoc(doc(db, 'users', u.id), { shopIds: on ? ids.filter((x) => x !== shop.id) : [...ids, shop.id] });
+      logAct('access', on ? `شال ${u.name} من ${shop.name}` : `ضاف ${u.name} على ${shop.name}`, { shopId: shop.id });
       toast(on ? `${u.name} اتشال من ${shop.name}` : `${u.name} بقى على ${shop.name}`);
     } catch { toast('مش قادرين نحفظ', 'err'); }
   };
@@ -716,6 +726,7 @@ function StaffAccounts({ shops, profile }) {
       const uid = await createAccount(email.trim(), pass);
       await setDoc(doc(db, 'users', uid), { role, name: name.trim(), email: email.trim(), shopIds, color: AVATAR_BG[users.length % AVATAR_BG.length], createdAt: serverTimestamp() });
       setDoc(doc(db, 'cashierSecrets', uid), { password: pass, updatedAt: serverTimestamp() }).catch(() => {});
+      logAct('staff_add', `عمل حساب ${ROLE_LABEL[role] || role} لـ ${name.trim()} (${email.trim()})`);
       setForm({ name: '', email: '', pass: '', role: 'accountant', shopIds: [] });
       toast('الحساب اتعمل · ابعتله الإيميل والباسورد');
     } catch (e) {
@@ -724,7 +735,7 @@ function StaffAccounts({ shops, profile }) {
     setBusy(false);
   };
 
-  const update = (u, patch) => updateDoc(doc(db, 'users', u.id), patch).then(() => toast('اتحفظ')).catch(() => toast('مش قادرين نحفظ', 'err'));
+  const update = (u, patch) => updateDoc(doc(db, 'users', u.id), patch).then(() => { logAct('staff_edit', `عدّل حساب ${u.name}${patch.role ? ` · بقى ${ROLE_LABEL[patch.role] || patch.role}` : ''}${'disabled' in patch ? (patch.disabled ? ' · اتوقف' : ' · اتفعّل') : ''}`); toast('اتحفظ'); }).catch(() => toast('مش قادرين نحفظ', 'err'));
 
   return (
     <div className="stack" style={{ gap: 16 }}>

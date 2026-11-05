@@ -4,6 +4,7 @@ import { db } from '../firebase';
 import { useToast } from '../ui.jsx';
 import { fmt, num, todayKey } from '../lib';
 import { useByShops } from './Reports.jsx';
+import { logAct } from '../activity.js';
 
 export default function Ledger({ profile, shops, canReview }) {
   const [month, setMonth] = useState(todayKey().slice(0, 7));
@@ -55,7 +56,7 @@ function LedgerRow({ r, kind, shopName, canReview, profile }) {
   const status = r.status || (r.confirmed ? 'deducted' : 'pending');
   const amount = num(r.adjustedAmount ?? r.amount);
   const save = async (patch, msg) => {
-    try { await updateDoc(doc(db, 'ledger', r.id), { ...patch, reviewedBy: profile.name, reviewedAt: serverTimestamp() }); toast(msg); } catch { toast('مش قادرين نحفظ', 'err'); }
+    try { await updateDoc(doc(db, 'ledger', r.id), { ...patch, reviewedBy: profile.name, reviewedAt: serverTimestamp() }); logAct('ledger', `${msg} · ${kind === 'shortage' ? 'عجز' : 'زيادة'} ${r.cashierName} ${fmt(amount)} ج (${r.day})`, { shopId: r.shopId, shiftId: r.shiftId }); toast(msg); } catch { toast('مش قادرين نحفظ', 'err'); }
   };
   return (
     <div className="list-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}>

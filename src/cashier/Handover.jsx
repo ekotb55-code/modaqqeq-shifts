@@ -9,6 +9,7 @@ import { clearRemoteDraft, isDesktop, saveRemoteDraft, useRemoteDraft } from '..
 import { MAIN_REG, WALLETS, colsFor, machineGroupsOf, machinePhotoLabel, walletModeOf, walletModesOf, billsTotal, computeShift, durationStr, emptyBills, fmt, lastKey, num, openKey, timeStr } from '../lib';
 import { newTransfer } from './Transfers.jsx';
 import { Bills, MachineRows, SideBox } from './parts.jsx';
+import { logAct } from '../activity.js';
 
 const WHERE = { stay: 'يفضل في الدرج', shop: 'يتسلّم للمحل', main: 'يتسلّم للأساسي' };
 function Split({ title, mark, color, amount, value, set, options = ['stay', 'shop'] }) {
@@ -76,6 +77,7 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
   const sendToPhone = async () => {
     try {
       await saveRemoteDraft(profile.id, dkey, { bills, side, mvals, keepDrawer, keepSide, wtyped, wopen }, { photos, wphotos });
+      logAct('to_phone', 'حفظ أرقام التسليم من الكمبيوتر علشان يكمّل الصور من الموبايل', { shopId: shop.id, shiftId: shift.id });
       setSentToPhone(true);
     } catch (e) { console.error(e); toast('مش قادرين نحفظ، اتأكد من النت', 'err'); }
   };
@@ -125,6 +127,7 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
       const toMain = (keepDrawer === 'main' ? drawerTotal : 0) + (keepSide === 'main' ? num(side) : 0);
       if (isSub && toMain > 0) b.set(doc(collection(db, 'transfers')), newTransfer({ shop, shift, profile, toReg: MAIN_REG, amount: toMain, kind: 'handover' }));
       const p = b.commit();
+      logAct('handover', `سلّم الوردية · الدرج ${fmt(drawerTotal)} ج · ${entries.length} عملية`, { shopId: shop.id, shiftId: shift.id });
       const offline = !navigator.onLine;
       if (offline) p.catch(() => {}); else await p;
       clearDraft(dkey);

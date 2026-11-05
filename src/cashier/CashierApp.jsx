@@ -12,12 +12,14 @@ import { Topbar } from './parts.jsx';
 import Receive from './Receive.jsx';
 import Dash from './Dash.jsx';
 import Handover from './Handover.jsx';
+import { logAct, logout as doLogout } from '../activity.js';
 
 async function changeMyPhoto(shopId, profile, toast) {
   const data = await pickImage(300, 0.8);
   if (!data) return;
   try {
     await updateDoc(doc(db, 'shopsPublic', shopId), { [`photos.${profile.id}`]: data });
+    logAct('photo_self', 'غيّر صورته', { shopId });
     toast('صورتك اتغيرت');
   } catch (e) { console.error(e); toast('مش قادرين نغيّر الصورة، اتأكد من النت', 'err'); }
 }
@@ -64,7 +66,7 @@ export default function CashierApp({ profile }) {
 
   const logout = () => {
     if (mine && !done) { setAskLogout(true); return; }
-    signOut(auth);
+    doLogout();
   };
 
   const steps = useMemo(() => {
@@ -116,7 +118,7 @@ export default function CashierApp({ profile }) {
             <h2 style={{ fontSize: 24, fontWeight: 700 }}>لسه ما سلّمتش الوردية</h2>
             <span className="muted" style={{ lineHeight: 1.7 }}>لو خرجت دلوقتي الوردية هتفضل مفتوحة باسمك، ومحدش هيقدر يستلم بعدك غير لما ترجع تسلّم.</span>
             <button type="button" className="btn full" onClick={() => { setAskLogout(false); setScreen('handover'); }}>سلّم دلوقتي</button>
-            <button type="button" className="btn soft full" onClick={() => signOut(auth)}>اخرج والوردية تفضل مفتوحة</button>
+            <button type="button" className="btn soft full" onClick={() => doLogout()}>اخرج والوردية تفضل مفتوحة</button>
             <button type="button" className="link" onClick={() => setAskLogout(false)}>رجوع</button>
           </div>
         </div>
@@ -137,6 +139,7 @@ function PinModal({ onClose }) {
     try {
       await updatePassword(auth.currentUser, cashierPassword(a));
       setDoc(doc(db, 'cashierSecrets', auth.currentUser.uid), { pin: a, updatedAt: serverTimestamp() }).catch(() => {});
+      logAct('password', 'غيّر الرقم السري بتاعه');
       toast('الرقم السري اتغيّر');
       onClose();
     } catch (e) {
@@ -159,7 +162,7 @@ function NoShop() {
       <div className="card card-lg center" style={{ maxWidth: 480, textAlign: 'center' }}>
         <h1 style={{ fontSize: 24 }}>الحساب ده مش مربوط بمحل</h1>
         <span className="muted">كلّم دعم مدقق يربطك بالمحل.</span>
-        <button type="button" className="btn" onClick={() => signOut(auth)}>تسجيل خروج</button>
+        <button type="button" className="btn" onClick={() => doLogout()}>تسجيل خروج</button>
       </div>
     </div>
   );
@@ -212,7 +215,7 @@ function Blocked({ open, pub, onOther }) {
           <span className="stack" style={{ gap: 0, flexGrow: 1 }}><strong>{open.cashierName}</strong><span className="small muted">مفتوحة من {timeStr(open.openedAt)}</span></span>
         </div>
         {onOther && <button type="button" className="btn full" onClick={onOther}>اختار درج تاني</button>}
-        <button type="button" className={'btn full' + (onOther ? ' soft' : '')} onClick={() => signOut(auth)}>خروج علشان {firstName(open.cashierName)} يدخل ويسلّم</button>
+        <button type="button" className={'btn full' + (onOther ? ' soft' : '')} onClick={() => doLogout()}>خروج علشان {firstName(open.cashierName)} يدخل ويسلّم</button>
         <span className="small muted">لو {firstName(open.cashierName)} مش موجود، كلّم دعم مدقق يقفل الوردية من عندهم.</span>
       </section>
     </div>
@@ -236,7 +239,7 @@ function Done({ info, profile }) {
             </div>
           ))}
         </div>
-        <button type="button" className="btn" style={{ position: 'relative' }} onClick={() => signOut(auth)}>تسجيل خروج</button>
+        <button type="button" className="btn" style={{ position: 'relative' }} onClick={() => doLogout()}>تسجيل خروج</button>
       </section>
     </div>
   );

@@ -6,6 +6,7 @@ import { ENTRY_TYPES, SRC_LABEL, dateStr, fmt, liveBalances, safeLabel, shopForR
 import ShiftChat from '../ShiftChat.jsx';
 import EntryModal from './EntryModal.jsx';
 import { DeleteModal, entryTitle } from './Dash.jsx';
+import { logAct } from '../activity.js';
 
 // Shifts of this cashier that need him: a new message from the accountant, or a shift reopened for editing.
 export function useAttention(uid) {
@@ -56,6 +57,7 @@ export function AttentionModal({ shift: initial, shop: fullShop, profile, onClos
   const finish = async () => {
     try {
       await updateDoc(doc(db, 'shifts', shift.id), { status: 'submitted', reopenPending: false, cashierAttention: false, staffUnread: true, reopenDoneAt: serverTimestamp(), entryCount: entries.length, lastMsg: { text: 'الكاشير خلّص التعديل', side: 'cashier', byName: profile.name, at: new Date().toISOString() } });
+      logAct('reopen_done', `خلّص تعديل الوردية المفتوحة وبعتها للمحاسب`, { shopId: shift.shopId, shiftId: shift.id });
       toast('التعديل اتبعت للمحاسب'); onClose();
     } catch (e) { console.error(e); toast('مش قادرين نبعت، اتأكد من النت', 'err'); }
   };

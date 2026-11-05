@@ -636,3 +636,18 @@ body.net-bad .topbar { background: #FFF4E0; }
 .tour-dots i.on { width: 20px; background: var(--blue); }
 .tour-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px; }
 @media (prefers-reduced-motion: reduce) { .tour-spot, .tour-card { animation: none; transition: none; } }
+
+/* ───── activity log ───── */
+.act-day { display: flex; align-items: center; gap: 8px; }
+.act-day .input { width: 170px; }
+.act-toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.act-people { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.act-person { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 20px; border: 2px solid transparent; background: var(--bg); font: inherit; color: var(--ink); text-align: right; min-width: 0; cursor: pointer; }
+.act-person.on { border-color: var(--blue); background: var(--blue-soft); }
+.act-person .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; max-width: 100%; }
+.act-row { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14px; line-height: 1.6; }
+.act-row:last-child { border-bottom: 0; }
+.act-row.strong { background: linear-gradient(90deg, transparent, var(--lime-soft)); border-radius: 12px; padding-inline: 8px; }
+.act-time { width: 64px; flex: none; font-weight: 700; color: var(--muted); font-size: 13px; padding-top: 4px; }
+.act-ic { width: 30px; height: 30px; flex: none; border-radius: 999px; display: grid; place-items: center; color: #fff; }
+@media (max-width: 640px) { .act-day .input { width: 140px; } .act-time { width: 52px; } }

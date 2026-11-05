@@ -8,6 +8,7 @@ import { captureDocument } from '../DocCamera.jsx';
 import { clearRemoteDraft, isDesktop, saveRemoteDraft, useRemoteDraft } from '../remoteDraft';
 import { MAIN_REG, WALLETS, colsFor, machineGroupsOf, machinePhotoLabel, walletModeOf, walletModesOf, billsTotal, emptyBills, fmt, lastOf, num, openKey, regName, timeStr, todayKey } from '../lib';
 import { Bills, MachineRows, SideBox } from './parts.jsx';
+import { logAct } from '../activity.js';
 
 export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, editShift, onCancel }) {
   useTour('c-receive', CASHIER_RECEIVE, { uid: profile.id, enabled: !editShift });
@@ -63,6 +64,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
   const sendToPhone = async () => {
     try {
       await saveRemoteDraft(profile.id, dkey, { bills, side, mvals, wallets }, { photos, wphotos });
+      logAct('to_phone', 'حفظ أرقام الاستلام من الكمبيوتر علشان يكمّل الصور من الموبايل', { shopId: shop.id });
       setSentToPhone(true);
     } catch (e) { console.error(e); toast('مش قادرين نحفظ، اتأكد من النت', 'err'); }
   };
@@ -99,6 +101,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
         return pb.commit();
       }), (() => { const pb = writeBatch(db); walletPhotoDocs(pb, editShift.id); return pb.commit(); })()])).catch(() => {});
       if (navigator.onLine) await p; else p.catch(() => {});
+      logAct('receive_edit', `عدّل أرقام الاستلام · الدرج ${fmt(billsTotal(bills))} ج`, { shopId: shop.id, shiftId: editShift.id });
       toast('الاستلام اتعدّل · المحاسب هيشوف التعديل');
       clearDraft(dkey);
       clearRemoteDraft(profile.id, dkey);
@@ -140,6 +143,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
         pb.set(doc(collection(db, 'shifts', shiftRef.id, 'photos')), { kind: 'machine', stage: 'receive', label: machinePhotoLabel(machines, i), data, check: 'pending', createdAt: serverTimestamp() });
         return pb.commit();
       }), (() => { const pb = writeBatch(db); walletPhotoDocs(pb, shiftRef.id); return pb.commit(); })()])).catch(() => {});
+      logAct('receive', `استلم الوردية${last ? ` من ${last.cashierName}` : ''} · الدرج ${fmt(billsTotal(bills))} ج${changed || sideChanged || mChanged || wChanged ? ' · عدّل في الأرقام' : ''}`, { shopId: shop.id, shiftId: shiftRef.id });
       if (!navigator.onLine) toast('اتحفظ على الجهاز وهيترفع لما النت يرجع');
       else { await p; toast('اتأكد الاستلام · الوردية بدأت'); }
       clearDraft(dkey);

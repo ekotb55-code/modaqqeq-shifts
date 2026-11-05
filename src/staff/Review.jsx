@@ -8,6 +8,7 @@ import { BILL_BG, FACES, SRC_LABEL, WALLETS, shopForRegister, computeShift, diff
 import Statements from './Statements.jsx';
 import ShiftChat from '../ShiftChat.jsx';
 import { DeletedList, entryTitle } from '../cashier/Dash.jsx';
+import { logAct } from '../activity.js';
 
 const STATUS = {
   open: { label: 'شغالة', cls: 'info' },
@@ -113,6 +114,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
       b.set(doc(db, 'reviews', shift.id), { shopId: shift.shopId, shiftId: shift.id, day: shift.day, month: shift.month, cashierName: shift.cashierName, accountantUid: profile.id, accountantName: profile.name, startedAt: serverTimestamp(), submittedAtLocal: shift.submittedAtLocal || null, sales: null }, { merge: true });
       b.update(doc(db, 'shifts', shift.id), { status: 'reviewing', reviewer: profile.name, reviewStartedAt: serverTimestamp() });
       await b.commit();
+      logAct('review_start', `بدأ مراجعة وردية ${shift.cashierName}`, { shopId: shift.shopId, shiftId: shift.id });
       toast('بدأت المراجعة · اكتب رقم المبيعات');
     } catch (e) { console.error(e); toast('مش قادرين نبدأ المراجعة', 'err'); }
     setBusy(false);
@@ -120,7 +122,8 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
 
   const saveSales = async () => {
     if (!reviewing || sales === '') return;
-    try { await updateDoc(doc(db, 'reviews', shift.id), { sales: num(sales), diff: sum.diff, salesAt: serverTimestamp() }); } catch (e) { console.error(e); }
+    if (review && num(review.sales) === num(sales) && review.sales !== undefined) return;
+    try { await updateDoc(doc(db, 'reviews', shift.id), { sales: num(sales), diff: sum.diff, salesAt: serverTimestamp() }); logAct('sales', `كتب رقم المبيعات ${fmt(num(sales))} ج في وردية ${shift.cashierName}`, { shopId: shift.shopId, shiftId: shift.id }); } catch (e) { console.error(e); }
   };
 
   const unchecked = photos.filter((p) => p.check !== 'ok' && p.check !== 'bad').length;
@@ -137,7 +140,9 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
   const moves = [...allMoves.filter((m) => m.id !== 'close'), ...transferMoves];
   const endMoves = allMoves.filter((m) => m.id === 'close');
   const autoPosted = review?.autoPosted || {};
-  const toggleMove = (m) => setDoc(doc(db, 'reviews', shift.id), { shopId: shift.shopId, autoPosted: { [m.id]: !autoPosted[m.id] } }, { merge: true }).catch(() => toast('مش قادرين نحفظ', 'err'));
+  const toggleMove = (m) => setDoc(doc(db, 'reviews', shift.id), { shopId: shift.shopId, autoPosted: { [m.id]: !autoPosted[m.id] } }, { merge: true })
+    .then(() => logAct('post', `${autoPosted[m.id] ? 'شال العلامة من' : 'علّم ✓ على'} «${m.title}» ${fmt(m.amount)} ج · وردية ${shift.cashierName}`, { shopId: shift.shopId, shiftId: shift.id }))
+    .catch(() => toast('مش قادرين نحفظ', 'err'));
   const leftEntries = opEntries.filter((e) => !e.posted).length;
   const leftMoves = [...moves, ...endMoves].filter((m) => !autoPosted[m.id]).length;
   const [typedDiff, setTypedDiff] = useState('');
@@ -167,6 +172,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
         });
       }
       await b.commit();
+      logAct('close', `قفل وردية ${shift.cashierName} · ${diffText(sum.diff)} · مبيعات ${fmt(num(sales))} ج`, { shopId: shift.shopId, shiftId: shift.id });
       toast('الوردية اتقفلت والتقرير اتبعت');
     } catch (e) { console.error(e); toast('مش قادرين نقفل الوردية', 'err'); }
     setBusy(false);
@@ -179,6 +185,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
       b.update(doc(db, 'shifts', shift.id), { status: 'submitted', submittedAt: serverTimestamp(), forced: true, forcedBy: profile.name, handover: shift.handover || null });
       if (shop?.openShift?.id === shift.id) b.update(doc(db, 'shops', shift.shopId), { openShift: null });
       await b.commit();
+      logAct('force', `قفل وردية ${shift.cashierName} بالنيابة عن الكاشير`, { shopId: shift.shopId, shiftId: shift.id });
       toast('الوردية اتقفلت ووصلت للمراجعة');
     } catch (e) { console.error(e); toast('حصلت مشكلة', 'err'); }
   };
@@ -191,11 +198,13 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
     try {
       await updateDoc(doc(db, 'shifts', shift.id, 'entries', e.id), { amount: num(amount), originalAmount: e.originalAmount ?? e.amount, correctedBy: profile.name, correctedAt: serverTimestamp() });
       await updateDoc(doc(db, 'shifts', shift.id), logFix(entryTitle(e), num(e.amount), num(amount)));
+      logAct('fix', `عدّل مبلغ «${entryTitle(e)}» من ${fmt(e.amount)} لـ ${fmt(num(amount))} ج · وردية ${shift.cashierName}`, { shopId: shift.shopId, shiftId: shift.id });
       toast('المبلغ اتعدّل والحساب اتحدّث'); setFix(null);
     } catch (err) { console.error(err); toast('مش قادرين نعدّل', 'err'); }
   };
   // A photo marked "not matching": put the right number where the cashier typed it.
   const fixPhoto = async (p, values) => {
+    logAct('fix_photo', `عدّل رقم صورة «${p.label}» لـ ${values.map((v) => fmt(num(v))).join(' + ')} ج · وردية ${shift.cashierName}`, { shopId: shift.shopId, shiftId: shift.id });
     try {
       if (p.entryId) {
         const e = allEntries.find((x) => x.id === p.entryId);
@@ -228,9 +237,12 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
     return list.filter((m) => `${m.machine} · ${m.account}` === p.label || m.machine === p.label).map((m) => ({ label: m.account, value: m.value }));
   };
 
-  const togglePosted = (e) => updateDoc(doc(db, 'shifts', shift.id, 'entries', e.id), { posted: !e.posted, postedBy: profile.name }).catch(() => toast('مش قادرين نحفظ', 'err'));
+  const togglePosted = (e) => updateDoc(doc(db, 'shifts', shift.id, 'entries', e.id), { posted: !e.posted, postedBy: profile.name })
+    .then(() => logAct('post', `${e.posted ? 'شال العلامة من' : 'علّم ✓ على'} «${entryTitle(e)}» ${fmt(e.amount)} ج · وردية ${shift.cashierName}`, { shopId: shift.shopId, shiftId: shift.id }))
+    .catch(() => toast('مش قادرين نحفظ', 'err'));
   const photoOf = (id) => photos.find((p) => p.id === id);
-  const checkPhoto = (p, check) => updateDoc(doc(db, 'shifts', shift.id, 'photos', p.id), { check, checkedBy: profile.name, checkedAt: serverTimestamp() }).catch(() => toast('مش قادرين نحفظ', 'err'));
+  const checkPhoto = (p, check) => updateDoc(doc(db, 'shifts', shift.id, 'photos', p.id), { check, checkedBy: profile.name, checkedAt: serverTimestamp() })
+    .then(() => logAct('photo', `${check === 'ok' ? 'علّم صورة «' + p.label + '» مطابقة' : check === 'bad' ? 'علّم صورة «' + p.label + '» مش مطابقة' : 'شال العلامة من صورة «' + p.label + '»'} · وردية ${shift.cashierName}`, { shopId: shift.shopId, shiftId: shift.id })).catch(() => toast('مش قادرين نحفظ', 'err'));
   const photoTyped = (p) => {
     if (p.kind === 'wallet') return (p.stage === 'receive' ? rcv.wallets?.[p.wallet] : hnd.walletsTyped?.[p.wallet]) ?? p.amount ?? null;
     if (p.kind !== 'machine') return p.amount ?? null;
@@ -286,7 +298,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
       {status === 'reopened' && (
         <section className="card spread" style={{ background: '#E6F4FF' }}>
           <span style={{ lineHeight: 1.7 }}><b>الوردية مفتوحة للكاشير يعدّلها</b>{shift.reopenNote ? ` · ${shift.reopenNote}` : ''}. أول ما يخلّص هترجعلك «جديدة».</span>
-          {canReview && <button type="button" className="btn soft sm" onClick={() => updateDoc(doc(db, 'shifts', shift.id), { status: 'submitted', reopenPending: false, cashierAttention: false }).catch(() => toast('مش قادرين نحفظ', 'err'))}>اقفلها تاني من غير تعديل</button>}
+          {canReview && <button type="button" className="btn soft sm" onClick={() => updateDoc(doc(db, 'shifts', shift.id), { status: 'submitted', reopenPending: false, cashierAttention: false }).then(() => logAct('reclose', `قفل وردية ${shift.cashierName} تاني من غير تعديل الكاشير`, { shopId: shift.shopId, shiftId: shift.id })).catch(() => toast('مش قادرين نحفظ', 'err'))}>اقفلها تاني من غير تعديل</button>}
         </section>
       )}
 
@@ -557,6 +569,7 @@ function AddCorrection({ shift, shop, profile, onClose }) {
         createdAt: serverTimestamp(), createdAtLocal: new Date().toISOString(),
       });
       await updateDoc(doc(db, 'shifts', shift.id), { corrections: [...(shift.corrections || []), { what: `${type === 'expense' ? 'مصروف' : 'إيراد'} جديد · ${note.trim()}`, from: 0, to: num(amount), by: profile.name, at: new Date().toISOString() }] });
+      logAct('correction', `ضاف ${type === 'expense' ? 'مصروف' : 'إيراد'} تصحيح ${fmt(num(amount))} ج · ${note.trim()} · وردية ${shift.cashierName}`, { shopId: shift.shopId, shiftId: shift.id });
       toast('العملية اتضافت والحساب اتحدّث'); onClose();
     } catch (e) { console.error(e); toast('مش قادرين نضيف', 'err'); setBusy(false); }
   };
@@ -583,6 +596,7 @@ function ReopenModal({ shift, profile, onClose }) {
   const go = async () => {
     try {
       await updateDoc(doc(db, 'shifts', shift.id), { status: 'reopened', reopenPending: true, cashierAttention: true, reopenNote: note.trim(), reopenedBy: profile.name, reopenedAt: serverTimestamp(), reopenCount: (shift.reopenCount || 0) + 1 });
+      logAct('reopen', `فتح وردية ${shift.cashierName} للكاشير يعدّلها${note.trim() ? ` · ${note.trim()}` : ''}`, { shopId: shift.shopId, shiftId: shift.id });
       toast(`الوردية اتفتحت لـ ${shift.cashierName} يعدّلها`); onClose();
     } catch (e) { console.error(e); toast('مش قادرين نفتحها', 'err'); }
   };

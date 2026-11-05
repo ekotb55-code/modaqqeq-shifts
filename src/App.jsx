@@ -7,6 +7,7 @@ import CashierApp from './cashier/CashierApp.jsx';
 import Login from './staff/StaffLogin.jsx';
 import StaffApp from './staff/StaffApp.jsx';
 import { Intro } from './theme.jsx';
+import { logSessionStart } from './activity.js';
 
 export default function App() {
   const [user, setUser] = useState(undefined);
@@ -29,6 +30,7 @@ export default function App() {
       const p = { id: u.uid, ...snap.data() };
       if (p.disabled) { setErr('الحساب ده اتقفل. كلّم دعم مدقق.'); await signOut(auth); return; }
       setProfile(p);
+      logSessionStart(p);
       setUser(u);
     } catch (e) {
       console.error(e);

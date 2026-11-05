@@ -7,6 +7,7 @@ import { Avatar, Icon, Modal, NetMeter, WALLET_LOOK, WalletMark, useToast } from
 import { ENTRY_TYPES, SRC_LABEL, WALLETS, durationStr, firstName, fmt, liveBalances, machineTotals, num, walletModeOf, registersOf, safeLabel, shopSafes, timeStr } from '../lib';
 import { Incoming, SendModal } from './Transfers.jsx';
 import EntryModal from './EntryModal.jsx';
+import { logAct } from '../activity.js';
 
 export function entryTitle(e) {
   if (e.type === 'expense') return [e.kindLabel || 'مصروف', e.sub, e.kind === 'supplier' ? (e.invoice === 'invoice' ? '(فاتورة)' : '(توريد بدون فاتورة)') : '', e.note].filter(Boolean).join(' · ');
@@ -215,6 +216,7 @@ export function DeleteModal({ entry, shift, profile, onClose }) {
     });
     if (entry.type === 'xfer_out' && entry.transferId) b.update(doc(db, 'transfers', entry.transferId), { status: 'cancelled', cancelledAt: serverTimestamp() });
     b.commit().catch((err) => { console.error(err); toast('مش قادرين نمسحها، جرّب تاني', 'err'); });
+    logAct('delete', `مسح «${entryTitle(entry)}» ${fmt(entry.amount)} ج${reason.trim() ? ` · السبب: ${reason.trim()}` : ''}`, { shopId: shift.shopId, shiftId: shift.id });
     toast('العملية اتمسحت واتحطت في المحذوفات');
     onClose();
   };
