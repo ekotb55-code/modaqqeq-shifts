@@ -545,7 +545,7 @@ function CashierRow({ c, shop, all, writeList, open, onToggle, onPhoto }) {
 }
 
 const ACCOUNT_GROUPS = [
-  { id: 'acc', title: 'المحاسبين والمراجعين', roles: ['accountant', 'reviewer'], hint: 'بيراجعوا الورديات ويقفلوها', tint: '' },
+  { id: 'acc', title: 'المحاسبين', roles: ['accountant', 'reviewer'], hint: 'بيراجعوا الورديات ويقفلوها', tint: '' },
   { id: 'own', title: 'المديرين والأونرز', roles: ['manager', 'owner'], hint: 'بيشوفوا التقارير والخزن بتاعة محلاتهم', tint: 'tint-violet' },
   { id: 'sup', title: 'دعم مدقق', roles: ['support'], hint: 'زي الإدارة: بيضيفوا محلات ويشيكوا على كله، بس مايقدروش يعدّلوا حسابات الإدارة', tint: 'tint-lime' },
   { id: 'adm', title: 'إدارة مدقق', roles: ['admin'], hint: 'بيشوفوا كل المحلات ويعدّلوا الإعدادات', tint: 'tint-blue' },
@@ -659,7 +659,6 @@ const PEOPLE_GROUPS = [
   { role: 'manager', title: 'مدير الفرع', hint: 'بيوصله تقرير كل وردية بعد التقفيل' },
   { role: 'owner', title: 'الأونر', hint: 'بيشوف تقارير المحل كلها' },
   { role: 'accountant', title: 'المحاسبين', hint: 'بيراجعوا ورديات المحل ويقفلوها' },
-  { role: 'reviewer', title: 'المراجعين', hint: 'بيتابعوا ويراجعوا ورا المحاسبين' },
 ];
 
 function ShopPeople({ shop }) {
@@ -682,7 +681,8 @@ function ShopPeople({ shop }) {
         <span className="tiny muted">اختار مين يتابع المحل ده. لو الاسم مش موجود اعمله حساب من «حسابات الموظفين».</span>
       </div>
       {PEOPLE_GROUPS.map((g) => {
-        const list = users.filter((u) => u.role === g.role);
+        // old «مراجع» accounts now count as accountants
+        const list = users.filter((u) => u.role === g.role || (g.role === 'accountant' && u.role === 'reviewer'));
         return (
           <div key={g.role} className="stack">
             <span className="small"><b>{g.title}</b> <span className="muted">· {g.hint}</span></span>
@@ -707,7 +707,7 @@ function ShopPeople({ shop }) {
 function StaffAccounts({ shops, profile }) {
   // Support can do everything except touch Modaqqeq admin accounts or make new admins.
   const isSupport = profile?.role === 'support';
-  const roleOptions = ['accountant', 'reviewer', 'manager', 'owner', 'support', ...(isSupport ? [] : ['admin'])];
+  const roleOptions = ['accountant', 'manager', 'owner', 'support', ...(isSupport ? [] : ['admin'])];
   const locked = (u) => isSupport && u.role === 'admin';
   const toast = useToast();
   const [users, setUsers] = useState([]);
@@ -772,7 +772,7 @@ function StaffAccounts({ shops, profile }) {
                   <Avatar name={u.name} color={u.color || '#4CC3FF'} size={40} />
                   <span className="stack" style={{ gap: 0 }}><strong>{u.name}</strong><span className="tiny muted" dir="ltr">{u.email}</span></span>
                 </span>
-                <select className="input" style={{ width: 150, height: 44 }} value={u.role} onChange={(e) => update(u, { role: e.target.value })} aria-label={`دور ${u.name}`}>
+                <select className="input" style={{ width: 150, height: 44 }} value={u.role === 'reviewer' ? 'accountant' : u.role} onChange={(e) => update(u, { role: e.target.value })} aria-label={`دور ${u.name}`}>
                   {roleOptions.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
                 </select>
                 {u.role !== 'admin' && (

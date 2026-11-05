@@ -107,7 +107,7 @@ export const ENTRY_TYPES = {
 
 export const SRC_LABEL = { drawer: 'درج الكاشير', side: 'الدرج الجانبي', insta: 'انستاباي', vf: 'فودافون كاش', 'out:owner': 'صاحب المحل' };
 
-export const ROLE_LABEL = { admin: 'إدارة مدقق', support: 'دعم مدقق', reviewer: 'مراجع', accountant: 'محاسب', manager: 'مدير فرع', owner: 'أونر', cashier: 'كاشير' };
+export const ROLE_LABEL = { admin: 'إدارة مدقق', support: 'دعم مدقق', reviewer: 'محاسب', accountant: 'محاسب', manager: 'مدير فرع', owner: 'أونر', cashier: 'كاشير' };
 
 export const isAdminRole = (r) => r === 'admin' || r === 'support';
 
