@@ -2,8 +2,9 @@ import { useMemo, useState } from 'react';
 import { collection, doc, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, useToast, WalletField, clearDraft, useDraft } from '../ui.jsx';
+import { captureDocument } from '../DocCamera.jsx';
 import { clearRemoteDraft, isDesktop, saveRemoteDraft, useRemoteDraft } from '../remoteDraft';
-import { MAIN_REG, WALLETS, colsFor, machineGroupsOf, machinePhotoLabel, walletModeOf, walletModesOf, billsTotal, emptyBills, fmt, lastOf, num, openKey, pickImage, regName, timeStr, todayKey } from '../lib';
+import { MAIN_REG, WALLETS, colsFor, machineGroupsOf, machinePhotoLabel, walletModeOf, walletModesOf, billsTotal, emptyBills, fmt, lastOf, num, openKey, regName, timeStr, todayKey } from '../lib';
 import { Bills, MachineRows, SideBox } from './parts.jsx';
 
 export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, editShift, onCancel }) {
@@ -64,7 +65,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
   };
 
   const addWalletPhoto = async (k) => {
-    const data = await pickImage(1000, 0.65);
+    const data = await captureDocument({ maxSide: 1100, quality: 0.7 });
     if (data) { setWphotos((p) => ({ ...p, [k]: data })); toast('الصورة اترفعت · كمّل عادي'); }
   };
   const walletPhotoDocs = (pb, shiftId) => Object.entries(wphotos).forEach(([k, data]) => {
@@ -72,7 +73,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
     pb.set(doc(collection(db, 'shifts', shiftId, 'photos')), { kind: 'wallet', stage: 'receive', wallet: k, label: w?.label || k, amount: num(wallets[k]), data, check: 'pending', createdAt: serverTimestamp() });
   });
   const addPhoto = async (i) => {
-    const data = await pickImage(1000, 0.65);
+    const data = await captureDocument({ maxSide: 1100, quality: 0.7 });
     if (data) { setPhotos((p) => ({ ...p, [i]: data })); toast('الصورة اترفعت · كمّل عادي'); }
   };
 

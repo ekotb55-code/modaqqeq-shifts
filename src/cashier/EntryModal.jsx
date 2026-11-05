@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, Modal, useToast, WALLET_LOOK, WalletMark } from '../ui.jsx';
-import { ENTRY_TYPES, OWNER, SRC_LABEL, WALLETS, WEEKDAYS, walletModeOf, fmt, num, pickImage, safeLabel, shopSafes } from '../lib';
+import { captureDocument } from '../DocCamera.jsx';
+import { ENTRY_TYPES, OWNER, SRC_LABEL, WALLETS, WEEKDAYS, walletModeOf, fmt, num, safeLabel, shopSafes } from '../lib';
 
 const META = {
   expense: { title: 'مصروف جديد', icon: 'up' },
@@ -84,7 +85,7 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
   const reasonValue = reason === '__new' ? custom.trim() : reason;
 
   const takePhoto = async () => {
-    const data = await pickImage(1100, 0.65);
+    const data = await captureDocument({ maxSide: 1200, quality: 0.7 });
     if (data) setPhoto(data);
   };
 
