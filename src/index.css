@@ -558,18 +558,61 @@ body.net-bad .topbar { background: #FFF4E0; }
 .phone-hand { display: flex; align-items: center; gap: 12px; background: var(--lime-soft); color: var(--ink); border-radius: 22px; padding: 14px 18px; max-width: 620px; width: 100%; }
 .ph-ic { font-size: 30px; }
 
-/* ───────── Document camera ───────── */
-.cam-ui { position: fixed; inset: 0; z-index: 200; background: #0E0D1A; color: #fff; display: flex; flex-direction: column; }
-.cam-top { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; }
-.cam-x { width: 44px; height: 44px; border-radius: 999px; border: 0; background: rgba(255,255,255,.15); color: #fff; font-size: 18px; }
-.cam-view { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-.cam-view video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+
+
+/* ───── document scanner camera ───── */
+.cam-ui { position: fixed; inset: 0; z-index: 400; background: #000; color: #fff; display: flex; flex-direction: column; -webkit-user-select: none; user-select: none; }
+.cam-live, .cam-rev { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.cam-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: calc(8px + env(safe-area-inset-top)) 10px 6px; }
+.cam-ib { width: 44px; height: 44px; flex: none; border-radius: 999px; border: 0; background: transparent; color: #fff; display: grid; place-items: center; }
+.cam-ib.on { color: #FFD54F; }
+.cam-title { flex: 1; text-align: center; font-size: 14px; font-weight: 700; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cam-view { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; }
+.cam-view video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .cam-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-.cam-result { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 12px; }
-.cam-err { display: flex; flex-direction: column; gap: 16px; align-items: center; text-align: center; padding: 24px; max-width: 420px; line-height: 1.8; }
-.cam-hint { text-align: center; font-size: 13px; opacity: .85; padding: 8px 16px; min-height: 20px; }
-.cam-bar { display: flex; align-items: center; justify-content: space-around; padding: 14px 16px calc(18px + env(safe-area-inset-bottom)); gap: 12px; }
-.cam-shoot { width: 76px; height: 76px; border-radius: 999px; border: 6px solid #fff; background: #B6F000; box-shadow: 0 0 0 4px rgba(182,240,0,.35); }
-.cam-shoot:active { transform: scale(.94); }
-.cam-side { min-width: 76px; display: flex; flex-direction: column; align-items: center; gap: 2px; border: 0; background: transparent; color: #fff; font-size: 22px; font-family: inherit; }
-.cam-side span { font-size: 12px; font-weight: 700; }
+.cam-toast { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 28px); padding: 9px 18px; border-radius: 999px; background: rgba(32,33,36,.9); color: #fff; font-size: 13.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 2px 10px rgba(0,0,0,.4); transition: background .25s; }
+.cam-toast.found { background: rgba(26,86,200,.92); }
+.cam-flash { position: absolute; inset: 0; background: #fff; pointer-events: none; animation: camflash .4s ease-out forwards; }
+@keyframes camflash { from { opacity: .9; } to { opacity: 0; } }
+.cam-err { position: relative; display: flex; flex-direction: column; gap: 14px; align-items: stretch; text-align: center; padding: 24px; max-width: 380px; line-height: 1.8; }
+.cam-controls { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 16px 16px calc(12px + env(safe-area-inset-bottom)); }
+.cam-row { width: 100%; max-width: 400px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; }
+.cam-gal { justify-self: center; width: 50px; height: 50px; border-radius: 999px; border: 2px solid rgba(255,255,255,.85); background: transparent; color: #fff; display: grid; place-items: center; }
+.cam-shoot { position: relative; width: 80px; height: 80px; padding: 0; border: 0; border-radius: 999px; background: transparent; display: grid; place-items: center; }
+.cam-shoot svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.cam-shoot svg circle { transition: stroke-dasharray .14s linear; }
+.cam-shoot i { width: 62px; height: 62px; border-radius: 999px; background: #fff; transition: transform .15s, background .2s; }
+.cam-shoot:active i { transform: scale(.88); }
+.cam-shoot.scanning i { background: #C9CCD1; }
+.cam-shoot:disabled i { background: #5f6368; }
+.cam-seg { display: flex; gap: 2px; padding: 4px; border-radius: 999px; background: #2A2B2E; }
+.cam-seg button { border: 0; background: transparent; color: #E8EAED; font: inherit; font-size: 13.5px; font-weight: 700; padding: 8px 18px; border-radius: 999px; }
+.cam-seg button.on { background: #E8EAED; color: #202124; }
+.cam-info { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; opacity: .72; text-align: center; line-height: 1.6; }
+.cam-info svg { flex: none; }
+.cam-rev .cam-panel { position: relative; flex: 1; min-height: 0; margin: 4px 14px 0; padding: 14px 14px 70px; border-radius: 20px; background: #1E1F22; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.cam-panel img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 4px; box-shadow: 0 8px 28px rgba(0,0,0,.55); }
+.cam-panel-tools { position: absolute; bottom: 12px; inset-inline-end: 12px; display: flex; gap: 10px; }
+.cam-note { position: absolute; bottom: 20px; inset-inline-start: 14px; inset-inline-end: 130px; font-size: 12px; color: #FFD54F; line-height: 1.5; }
+.cam-round { width: 48px; height: 48px; border-radius: 999px; border: 0; background: #303134; color: #fff; display: grid; place-items: center; }
+.cam-chips { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; padding: 14px 14px 0; }
+.cam-chip { display: inline-flex; align-items: center; gap: 8px; height: 42px; padding: 0 16px; border: 0; border-radius: 999px; background: #303134; color: #fff; font: inherit; font-size: 14px; font-weight: 700; }
+.cam-chip.on { background: #C2DBFF; color: #0B2A5B; }
+.cam-filters { display: flex; justify-content: center; gap: 12px; overflow-x: auto; padding: 12px 14px 0; }
+.cam-fl { flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; border: 0; background: transparent; color: #fff; font: inherit; font-size: 12px; font-weight: 700; }
+.cam-fl img { width: 64px; height: 64px; object-fit: cover; border-radius: 12px; border: 3px solid transparent; background: #303134; }
+.cam-fl.on img { border-color: #8AB4F8; }
+.cam-fl.on span { color: #8AB4F8; }
+.cam-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 16px 14px calc(14px + env(safe-area-inset-bottom)); }
+.cam-next { height: 54px; border: 0; border-radius: 999px; background: #A8C7FA; color: #062E6F; font: inherit; font-size: 16px; font-weight: 800; }
+.cam-next:disabled { opacity: .5; }
+.cam-cancel { height: 54px; border: 1.5px solid #5F6368; border-radius: 999px; background: transparent; color: #E8EAED; font: inherit; font-size: 15px; font-weight: 700; }
+.cam-cropwrap { position: relative; flex: 1; min-height: 0; margin: 10px 26px 0; }
+.cam-cropbox { position: absolute; touch-action: none; }
+.cam-cropbox img { display: block; width: 100%; height: 100%; pointer-events: none; }
+.cam-cropbox svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.cam-h { position: absolute; width: 46px; height: 46px; transform: translate(-50%, -50%); display: grid; place-items: center; touch-action: none; cursor: grab; }
+.cam-h::after { content: ''; width: 20px; height: 20px; border-radius: 999px; background: #fff; border: 3px solid #4F8CFF; box-shadow: 0 1px 5px rgba(0,0,0,.6); transition: transform .12s; }
+.cam-h.on::after { transform: scale(1.3); }
+.cam-loupe { position: absolute; border-radius: 999px; border: 3px solid #fff; background-color: #000; background-repeat: no-repeat; box-shadow: 0 6px 18px rgba(0,0,0,.6); pointer-events: none; }
+.cam-loupe::after { content: ''; position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; transform: translate(-50%, -50%); border: 2px solid #4F8CFF; border-radius: 999px; }
