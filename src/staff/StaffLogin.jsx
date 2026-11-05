@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
+import { browserLocalPersistence, browserSessionPersistence, createUserWithEmailAndPassword, sendPasswordResetEmail, setPersistence, signInWithEmailAndPassword } from 'firebase/auth';
 import { auth, SUPER_ADMINS } from '../firebase';
 import { InstallButton, useToast } from '../ui.jsx';
 import { cashierEmail, cashierPassword } from '../lib';
@@ -18,7 +18,9 @@ const MSG = {
 // One login for everybody: cashiers type their username + PIN, staff type their email + password.
 export default function Login({ error }) {
   const toast = useToast();
-  const [user, setUser] = useState('');
+  const saved = (() => { try { return JSON.parse(localStorage.getItem('mdq-remember') || 'null'); } catch { return null; } })();
+  const [user, setUser] = useState(saved?.user || '');
+  const [remember, setRemember] = useState(saved ? saved.on !== false : true);
   const [pass, setPass] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
@@ -29,6 +31,9 @@ export default function Login({ error }) {
     e.preventDefault();
     setBusy(true); setMsg('');
     try {
+      // "افتكرني": stay signed in on this phone and keep the login name; otherwise sign out when the app closes.
+      await setPersistence(auth, remember ? browserLocalPersistence : browserSessionPersistence).catch(() => {});
+      try { localStorage.setItem('mdq-remember', JSON.stringify(remember ? { on: true, user: user.trim() } : { on: false })); } catch { /* ignore */ }
       if (setup) {
         if (!SUPER_ADMINS.includes(user.trim().toLowerCase())) { setMsg('إنشاء الحساب هنا لإدارة مدقق بس. باقي الحسابات بتتعمل من جوه التطبيق.'); return; }
         await createUserWithEmailAndPassword(auth, user.trim(), pass);
@@ -64,6 +69,16 @@ export default function Login({ error }) {
             <label className="field">{setup || isEmail ? 'الباسورد' : 'الرقم السري'}
               <input className="input" type="password" inputMode={!setup && !isEmail && user ? 'numeric' : undefined} autoComplete={setup ? 'new-password' : 'current-password'} dir="ltr" value={pass} onChange={(e) => setPass(e.target.value)} required minLength={setup ? 6 : 4} />
             </label>
+            {!setup && (
+              <label className="remember">
+                <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+                <span className="rm-box" aria-hidden="true">{remember ? '✓' : ''}</span>
+                <span className="stack" style={{ gap: 0 }}>
+                  <strong>افتكرني</strong>
+                  <span className="tiny muted">{remember ? 'هتفضل داخل على الجهاز ده واسمك محفوظ' : 'هتخرج لوحدك لما تقفل التطبيق'}</span>
+                </span>
+              </label>
+            )}
             <button type="submit" className="btn full" disabled={busy}>{busy ? 'لحظة…' : setup ? 'اعمل الحساب' : 'دخول'}</button>
             <div className="spread">
               {!setup && <button type="button" className="link" onClick={reset}>نسيت الباسورد؟</button>}

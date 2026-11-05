@@ -9,7 +9,12 @@ export const THEMES = [
   { id: 'mint', name: 'نعناعي', sw: ['#0E9384', '#FFD23F', '#7FD8C9', '#FF8A5B'] },
   { id: 'sunset', name: 'غروب', sw: ['#E4572E', '#FFC857', '#9B5DE5', '#2EC4B6'] },
   { id: 'night', name: 'ليلي', sw: ['#4C2FB0', '#00E0B0', '#FF6FB5', '#FFB547'] },
-  { id: 'girly', name: 'بناتي', sw: ['#E0569B', '#FFB3D9', '#C9A7FF', '#FFC9A8'] },
+  { id: 'girly', name: 'بناتي وردي', sw: ['#E0569B', '#FFB3D9', '#C9A7FF', '#FFC9A8'] },
+  { id: 'ocean', name: 'محيط', sw: ['#0077B6', '#FFD166', '#48CAE4', '#EF476F'] },
+  { id: 'olive', name: 'زيتوني', sw: ['#4F772D', '#F4A259', '#90A955', '#BC4B51'] },
+  { id: 'coffee', name: 'قهوة', sw: ['#6F4E37', '#F2C14E', '#C08552', '#7FB7BE'] },
+  { id: 'peach', name: 'بناتي خوخي', sw: ['#FF7F6E', '#9EE6CF', '#FFC2B4', '#FFE29A'] },
+  { id: 'lavender', name: 'بناتي لافندر', sw: ['#9B6BD6', '#BDE0FE', '#FFC8DD', '#E2CFFF'] },
 ];
 
 const key = (uid) => `mdq-theme-${uid || 'guest'}`;
