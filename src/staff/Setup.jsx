@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
-import { db } from '../firebase';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { auth, db } from '../firebase';
 import { Avatar, Icon, Modal, useToast } from '../ui.jsx';
 import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, REG_KIND, allOpen, newRegister, newExpenseType, RATE_FROM, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, num, pickImage } from '../lib';
 
@@ -536,6 +537,60 @@ function CashierRow({ c, shop, all, writeList, open, onToggle, onPhoto }) {
   );
 }
 
+function StaffPassChange({ u, onClose }) {
+  const toast = useToast();
+  const [known, setKnown] = useState(undefined);
+  const [old, setOld] = useState('');
+  const [a, setA] = useState('');
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    getDoc(doc(db, 'cashierSecrets', u.id)).then((s) => setKnown(s.exists() ? s.data().password || null : null)).catch(() => setKnown(null));
+  }, [u.id]);
+  const save = async () => {
+    const cur = known || old;
+    if (!cur) { toast('اكتب الباسورد الحالي', 'err'); return; }
+    if (a.length < 6) { toast('الباسورد الجديد 6 حروف أو أرقام على الأقل', 'err'); return; }
+    setBusy(true);
+    try {
+      await changeAccountPassword(u.email, cur, a);
+      await setDoc(doc(db, 'cashierSecrets', u.id), { password: a, updatedAt: serverTimestamp() }, { merge: true });
+      toast(`الباسورد بتاع ${u.name} اتغيّر · ابعتهوله`);
+      onClose();
+    } catch (e) {
+      console.error(e);
+      toast(['auth/invalid-credential', 'auth/wrong-password'].includes(e.code) ? 'الباسورد الحالي غلط' : e.code === 'auth/too-many-requests' ? 'محاولات كتير، استنى شوية' : 'مش قادرين نغيّره، اتأكد من النت', 'err');
+      setBusy(false);
+    }
+  };
+  const reset = async () => {
+    try { await sendPasswordResetEmail(auth, u.email); toast(`بعتنا رابط تغيير الباسورد على ${u.email}`); onClose(); } catch { toast('مش قادرين نبعت الإيميل · اتأكد إن الإيميل حقيقي', 'err'); }
+  };
+  return (
+    <Modal title={`باسورد ${u.name}`} icon="lock" color="var(--violet)" onClose={onClose} width={440}>
+      {known === undefined ? <span className="muted">لحظة…</span> : (
+        <>
+          <span className="tiny muted" dir="ltr" style={{ textAlign: 'right' }}>{u.email}</span>
+          {known ? (
+            <span className="small" style={{ background: 'var(--bg)', borderRadius: 14, padding: '10px 12px', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+              <span>الباسورد الحالي: <b dir="ltr">{show ? known : '••••••'}</b></span>
+              <button type="button" className="link" onClick={() => setShow(!show)}>{show ? 'خبّيه' : 'اعرضه'}</button>
+            </span>
+          ) : (
+            <label className="field">الباسورد الحالي
+              <input className="input" dir="ltr" value={old} onChange={(e) => setOld(e.target.value)} />
+              <span className="tiny muted">مش متسجل عندنا لأن الحساب اتعمل قبل الميزة دي · بعد أول تغيير هيبقى متسجل</span>
+            </label>
+          )}
+          <label className="field">الباسورد الجديد<input className="input" dir="ltr" value={a} onChange={(e) => setA(e.target.value)} placeholder="6 حروف أو أرقام على الأقل" autoFocus /></label>
+          <button type="button" className="btn full" onClick={save} disabled={busy}>{busy ? 'لحظة…' : 'حفظ الباسورد الجديد'}</button>
+          {!known && <button type="button" className="link" onClick={reset}>مش فاكر الباسورد الحالي؟ ابعت رابط تغيير على إيميله</button>}
+        </>
+      )}
+    </Modal>
+  );
+}
+
 function PinChange({ c, info, onClose }) {
   const toast = useToast();
   const [known, setKnown] = useState(undefined);
@@ -636,6 +691,7 @@ function StaffAccounts({ shops }) {
   const toast = useToast();
   const [users, setUsers] = useState([]);
   const [form, setForm] = useState({ name: '', email: '', pass: '', role: 'accountant', shopIds: [] });
+  const [passFor, setPassFor] = useState(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => onSnapshot(collection(db, 'users'), (q) => setUsers(q.docs.map((d) => ({ id: d.id, ...d.data() })).filter((u) => u.role !== 'cashier' && !u.disabled)), () => {}), []);
   const shopName = (id) => shops.find((s) => s.id === id)?.name || '؟';
@@ -648,6 +704,7 @@ function StaffAccounts({ shops }) {
     try {
       const uid = await createAccount(email.trim(), pass);
       await setDoc(doc(db, 'users', uid), { role, name: name.trim(), email: email.trim(), shopIds, color: AVATAR_BG[users.length % AVATAR_BG.length], createdAt: serverTimestamp() });
+      setDoc(doc(db, 'cashierSecrets', uid), { password: pass, updatedAt: serverTimestamp() }).catch(() => {});
       setForm({ name: '', email: '', pass: '', role: 'accountant', shopIds: [] });
       toast('الحساب اتعمل · ابعتله الإيميل والباسورد');
     } catch (e) {
@@ -695,9 +752,11 @@ function StaffAccounts({ shops }) {
                 {shops.map((s) => <button key={s.id} type="button" className={'chip sm' + ((u.shopIds || []).includes(s.id) ? ' on' : '')} onClick={() => update(u, { shopIds: toggleShop(u.shopIds || [], s.id) })}>{shopName(s.id)}</button>)}
               </div>
             )}
+            <button type="button" className="btn sm soft" onClick={() => setPassFor(u)} aria-label={`غيّر باسورد ${u.name}`}><Icon d="lock" size={15} />الباسورد</button>
             <button type="button" className="copy" aria-label={`اقفل حساب ${u.name}`} title="اقفل الحساب" onClick={() => window.confirm(`تقفل حساب ${u.name}؟`) && update(u, { disabled: true })}><Icon d="trash" size={16} /></button>
           </div>
         ))}
+        {passFor && <StaffPassChange u={passFor} onClose={() => setPassFor(null)} />}
       </section>
     </div>
   );

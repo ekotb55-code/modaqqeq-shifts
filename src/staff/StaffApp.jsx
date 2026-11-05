@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { signOut } from 'firebase/auth';
-import { collection, doc, onSnapshot, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { collection, doc, onSnapshot, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
+import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
 import { auth, db } from '../firebase';
-import { Avatar, Icon, useToast } from '../ui.jsx';
+import { Avatar, Icon, Modal, useToast } from '../ui.jsx';
 import { DEFAULT_SHOP, ROLE_LABEL, allOpen } from '../lib';
 import Review from './Review.jsx';
 import Ledger from './Ledger.jsx';
@@ -25,6 +26,7 @@ export default function StaffApp({ profile }) {
   const [tab, setTab] = useState(tabs[0].id);
   const [theme, setTheme] = useTheme(profile);
   const [themeOpen, setThemeOpen] = useState(false);
+  const [pwOpen, setPwOpen] = useState(false);
   // The branch chosen at the top applies to every tab. 'all' = every branch.
   const [shopSel, setShopSelRaw] = useState(() => { try { return sessionStorage.getItem('mdq-staff-shop') || null; } catch { return null; } });
   const setShopSel = (v) => { setShopSelRaw(v); try { if (v) sessionStorage.setItem('mdq-staff-shop', v); else sessionStorage.removeItem('mdq-staff-shop'); } catch { /* ignore */ } };
@@ -62,6 +64,7 @@ export default function StaffApp({ profile }) {
   return (
     <div>
       <NetStrip />
+      {pwOpen && <MyPassword onClose={() => setPwOpen(false)} />}
       {themeOpen && <ThemePicker value={theme} onChange={setTheme} onClose={() => setThemeOpen(false)} />}
       <header className="topbar">
         <div className="topbar-in">
@@ -77,6 +80,7 @@ export default function StaffApp({ profile }) {
               <Avatar name={profile.name} photo={profile.photo} color={profile.color || '#4CC3FF'} size={46} />
               <span className="stack" style={{ gap: 0 }}><strong style={{ fontSize: 15 }}>{profile.name}</strong><span className="tiny muted">{ROLE_LABEL[profile.role]}</span></span>
             </span>
+            <button type="button" className="icon-btn" aria-label="غيّر الباسورد بتاعي" title="غيّر الباسورد بتاعي" onClick={() => setPwOpen(true)}><Icon d="lock" /></button>
             <button type="button" className="icon-btn" aria-label="غيّر شكل التطبيق" title="غيّر شكل التطبيق" onClick={() => setThemeOpen(true)}><Icon d="palette" /></button>
             <button type="button" className="icon-btn" aria-label="تسجيل خروج" title="تسجيل خروج" onClick={() => signOut(auth)}><Icon d="logout" /></button>
           </div>
@@ -171,5 +175,37 @@ export function BranchChooser({ shops, onPick, onNew }) {
         )}
       </div>
     </div>
+  );
+}
+
+function MyPassword({ onClose }) {
+  const toast = useToast();
+  const [cur, setCur] = useState('');
+  const [a, setA] = useState('');
+  const [b, setB] = useState('');
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    if (a.length < 6) { toast('الباسورد الجديد 6 حروف أو أرقام على الأقل', 'err'); return; }
+    if (a !== b) { toast('الباسوردين مش زي بعض', 'err'); return; }
+    setBusy(true);
+    try {
+      const u = auth.currentUser;
+      await reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, cur));
+      await updatePassword(u, a);
+      setDoc(doc(db, 'cashierSecrets', u.uid), { password: a, updatedAt: serverTimestamp() }, { merge: true }).catch(() => {});
+      toast('الباسورد اتغيّر');
+      onClose();
+    } catch (e) {
+      toast(['auth/invalid-credential', 'auth/wrong-password'].includes(e.code) ? 'الباسورد الحالي غلط' : 'مش قادرين نغيّره، اتأكد من النت', 'err');
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal title="غيّر الباسورد بتاعك" icon="lock" color="var(--violet)" onClose={onClose} width={420}>
+      <label className="field">الباسورد الحالي<input className="input" type="password" dir="ltr" value={cur} onChange={(e) => setCur(e.target.value)} autoFocus /></label>
+      <label className="field">الباسورد الجديد<input className="input" type="password" dir="ltr" value={a} onChange={(e) => setA(e.target.value)} /></label>
+      <label className="field">اكتبه تاني<input className="input" type="password" dir="ltr" value={b} onChange={(e) => setB(e.target.value)} /></label>
+      <button type="button" className="btn full" onClick={save} disabled={busy}>{busy ? 'لحظة…' : 'حفظ'}</button>
+    </Modal>
   );
 }
