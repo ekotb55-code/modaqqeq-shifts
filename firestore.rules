@@ -40,6 +40,11 @@ service cloud.firestore {
       allow write: if isAdmin() || (signedIn() && request.auth.uid == uid);
     }
 
+    // Numbers typed on the computer, waiting for the photos from the phone. Only the owner sees them.
+    match /drafts/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
     match /users/{uid} {
       allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
       allow write: if isAdmin();

@@ -555,3 +555,5 @@ body.net-bad .topbar { background: #FFF4E0; }
 .rm-box { width: 28px; height: 28px; border-radius: 9px; border: 2px solid var(--blue); background: #fff; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 900; flex-shrink: 0; transition: background .15s; }
 .remember input:checked + .rm-box { background: var(--blue); }
 .remember input:focus-visible + .rm-box { outline: 3px solid var(--blue); outline-offset: 2px; }
+.phone-hand { display: flex; align-items: center; gap: 12px; background: var(--lime-soft); color: var(--ink); border-radius: 22px; padding: 14px 18px; max-width: 620px; width: 100%; }
+.ph-ic { font-size: 30px; }

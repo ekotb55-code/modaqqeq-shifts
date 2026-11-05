@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, useToast, WalletField, WalletMark, clearDraft, useDraft } from '../ui.jsx';
+import { clearRemoteDraft, isDesktop, saveRemoteDraft, useRemoteDraft } from '../remoteDraft';
 import { MAIN_REG, WALLETS, colsFor, machineGroupsOf, machinePhotoLabel, walletModeOf, walletModesOf, billsTotal, computeShift, durationStr, emptyBills, fmt, lastKey, num, openKey, pickImage, timeStr } from '../lib';
 import { newTransfer } from './Transfers.jsx';
 import { Bills, MachineRows, SideBox } from './parts.jsx';
@@ -61,6 +62,19 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
     toast(sideDiff < 0 ? `حط ${fmt(-sideDiff)} ج من درجك في الجانبي، وبعدين عدّ الدرج تاني` : `رجّع ${fmt(sideDiff)} ج من الجانبي لدرجك، وبعدين عدّ الدرج تاني`);
   };
   const [wphotos, setWphotos] = useDraft(dkey, 'wphotos', {});
+  const [sentToPhone, setSentToPhone] = useState(false);
+  useRemoteDraft(profile.id, dkey, (v, ph) => {
+    ['bills', 'side', 'mvals', 'keepDrawer', 'keepSide', 'wtyped', 'wopen'].forEach((k) => { if (v[k] !== undefined) ({ bills: setBills, side: setSide, mvals: setMvals, keepDrawer: setKeepDrawer, keepSide: setKeepSide, wtyped: setWtyped, wopen: setWopen })[k](v[k]); });
+    if (ph.photos) setPhotos((p) => ({ ...ph.photos, ...p }));
+    if (ph.wphotos) setWphotos((p) => ({ ...ph.wphotos, ...p }));
+    toast('الأرقام اللي اتكتبت على الكمبيوتر وصلت هنا · صوّر وسلّم');
+  });
+  const sendToPhone = async () => {
+    try {
+      await saveRemoteDraft(profile.id, dkey, { bills, side, mvals, keepDrawer, keepSide, wtyped, wopen }, { photos, wphotos });
+      setSentToPhone(true);
+    } catch (e) { console.error(e); toast('مش قادرين نحفظ، اتأكد من النت', 'err'); }
+  };
   const addWalletPhoto = async (k) => {
     const data = await pickImage(1000, 0.65);
     if (data) { setWphotos((p) => ({ ...p, [k]: data })); toast('الصورة اترفعت · كمّل عادي'); }
@@ -110,6 +124,7 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
       const offline = !navigator.onLine;
       if (offline) p.catch(() => {}); else await p;
       clearDraft(dkey);
+      clearRemoteDraft(profile.id, dkey);
       onDone({
         offline,
         stats: [
@@ -216,6 +231,17 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
         </section>
       )}
       <div className="recv-done">
+          {isDesktop() && (machines.length > 0 || shopWallets.length > 0) && (sentToPhone ? (
+            <div className="phone-hand">
+              <span className="ph-ic">📲</span>
+              <span className="stack" style={{ gap: 2 }}>
+                <strong>اتحفظ · كمّل من الموبايل</strong>
+                <span className="small">افتح التطبيق على الموبايل بنفس الحساب ودوس «التسليم»، هتلاقي الأرقام متكتبة. صوّر الشاشات وسلّم من هناك.</span>
+              </span>
+            </div>
+          ) : (
+            <button type="button" className="btn soft full" style={{ maxWidth: 520 }} onClick={sendToPhone}>📲 احفظ وكمّل الصور من الموبايل</button>
+          ))}
           <button type="button" className="btn full" style={{ height: 66, fontSize: 20 }} onClick={send} disabled={busy}>
             <span className="ic"><Icon d="send" size={18} /></span>{busy ? 'لحظة…' : 'سلّم وابعت للمحاسب'}
           </button>

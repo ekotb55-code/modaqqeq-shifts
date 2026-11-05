@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { collection, doc, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, useToast, WalletField, clearDraft, useDraft } from '../ui.jsx';
+import { clearRemoteDraft, isDesktop, saveRemoteDraft, useRemoteDraft } from '../remoteDraft';
 import { MAIN_REG, WALLETS, colsFor, machineGroupsOf, machinePhotoLabel, walletModeOf, walletModesOf, billsTotal, emptyBills, fmt, lastOf, num, openKey, pickImage, regName, timeStr, todayKey } from '../lib';
 import { Bills, MachineRows, SideBox } from './parts.jsx';
 
@@ -36,12 +37,31 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
   const walletsOut = () => Object.fromEntries(walletKeys.map((w) => [w.key, num(wallets[w.key])]));
   const mChanged = mvals.filter((v, i) => String(v).trim() !== '' && num(v) !== num(prevMachines[i])).length;
   // New receive: every wallet and machine number typed by hand, each with its photo.
-  const missing = editShift ? [] : [
+  const missingNums = editShift ? [] : [
     ...walletKeys.filter((w) => String(wallets[w.key] ?? '').trim() === '').map((w) => `اكتب رصيد ${w.label}`),
-    ...walletKeys.filter((w) => !wphotos[w.key]).map((w) => `صوّر ${w.label}`),
     ...machines.map((m, i) => (String(mvals[i] ?? '').trim() === '' ? `اكتب رصيد ${m.machine} · ${m.account}` : null)).filter(Boolean),
+  ];
+  const missingPhotos = editShift ? [] : [
+    ...walletKeys.filter((w) => !wphotos[w.key]).map((w) => `صوّر ${w.label}`),
     ...machineGroupsOf(machines).filter((g) => !photos[g.items[0]]).map((g) => `صوّر ${g.name}`),
   ];
+  const missing = [...missingNums, ...missingPhotos];
+  const [sentToPhone, setSentToPhone] = useState(false);
+  const remote = useRemoteDraft(editShift ? null : profile.id, dkey, (v, ph) => {
+    if (v.bills) setBills(v.bills);
+    if (v.side !== undefined) setSide(v.side);
+    if (v.mvals) setMvals(v.mvals);
+    if (v.wallets) setWallets(v.wallets);
+    if (ph.photos) setPhotos((p) => ({ ...ph.photos, ...p }));
+    if (ph.wphotos) setWphotos((p) => ({ ...ph.wphotos, ...p }));
+    toast('الأرقام اللي اتكتبت على الكمبيوتر وصلت هنا · صوّر وكمّل');
+  });
+  const sendToPhone = async () => {
+    try {
+      await saveRemoteDraft(profile.id, dkey, { bills, side, mvals, wallets }, { photos, wphotos });
+      setSentToPhone(true);
+    } catch (e) { console.error(e); toast('مش قادرين نحفظ، اتأكد من النت', 'err'); }
+  };
 
   const addWalletPhoto = async (k) => {
     const data = await pickImage(1000, 0.65);
@@ -77,6 +97,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
       if (navigator.onLine) await p; else p.catch(() => {});
       toast('الاستلام اتعدّل · المحاسب هيشوف التعديل');
       clearDraft(dkey);
+      clearRemoteDraft(profile.id, dkey);
       onStarted();
     } catch (e) { console.error(e); toast('حصلت مشكلة، جرّب تاني', 'err'); }
     setBusy(false);
@@ -118,6 +139,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
       if (!navigator.onLine) toast('اتحفظ على الجهاز وهيترفع لما النت يرجع');
       else { await p; toast('اتأكد الاستلام · الوردية بدأت'); }
       clearDraft(dkey);
+      clearRemoteDraft(profile.id, dkey);
       onStarted();
     } catch (e) {
       console.error(e);
@@ -158,6 +180,20 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
         </section>
       )}
       <div className="recv-done">
+        {remote && remote.device && !sentToPhone && missingPhotos.length > 0 && !isDesktop() && <span className="badge info" style={{ whiteSpace: 'normal', textAlign: 'center' }}>📲 الأرقام جت من الكمبيوتر · فاضل الصور بس</span>}
+        {isDesktop() && missingNums.length === 0 && missingPhotos.length > 0 && (
+          sentToPhone ? (
+            <div className="phone-hand">
+              <span className="ph-ic">📲</span>
+              <span className="stack" style={{ gap: 2 }}>
+                <strong>اتحفظ · كمّل من الموبايل</strong>
+                <span className="small">افتح التطبيق على الموبايل بنفس الحساب، هتلاقي الأرقام متكتبة. صوّر الشاشات ودوس «تمام، استلمت» من هناك.</span>
+              </span>
+            </div>
+          ) : (
+            <button type="button" className="btn soft full" style={{ maxWidth: 520 }} onClick={sendToPhone}>📲 احفظ وكمّل الصور من الموبايل</button>
+          )
+        )}
         {missing.length > 0 && (
           <span className="badge warn" style={{ whiteSpace: 'normal', textAlign: 'center', lineHeight: 1.7, padding: '8px 14px' }}>
             فاضل: {missing.slice(0, 4).join(' · ')}{missing.length > 4 ? ` و${missing.length - 4} كمان` : ''}
