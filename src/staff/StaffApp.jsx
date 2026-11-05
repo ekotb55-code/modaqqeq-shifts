@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { signOut } from 'firebase/auth';
-import { collection, doc, onSnapshot, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
+import { collection, deleteField, doc, onSnapshot, serverTimestamp, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
 import { auth, db, SUPER_ADMINS } from '../firebase';
 import Activity from './Activity.jsx';
+import MyPhoto from '../MyPhoto.jsx';
 import { Avatar, Icon, Modal, useToast } from '../ui.jsx';
 import { DEFAULT_SHOP, ROLE_LABEL, allOpen, isAdminRole } from '../lib';
 import Review from './Review.jsx';
@@ -32,6 +33,8 @@ export default function StaffApp({ profile }) {
   ].filter(Boolean);
   const [tab, setTab] = useState(tabs[0].id);
   const [theme, setTheme] = useTheme(profile);
+  const [photoOpen, setPhotoOpen] = useState(false);
+  const [myPhoto, setMyPhoto] = useState(profile.photo || null);
   const [themeOpen, setThemeOpen] = useState(false);
   useTour('s-shell', staffShell(tabs), { uid: profile.id, prio: 0 });
   // what each staff member opened, for the activity log
@@ -79,6 +82,14 @@ export default function StaffApp({ profile }) {
     <div>
       <NetStrip />
       <TourHost />
+      {photoOpen && (
+        <MyPhoto profile={profile} photo={myPhoto} onClose={() => setPhotoOpen(false)}
+          onSave={async (data) => {
+            await updateDoc(doc(db, 'users', profile.id), { photo: data || deleteField() });
+            setMyPhoto(data || null);
+            logAct('photo_self', data ? 'غيّر صورته' : 'شال صورته');
+          }} />
+      )}
       {pwOpen && <MyPassword onClose={() => setPwOpen(false)} />}
       {themeOpen && <ThemePicker value={theme} onChange={setTheme} onClose={() => setThemeOpen(false)} />}
       <header className="topbar">
@@ -91,8 +102,11 @@ export default function StaffApp({ profile }) {
             {tabs.map((t) => <button key={t.id} type="button" className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)} aria-current={tab === t.id ? 'page' : undefined}>{t.label}</button>)}
           </nav>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span className="who">
-              <Avatar name={profile.name} photo={profile.photo} color={profile.color || '#4CC3FF'} size={46} />
+            <span className="who" data-tour="me">
+              <button type="button" className="who-btn" onClick={() => setPhotoOpen(true)} aria-label="غيّر صورتك" title="غيّر صورتك">
+                <Avatar name={profile.name} photo={myPhoto} color={profile.color || '#4CC3FF'} size={46} />
+                <span className="who-badge"><Icon d="cam" size={11} stroke={2.6} /></span>
+              </button>
               <span className="stack" style={{ gap: 0 }}><strong style={{ fontSize: 15 }}>{profile.name}</strong><span className="tiny muted">{ROLE_LABEL[profile.role]}</span></span>
             </span>
             <button type="button" className="icon-btn" aria-label="غيّر الباسورد بتاعي" title="غيّر الباسورد بتاعي" onClick={() => setPwOpen(true)}><Icon d="lock" /></button>

@@ -47,6 +47,7 @@ const TAB_TEXT = {
 export const staffShell = (tabs) => [
   { hello: true, title: 'أهلاً بيك في لوحة مدقق 👋', text: 'هنفرّجك بسرعة على كل حاجة علشان تبدأ على طول.' },
   { at: 'branch', title: 'الفرع', text: 'اختار الفرع اللي شغّال عليه من هنا. كل الصفحات بتشتغل على الفرع ده، وتقدر تختار «كل الفروع» مرة واحدة.' },
+  { at: 'me', title: 'صورتك', text: 'دوس على صورتك علشان تغيّرها: سيلفي من الكاميرا الأمامية أو صورة من الموبايل.' },
   { at: 'tabs', title: 'الأقسام', text: tabs.map((t) => TAB_TEXT[t.id]).filter(Boolean).join('\n') },
   HELP,
 ];

@@ -1,32 +1,24 @@
 import { useEffect, useMemo, useState } from 'react';
 import { signOut, updatePassword } from 'firebase/auth';
-import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, deleteField, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Icon, Avatar, Modal, Spinner, useToast } from '../ui.jsx';
-import { DEFAULT_SHOP, MAIN_REG, allOpen, cashierPassword, firstName, openOf, pickImage, regName, registersOf, shopForRegister, timeStr } from '../lib';
+import { DEFAULT_SHOP, MAIN_REG, allOpen, cashierPassword, firstName, openOf, regName, registersOf, shopForRegister, timeStr } from '../lib';
 import { usePendingTransfers } from './Transfers.jsx';
 import { AttentionBar, AttentionModal, useAttention } from './Attention.jsx';
 import { NetStrip, ThemePicker, useTheme } from '../theme.jsx';
 import { TourHost } from '../Tour.jsx';
+import MyPhoto from '../MyPhoto.jsx';
 import { Topbar } from './parts.jsx';
 import Receive from './Receive.jsx';
 import Dash from './Dash.jsx';
 import Handover from './Handover.jsx';
 import { logAct, logout as doLogout } from '../activity.js';
 
-async function changeMyPhoto(shopId, profile, toast) {
-  const data = await pickImage(300, 0.8);
-  if (!data) return;
-  try {
-    await updateDoc(doc(db, 'shopsPublic', shopId), { [`photos.${profile.id}`]: data });
-    logAct('photo_self', 'غيّر صورته', { shopId });
-    toast('صورتك اتغيرت');
-  } catch (e) { console.error(e); toast('مش قادرين نغيّر الصورة، اتأكد من النت', 'err'); }
-}
-
 export default function CashierApp({ profile }) {
   const toast = useToast();
   const shopId = profile.shopIds?.[0];
+  const [photoOpen, setPhotoOpen] = useState(false);
   const [shop, setShop] = useState(undefined);
   const [pub, setPub] = useState(null);
   const [shift, setShift] = useState(null);
@@ -89,7 +81,7 @@ export default function CashierApp({ profile }) {
   const me = { ...profile, photo: pub?.photos?.[profile.id] || profile.photo };
   const active = entries.filter((e) => !e.deleted);
   const deleted = entries.filter((e) => e.deleted);
-  const top = <Topbar shopPub={pub} profile={me} regLabel={reg && reg !== MAIN_REG ? regName(shop, reg) : (regs.length && reg ? regName(shop, reg) : null)} onPhoto={() => changeMyPhoto(shopId, profile, toast)} onTheme={() => setThemeOpen(true)} steps={(open && !mine && !done) || !reg ? null : steps} onLogout={logout} posUrl={shop.posUrl} onPin={() => setPinOpen(true)} />;
+  const top = <Topbar shopPub={pub} profile={me} regLabel={reg && reg !== MAIN_REG ? regName(shop, reg) : (regs.length && reg ? regName(shop, reg) : null)} onPhoto={() => setPhotoOpen(true)} onTheme={() => setThemeOpen(true)} steps={(open && !mine && !done) || !reg ? null : steps} onLogout={logout} posUrl={shop.posUrl} onPin={() => setPinOpen(true)} />;
 
   let body;
   if (done) body = <Done info={done} profile={me} />;
@@ -105,6 +97,13 @@ export default function CashierApp({ profile }) {
     <div>
       <NetStrip />
       <TourHost />
+      {photoOpen && (
+        <MyPhoto profile={me} photo={me.photo} onClose={() => setPhotoOpen(false)}
+          onSave={async (data) => {
+            await updateDoc(doc(db, 'shopsPublic', shopId), { [`photos.${profile.id}`]: data || deleteField() });
+            logAct('photo_self', data ? 'غيّر صورته' : 'شال صورته', { shopId });
+          }} />
+      )}
       {top}
       {themeOpen && <ThemePicker value={theme} onChange={setTheme} onClose={() => setThemeOpen(false)} />}
       {!done && <AttentionBar list={attention} currentId={shiftId} onOpen={setAttn} />}

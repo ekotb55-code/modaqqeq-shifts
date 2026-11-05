@@ -769,7 +769,7 @@ function StaffAccounts({ shops, profile }) {
             {list.map((u) => (
               <div key={u.id} className="list-row">
                 <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <Avatar name={u.name} color={u.color || '#4CC3FF'} size={40} />
+                  <Avatar name={u.name} photo={u.photo} color={u.color || '#4CC3FF'} size={40} />
                   <span className="stack" style={{ gap: 0 }}><strong>{u.name}</strong><span className="tiny muted" dir="ltr">{u.email}</span></span>
                 </span>
                 <select className="input" style={{ width: 150, height: 44 }} value={u.role === 'reviewer' ? 'accountant' : u.role} onChange={(e) => update(u, { role: e.target.value })} aria-label={`دور ${u.name}`}>
