@@ -7,6 +7,7 @@ import { DEFAULT_SHOP, MAIN_REG, allOpen, cashierPassword, firstName, openOf, pi
 import { usePendingTransfers } from './Transfers.jsx';
 import { AttentionBar, AttentionModal, useAttention } from './Attention.jsx';
 import { NetStrip, ThemePicker, useTheme } from '../theme.jsx';
+import { TourHost } from '../Tour.jsx';
 import { Topbar } from './parts.jsx';
 import Receive from './Receive.jsx';
 import Dash from './Dash.jsx';
@@ -101,6 +102,7 @@ export default function CashierApp({ profile }) {
   return (
     <div>
       <NetStrip />
+      <TourHost />
       {top}
       {themeOpen && <ThemePicker value={theme} onChange={setTheme} onClose={() => setThemeOpen(false)} />}
       {!done && <AttentionBar list={attention} currentId={shiftId} onOpen={setAttn} />}

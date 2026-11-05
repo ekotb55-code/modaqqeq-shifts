@@ -76,7 +76,7 @@ export default function Reports({ profile, shops }) {
         <h1 className="title">التقارير</h1>
         <button type="button" className="btn soft sm" onClick={() => window.print()}><Icon d="print" size={18} />طباعة</button>
       </div>
-      <section className="card spread no-print" style={{ gap: 12 }}>
+      <section className="card spread no-print" style={{ gap: 12 }} data-tour="rep-filter">
         <div className="chips">
           <button type="button" className={'chip' + (mode === 'day' ? ' on' : '')} onClick={() => setMode('day')}>تقرير يوم</button>
           <button type="button" className={'chip' + (mode === 'month' ? ' on' : '')} onClick={() => setMode('month')}>تقرير شهر</button>

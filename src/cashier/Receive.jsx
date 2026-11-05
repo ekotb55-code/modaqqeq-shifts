@@ -1,3 +1,5 @@
+import { useTour } from '../Tour.jsx';
+import { CASHIER_RECEIVE } from '../tours.js';
 import { useMemo, useState } from 'react';
 import { collection, doc, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -8,6 +10,7 @@ import { MAIN_REG, WALLETS, colsFor, machineGroupsOf, machinePhotoLabel, walletM
 import { Bills, MachineRows, SideBox } from './parts.jsx';
 
 export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, editShift, onCancel }) {
+  useTour('c-receive', CASHIER_RECEIVE, { uid: profile.id, enabled: !editShift });
   const toast = useToast();
   const last = lastOf(shop, reg);
   const isSub = reg !== MAIN_REG;
@@ -156,7 +159,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
           {last ? <>الأرقام دي من تسليم {last.cashierName} الساعة {timeStr(last.at)}. لو تمام دوس «تمام، استلمت»، ولو في فرق عدّله وهيتسجل.</> : isSub ? 'اكتب اللي في درجك دلوقتي قبل فكة الأساسي (غالبًا صفر). الفكة اللي الأساسي هيديهالك هتظهرلك بعد ما تستلم وتأكدها.' : 'دي أول وردية في المحل. عدّ الدرج واكتب الأرقام.'}
         </span>
       </div>
-      <section className="card tint-orange" style={{ gap: 12 }}>
+      <section className="card tint-orange" style={{ gap: 12 }} data-tour="bills">
         <div className="spread">
           <h2 className="h2"><span className="dot" style={{ background: 'var(--orange)' }} />درج الكاشير</h2>
           <span className="big-num">{fmt(billsTotal(bills))}<small> ج</small></span>
@@ -165,7 +168,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
       </section>
       {!shop.noSide && <SideBox value={side} setValue={setSide} hint={sideChanged && last ? `اتعدّل · كان ${fmt(prevSide)} ج` : 'المبلغ كله · من غير فئات'} />}
       {(walletKeys.length > 0 || machines.length > 0) && (
-        <section className="card" style={{ gap: 12 }}>
+        <section className="card" style={{ gap: 12 }} data-tour="assets">
           <div className="stack" style={{ gap: 2 }}>
             <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />المحافظ والمكن</h2>
             <span className="tiny muted">اكتب رصيد كل واحدة بإيدك وصوّر شاشتها. المحاسب هيراجع الصور.</span>
@@ -192,7 +195,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
               </span>
             </div>
           ) : (
-            <button type="button" className="btn soft full" style={{ maxWidth: 520 }} onClick={sendToPhone}>📲 احفظ وكمّل الصور من الموبايل</button>
+            <button type="button" className="btn soft full" style={{ maxWidth: 520 }} onClick={sendToPhone} data-tour="to-phone">📲 احفظ وكمّل الصور من الموبايل</button>
           )
         )}
         {missing.length > 0 && (
@@ -200,7 +203,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
             فاضل: {missing.slice(0, 4).join(' · ')}{missing.length > 4 ? ` و${missing.length - 4} كمان` : ''}
           </span>
         )}
-        <button type="button" className="btn full" style={{ height: 66, fontSize: 20 }} onClick={confirm} disabled={busy || missing.length > 0}>
+        <button type="button" className="btn full" style={{ height: 66, fontSize: 20 }} data-tour="done" onClick={confirm} disabled={busy || missing.length > 0}>
           <span className="ic"><Icon d="check" size={18} stroke={3} /></span>{busy ? 'لحظة…' : editShift ? 'حفظ التعديل' : 'تمام، استلمت'}
         </button>
         <span className="small muted" style={{ textAlign: 'center' }}>

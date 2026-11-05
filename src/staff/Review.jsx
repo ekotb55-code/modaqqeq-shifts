@@ -1,3 +1,5 @@
+import { useTour } from '../Tour.jsx';
+import { STAFF_DETAIL, STAFF_REVIEWING } from '../tours.js';
 import { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -44,7 +46,7 @@ export default function Review({ profile, shops }) {
   return (
     <div className="wrap">
       <div className="row">
-        <aside className="side" style={{ flex: '1 1 300px', maxWidth: 420 }}>
+        <aside className="side" style={{ flex: '1 1 300px', maxWidth: 420 }} data-tour="queue">
           <h2 style={{ fontSize: 18, fontWeight: 700 }}>الورديات <span className="muted" style={{ fontWeight: 500 }}>· {sorted.length}</span></h2>
           {shops.length === 0 && <div className="card empty">لسه مفيش محلات مربوطة بحسابك</div>}
           {shops.length > 0 && sorted.length === 0 && <div className="card empty">مفيش ورديات مستنية مراجعة</div>}
@@ -101,6 +103,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
   const hnd = shift.handover || {};
   const status = shift.status;
   const reviewing = status === 'reviewing';
+  useTour(reviewing ? 's-reviewing' : 's-detail', reviewing ? STAFF_REVIEWING : STAFF_DETAIL, { uid: profile?.id, prio: reviewing ? 3 : 2, enabled: !!canReview });
   const closed = status === 'closed';
 
   const start = async () => {
@@ -251,7 +254,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
 
   return (
     <div className="stack" style={{ gap: 16 }}>
-      <section className="card spread shift-head" style={{ gap: 16 }}>
+      <section className="card spread shift-head" style={{ gap: 16 }} data-tour="shift-head">
         <div style={{ display: 'flex', alignItems: 'center', gap: 18, minWidth: 0 }}>
           {shop?.logo ? <img src={shop.logo} alt="" className="shift-logo" /> : <Avatar name={shop?.name} size={84} color="#FFC99A" />}
           <div className="stack" style={{ gap: 4, minWidth: 0 }}>
@@ -266,7 +269,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
           {shift.staffUnread && <span className="badge warn">💬 رسالة جديدة من الكاشير</span>}
           {reviewing && review?.startedAt && <span className="badge info">بدأت من {durationStr(review.startedAt)}</span>}
           {fullShop?.posUrl && (
-            <a className="pos-link keep" href={fullShop.posUrl} target="_blank" rel="noopener noreferrer">
+            <a className="pos-link keep" data-tour="pos" href={fullShop.posUrl} target="_blank" rel="noopener noreferrer">
               <span className="ic"><Icon d="monitor" size={18} /></span>برنامج البيع بتاع الفرع<Icon d="up" size={14} />
             </a>
           )}
@@ -274,7 +277,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
       </section>
 
       {status === 'open' && canReview && (
-        <section className="card spread">
+        <section className="card spread" data-tour="force">
           <span className="muted">الوردية لسه شغالة. لو الكاشير مشي من غير ما يسلّم تقدر تقفلها بالنيابة عنه.</span>
           <button type="button" className="btn soft sm" onClick={forceSubmit}>قفل بالنيابة</button>
         </section>
@@ -288,14 +291,14 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
       )}
 
       {status === 'submitted' && canReview && (
-        <section className="card spread" style={{ background: 'var(--blue)', color: '#fff' }}>
+        <section className="card spread" style={{ background: 'var(--blue)', color: '#fff' }} data-tour="start">
           <span style={{ fontSize: 17, fontWeight: 600 }}>الوردية مستنياك. دوس ابدأ وبعدين اكتب رقم المبيعات من السيستم.</span>
           <button type="button" className="btn lime" onClick={start} disabled={busy}>ابدأ المراجعة</button>
         </section>
       )}
 
       {(reviewing || closed) && (
-        <section className="card" style={{ gap: 14 }}>
+        <section className="card" style={{ gap: 14 }} data-tour="sales">
           <h2 className="h2">1. رقم المبيعات من السيستم</h2>
           <div className="row" style={{ gap: 14, alignItems: 'stretch' }}>
             <label className="field" style={{ flex: '1 1 220px' }}>إجمالي مبيعات الوردية
@@ -315,7 +318,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
       <Statements c={sum} shift={shift} shop={shop} />
       <BillsCompare rcv={rcv} hnd={shift.handover} />
 
-      <section className="card" style={{ gap: 0 }}>
+      <section className="card" style={{ gap: 0 }} data-tour="moves">
         <div className="spread" style={{ marginBottom: 8 }}>
           <h2 className="h2">2. المصروفات والحركات <span className="tiny muted" style={{ fontWeight: 500 }}>· علّم على كل حاجة دخلتها على السيستم</span></h2>
           {leftMoves + leftEntries > 0 ? <span className="badge warn">فاضل {leftMoves + leftEntries}</span> : <span className="badge ok">✓ كله اتعلّم</span>}
@@ -355,8 +358,8 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
         })}
         {canReview && !closed && (
           <div className="row" style={{ gap: 8, paddingTop: 12 }}>
-            <button type="button" className="btn soft sm" onClick={() => setAddOpen(true)}><Icon d="plus" size={16} />إضافة مصروف أو إيراد (تصحيح)</button>
-            {['submitted', 'reviewing'].includes(status) && <button type="button" className="btn soft sm" onClick={() => setReopenOpen(true)}><Icon d="undo" size={16} />افتح الوردية للكاشير يعدّلها</button>}
+            <button type="button" className="btn soft sm" onClick={() => setAddOpen(true)} data-tour="add-fix"><Icon d="plus" size={16} />إضافة مصروف أو إيراد (تصحيح)</button>
+            {['submitted', 'reviewing'].includes(status) && <button type="button" className="btn soft sm" onClick={() => setReopenOpen(true)} data-tour="reopen"><Icon d="undo" size={16} />افتح الوردية للكاشير يعدّلها</button>}
           </div>
         )}
         {(shift.corrections || []).length > 0 && (
@@ -394,7 +397,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
       )}
 
       {photos.length > 0 && (
-        <section className="card">
+        <section className="card" data-tour="photos">
           <div className="spread">
             <h2 className="h2">الصور <span className="tiny muted" style={{ fontWeight: 500 }}>· اتأكد إن الرقم اللي في الصورة هو اللي الكاشير كتبه</span></h2>
             {unchecked > 0 ? <span className="badge warn">فاضل {unchecked} صورة</span> : <span className="badge ok">✓ كل الصور اتراجعت</span>}
@@ -424,7 +427,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
         </section>
       )}
 
-      <section className="card" style={{ gap: 10 }}>
+      <section className="card" style={{ gap: 10 }} data-tour="s-chat">
         <h2 className="h2">💬 شات الوردية <span className="tiny muted" style={{ fontWeight: 500 }}>· بينك وبين {shift.cashierName}</span></h2>
         <ShiftChat shift={shift} profile={profile} side="staff" />
       </section>
@@ -441,7 +444,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
           ))}
         </section>
         {reviewing && canReview && (
-          <section className="card" style={{ flex: '1 1 320px' }}>
+          <section className="card" style={{ flex: '1 1 320px' }} data-tour="close">
             <h2 className="h2">3. التقفيل</h2>
             <span style={{ lineHeight: 1.7 }}>
               {sum.diff === null ? 'اكتب رقم المبيعات علشان النتيجة تطلع.' : sum.diff < 0 ? `العجز ${fmt(-sum.diff)} ج هيتسجل على ${shift.cashierName} في سجل العجز، ويستنى تأكيد إنه اتخصم.` : sum.diff > 0 ? `الزيادة ${fmt(sum.diff)} ج هتتسجل باسم ${shift.cashierName} في سجل الزيادات.` : 'الوردية مضبوطة، مفيش عجز ولا زيادة.'}
@@ -505,7 +508,7 @@ function BillsCompare({ rcv, hnd }) {
   const tot = (b) => FACES.reduce((a, f) => a + f * num(b?.[f]), 0);
   if (!rcv?.bills && !hnd?.bills) return null;
   return (
-    <section className="card" style={{ gap: 10 }}>
+    <section className="card" style={{ gap: 10 }} data-tour="bills-compare">
       <h2 className="h2">الفئات · استلم وسلّم</h2>
       <div style={{ overflowX: 'auto' }}>
         <table className="table" style={{ minWidth: 420 }}>

@@ -21,7 +21,7 @@ export default function Ledger({ profile, shops, canReview }) {
   return (
     <div className="wrap">
       <h1 className="title">العجز والزيادة</h1>
-      <section className="card spread">
+      <section className="card spread" data-tour="ledger-filter">
         <div className="chips">
           <button type="button" className={'chip' + (kind === 'shortage' ? ' on' : '')} onClick={() => setKind('shortage')}>سجل العجز</button>
           <button type="button" className={'chip' + (kind === 'overage' ? ' on' : '')} onClick={() => setKind('overage')}>سجل الزيادات</button>

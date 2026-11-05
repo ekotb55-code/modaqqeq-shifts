@@ -14,7 +14,7 @@ export default function Setup({ profile, shops, sel, setSel }) {
     <div className="wrap">
       <div className="spread">
         <h1 className="title">الإعداد</h1>
-        <div className="tabs">
+        <div className="tabs" data-tour="setup-tabs">
           <button type="button" className={view === 'shops' ? 'on' : ''} onClick={() => setView('shops')}>المحلات والكاشيرية</button>
           <button type="button" className={view === 'staff' ? 'on' : ''} onClick={() => setView('staff')}>حسابات الموظفين</button>
         </div>

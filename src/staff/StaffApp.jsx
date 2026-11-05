@@ -11,6 +11,8 @@ import Reports from './Reports.jsx';
 import Setup from './Setup.jsx';
 import Safes from './Safes.jsx';
 import { NetStrip, ThemePicker, useTheme } from '../theme.jsx';
+import { HelpButton, TourHost, useTour } from '../Tour.jsx';
+import { STAFF_PAGE, staffShell } from '../tours.js';
 
 export default function StaffApp({ profile }) {
   const isAdmin = isAdminRole(profile.role);
@@ -26,6 +28,8 @@ export default function StaffApp({ profile }) {
   const [tab, setTab] = useState(tabs[0].id);
   const [theme, setTheme] = useTheme(profile);
   const [themeOpen, setThemeOpen] = useState(false);
+  useTour('s-shell', staffShell(tabs), { uid: profile.id, prio: 0 });
+  useTour(`s-${tab}`, STAFF_PAGE[tab] || [], { uid: profile.id, prio: 1, enabled: !!STAFF_PAGE[tab] });
   const [pwOpen, setPwOpen] = useState(false);
   // The branch chosen at the top applies to every tab. 'all' = every branch.
   const [shopSel, setShopSelRaw] = useState(() => { try { return sessionStorage.getItem('mdq-staff-shop') || null; } catch { return null; } });
@@ -64,6 +68,7 @@ export default function StaffApp({ profile }) {
   return (
     <div>
       <NetStrip />
+      <TourHost />
       {pwOpen && <MyPassword onClose={() => setPwOpen(false)} />}
       {themeOpen && <ThemePicker value={theme} onChange={setTheme} onClose={() => setThemeOpen(false)} />}
       <header className="topbar">
@@ -72,7 +77,7 @@ export default function StaffApp({ profile }) {
             <img className="logo-mdq" src="./modaqqeq-logo.png" alt="مدقق" />
             {shops.length > 0 && <ShopPicker shops={shops} value={effSel} onChange={setShopSel} onNew={isAdmin ? newShop : null} />}
           </div>
-          <nav className="tabs" aria-label="الأقسام" style={{ boxShadow: 'none', background: 'var(--bg)' }}>
+          <nav className="tabs" data-tour="tabs" aria-label="الأقسام" style={{ boxShadow: 'none', background: 'var(--bg)' }}>
             {tabs.map((t) => <button key={t.id} type="button" className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)} aria-current={tab === t.id ? 'page' : undefined}>{t.label}</button>)}
           </nav>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -82,6 +87,7 @@ export default function StaffApp({ profile }) {
             </span>
             <button type="button" className="icon-btn" aria-label="غيّر الباسورد بتاعي" title="غيّر الباسورد بتاعي" onClick={() => setPwOpen(true)}><Icon d="lock" /></button>
             <button type="button" className="icon-btn" aria-label="غيّر شكل التطبيق" title="غيّر شكل التطبيق" onClick={() => setThemeOpen(true)}><Icon d="palette" /></button>
+            <HelpButton />
             <button type="button" className="icon-btn" aria-label="تسجيل خروج" title="تسجيل خروج" onClick={() => signOut(auth)}><Icon d="logout" /></button>
           </div>
         </div>
@@ -112,7 +118,7 @@ export function ShopPicker({ shops, value, onChange, onNew }) {
   }, [open]);
   const cur = shops.find((s) => s.id === value);
   return (
-    <div className="shop-picker" ref={ref}>
+    <div className="shop-picker" ref={ref} data-tour="branch">
       <button type="button" className={'sp-btn' + (cur || value === 'all' ? ' on' : '')} onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="listbox">
         <Icon d="shop" size={20} />
         <span className="stack" style={{ gap: 0, alignItems: 'flex-start' }}>

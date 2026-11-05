@@ -1,4 +1,5 @@
 import { Avatar, Icon, MachineMark, PhotoSlot, machineLook } from '../ui.jsx';
+import { HelpButton } from '../Tour.jsx';
 import { BILL_BG, FACES, fmt, machineGroupsOf, num } from '../lib';
 
 export function Topbar({ shopPub, profile, steps, onLogout, posUrl, onPin, onPhoto, regLabel, onTheme }) {
@@ -7,7 +8,7 @@ export function Topbar({ shopPub, profile, steps, onLogout, posUrl, onPin, onPho
       <div className="topbar-in">
         <img className="logo-mdq" src="./modaqqeq-logo.png" alt="مدقق" />
         {steps && (
-          <ol className="steps" aria-label="خطوات الوردية">
+          <ol className="steps" aria-label="خطوات الوردية" data-tour="steps">
             {steps.map((s) => (
               <li key={s.title} style={{ display: 'flex' }}>
                 <button type="button" className={s.state} onClick={s.go} disabled={!s.go && s.state !== 'on'} style={{ opacity: 1, cursor: s.go ? 'pointer' : 'default' }} aria-current={s.state === 'on' ? 'step' : undefined}>
@@ -25,7 +26,7 @@ export function Topbar({ shopPub, profile, steps, onLogout, posUrl, onPin, onPho
           )}
           {shopPub?.logo ? <img className="logo-shop" src={shopPub.logo} alt={shopPub.name} /> : <strong>{shopPub?.name}</strong>}
           <span className="vsep" aria-hidden="true" />
-          <span className="who">
+          <span className="who" data-tour="me">
             {onPhoto ? (
               <button type="button" onClick={onPhoto} aria-label="غيّر صورتك" title="غيّر صورتك" style={{ border: 0, background: 'transparent', padding: 0, position: 'relative' }}>
                 <Avatar name={profile.name} photo={profile.photo} color={profile.color} size={50} />
@@ -36,6 +37,7 @@ export function Topbar({ shopPub, profile, steps, onLogout, posUrl, onPin, onPho
           </span>
           {onTheme && <button type="button" className="icon-btn" aria-label="غيّر شكل التطبيق" title="غيّر شكل التطبيق" onClick={onTheme}><Icon d="palette" /></button>}
           {onPin && <button type="button" className="icon-btn" aria-label="غيّر الرقم السري" title="غيّر الرقم السري" onClick={onPin}><Icon d="lock" /></button>}
+          <HelpButton />
           <button type="button" className="icon-btn" aria-label="تسجيل خروج" title="تسجيل خروج" onClick={onLogout}><Icon d="logout" /></button>
         </div>
       </div>
@@ -115,7 +117,7 @@ export function MachineRows({ machines, values, setValues, photos, onPhoto, prev
 
 export function SideBox({ value, setValue, hint }) {
   return (
-    <label className="side-box">
+    <label className="side-box" data-tour="side">
       <span className="stack" style={{ gap: 0 }}><span style={{ fontSize: 18, fontWeight: 700 }}>الدرج الجانبي</span><span className="small">{hint}</span></span>
       <span className="in"><input inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)} onFocus={(e) => e.target.select()} /><span className="small">ج</span></span>
     </label>

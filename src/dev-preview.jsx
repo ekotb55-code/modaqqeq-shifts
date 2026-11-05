@@ -16,6 +16,7 @@ import { AttentionBar } from './cashier/Attention.jsx';
 import { NetStrip, Intro } from './theme.jsx';
 import { captureDocument } from './DocCamera.jsx';
 import ShiftChat from './ShiftChat.jsx';
+import { TourHost } from './Tour.jsx';
 
 const shop = { id: 's1', name: 'مخبوزات لوفان', posUrl: 'https://x', wallets: ['insta', 'vf'], walletModes: { insta: 'shop', vf: 'owner' }, machines: [{ machine: 'فوري', account: 'الحساب الرئيسي', ratePct: 2 }, { machine: 'فوري', account: 'كاش أوت' }, { machine: 'فيزا', account: 'الرصيد', ratePct: 2, rateFrom: 'cashier' }],
   lastHandover: { cashierName: 'محمود سعيد', at: new Date().toISOString(), bills: { 200: 2, 100: 3, 50: 4, 20: 5, 10: 6, 5: 4, 1: 20 }, side: 5000, wallets: { insta: 300, vf: 0 }, machines: [{ machine: 'فوري', account: 'الحساب الرئيسي', value: 3250 }] },
@@ -56,4 +57,4 @@ else if (v === 'cam') body = <div className="wrap"><button id="go" className="bt
 else if (v === 'zoom') body = <div className="wrap"><div style={{ width: 320 }}><ZoomImage src="./modaqqeq-logo.png" height={340} /></div><PhotoView src={location.hash ? './modaqqeq-logo.png' : null} onClose={() => {}} /></div>;
 else if (v === 'statements') body = <div className="wrap"><Statements c={computeShift(shift, entries, shop, 4000)} shift={shift} shop={shop} /></div>;
 else body = <Dash shop={shop} shift={shift} entries={entries} incoming={v === 'inc' ? inc : []} deleted={[{ id: 'd1', type: 'expense', kind: 'delivery', kindLabel: 'قبض دليفري', sub: 'أحمد', src: 'drawer', amount: 50, deleted: true, deletedByName: 'شوقي محمد', deleteReason: 'اتسجلت مرتين', createdAtLocal: new Date().toISOString(), deletedAtLocal: Date.now() }]} profile={profile} onHandover={() => {}} onReceive={() => {}} />;
-createRoot(document.getElementById('root')).render(<ToastProvider>{v !== 'login' && <NetStrip />}{v !== 'login' && <Topbar shopPub={pub} profile={profile} steps={steps} onLogout={() => {}} posUrl={shop.posUrl} onPin={() => {}} onPhoto={() => {}} onTheme={() => {}} />}{body}</ToastProvider>);
+createRoot(document.getElementById("root")).render(<ToastProvider><TourHost />{v !== 'login' && <NetStrip />}{v !== 'login' && <Topbar shopPub={pub} profile={profile} steps={steps} onLogout={() => {}} posUrl={shop.posUrl} onPin={() => {}} onPhoto={() => {}} onTheme={() => {}} />}{body}</ToastProvider>);

@@ -1,3 +1,5 @@
+import { useTour } from '../Tour.jsx';
+import { CASHIER_HANDOVER } from '../tours.js';
 import { useState } from 'react';
 import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -24,6 +26,7 @@ function Split({ title, mark, color, amount, value, set, options = ['stay', 'sho
 }
 
 export default function Handover({ shop, shift, entries, incoming = [], profile, onBack, onDone }) {
+  useTour('c-handover', CASHIER_HANDOVER, { uid: profile.id });
   const toast = useToast();
   const reg = shift.register || MAIN_REG;
   const isSub = reg !== MAIN_REG;
@@ -153,14 +156,14 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
       </div>
       <div className="row">
         <div className="grow" style={{ flex: '3 1 520px' }}>
-          <section className="card tint-orange" style={{ gap: 16 }}>
+          <section className="card tint-orange" style={{ gap: 16 }} data-tour="h-bills">
             <div className="spread">
               <h2 className="h2"><span className="dot" style={{ background: 'var(--orange)' }} />عدّ درج الكاشير</h2>
               <span className="big-num">{fmt(drawerTotal)}<small> ج</small></span>
             </div>
             <Bills bills={bills} setBills={setBills} noSteppers />
           </section>
-          <section className="card tint-violet" style={{ gap: 14 }}>
+          <section className="card tint-violet" style={{ gap: 14 }} data-tour="split">
             <h2 className="h2">الفلوس هتروح فين؟</h2>
             <Split title="درج الكاشير" mark="د" color="#FFD3B5" amount={drawerTotal} value={keepDrawer} set={setKeepDrawer} options={opts} />
             {!noSide && <Split title="الدرج الجانبي" mark="ج" color="var(--lime)" amount={num(side)} value={keepSide} set={setKeepSide} options={opts} />}
@@ -202,7 +205,7 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
         </div>
       </div>
       {(shopWallets.length > 0 || machines.length > 0) && (
-        <section className="card" style={{ gap: 12 }}>
+        <section className="card" style={{ gap: 12 }} data-tour="assets">
           <div className="stack" style={{ gap: 2 }}>
             <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />المحافظ والمكن دلوقتي</h2>
             <span className="tiny muted">اكتب رصيد كل واحدة وصوّر شاشتها. المحاسب هيراجع الصور.</span>
@@ -241,9 +244,9 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
               </span>
             </div>
           ) : (
-            <button type="button" className="btn soft full" style={{ maxWidth: 520 }} onClick={sendToPhone}>📲 احفظ وكمّل الصور من الموبايل</button>
+            <button type="button" className="btn soft full" style={{ maxWidth: 520 }} onClick={sendToPhone} data-tour="to-phone">📲 احفظ وكمّل الصور من الموبايل</button>
           ))}
-          <button type="button" className="btn full" style={{ height: 66, fontSize: 20 }} onClick={send} disabled={busy}>
+          <button type="button" className="btn full" style={{ height: 66, fontSize: 20 }} data-tour="send" onClick={send} disabled={busy}>
             <span className="ic"><Icon d="send" size={18} /></span>{busy ? 'لحظة…' : 'سلّم وابعت للمحاسب'}
           </button>
           <span className="small muted" style={{ textAlign: 'center' }}>العجز أو الزيادة بيطلعوا عند المحاسب</span>

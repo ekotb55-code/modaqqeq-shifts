@@ -20,7 +20,7 @@ export default function Safes({ shops }) {
   if (!shop) return <div className="wrap"><div className="card empty">لسه مفيش محلات</div></div>;
   return (
     <div className="wrap">
-      <div className="spread">
+      <div className="spread" data-tour="safes-head">
         <h1 className="title">الخزن</h1>
         <div className="chips">{shops.map((s) => <button key={s.id} type="button" className={'chip' + (s.id === shop.id ? ' on' : '')} onClick={() => setShopId(s.id)}>{s.name}</button>)}</div>
       </div>

@@ -1,3 +1,5 @@
+import { useTour } from '../Tour.jsx';
+import { CASHIER_DASH } from '../tours.js';
 import { useEffect, useState } from 'react';
 import { doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -20,6 +22,7 @@ export function entryTitle(e) {
 }
 
 export default function Dash({ shop, shift, entries, deleted = [], incoming = [], outgoing = [], profile, onHandover, onReceive, onChat }) {
+  useTour('c-dash', CASHIER_DASH, { uid: profile.id });
   const [modal, setModal] = useState(null);
   const [del, setDel] = useState(null);
   const [showDeleted, setShowDeleted] = useState(false);
@@ -57,7 +60,7 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
   return (
     <div className="wrap dash">
       <div className="row" style={{ alignItems: 'stretch' }}>
-        <section className="hero">
+        <section className="hero" data-tour="hero">
           <div className="spread" style={{ alignItems: 'flex-start' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
               <Avatar name={profile.name} photo={profile.photo} color={profile.color} size={76} />
@@ -71,15 +74,15 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
           <div className="spread" style={{ alignItems: 'flex-end' }}>
             <span className="stack" style={{ gap: 0 }}><span className="small soft">عملياتك النهارده</span><span style={{ fontSize: 44, fontWeight: 800, lineHeight: 1.1 }}>{entries.length}</span></span>
             <span style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            {onChat && <button type="button" className="btn" style={{ height: 58, background: 'rgba(255,255,255,.18)', fontSize: 16, position: 'relative' }} onClick={onChat} aria-label="شات مع المحاسب"><Icon d="send" size={18} />المحاسب{shift.cashierUnread && <span className="dot-new" />}</button>}
-            <button type="button" className="btn" style={{ height: 58, background: 'rgba(255,255,255,.18)', fontSize: 16 }} onClick={onReceive}>تعديل الاستلام</button>
-            <button type="button" className="btn lime" style={{ paddingInline: '26px 10px', height: 58 }} onClick={onHandover}>
+            {onChat && <button type="button" className="btn" style={{ height: 58, background: 'rgba(255,255,255,.18)', fontSize: 16, position: 'relative' }} onClick={onChat} aria-label="شات مع المحاسب" data-tour="chat"><Icon d="send" size={18} />المحاسب{shift.cashierUnread && <span className="dot-new" />}</button>}
+            <button type="button" className="btn" style={{ height: 58, background: 'rgba(255,255,255,.18)', fontSize: 16 }} onClick={onReceive} data-tour="edit-receive">تعديل الاستلام</button>
+            <button type="button" className="btn lime" style={{ paddingInline: '26px 10px', height: 58 }} onClick={onHandover} data-tour="go-handover">
               سلّم الوردية<span className="ic" style={{ background: 'var(--ink)', color: 'var(--lime)', width: 40, height: 40 }}><Icon d="down" size={20} stroke={2.6} /></span>
             </button>
             </span>
           </div>
         </section>
-        <div className="counters">
+        <div className="counters" data-tour="counters">
           {counters.map((c) => (
             <div key={c.label} className={'counter ' + c.cls + (c.w ? ' brand' : '')} style={c.w ? { background: WALLET_LOOK[c.w].bg, color: '#fff' } : undefined}>
               <span className="small muted" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span className="dot" style={{ background: c.dot, width: 10, height: 10 }} />{c.label}</span>
@@ -91,7 +94,7 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
 
       <Incoming list={incoming} shop={shop} shift={shift} profile={profile} />
 
-      {tiles.length > 0 && <div className="tiles" style={tiles.length < 3 ? { gridTemplateColumns: `repeat(${tiles.length}, 1fr)` } : undefined}>
+      {tiles.length > 0 && <div data-tour="tiles" className="tiles" style={tiles.length < 3 ? { gridTemplateColumns: `repeat(${tiles.length}, 1fr)` } : undefined}>
         {tiles.map((x) => (
           <button key={x.t} type="button" className="tile" style={{ background: ENTRY_TYPES[x.t].color }} onClick={() => setModal(x.t)}>
             <span className="spread">
@@ -104,7 +107,7 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
       </div>}
 
       <div className="row">
-        {extras.length > 0 && <section className="card tint-blue" style={{ flex: '1 1 300px' }}>
+        {extras.length > 0 && <section className="card tint-blue" style={{ flex: '1 1 300px' }} data-tour="extras">
           <h2 style={{ fontSize: 17, fontWeight: 700 }}>حاجات تانية</h2>
           {extras.map((x) => (
             <button key={x.t} type="button" className="extra" onClick={() => setModal(x.t)}>
@@ -113,7 +116,7 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
             </button>
           ))}
         </section>}
-        <section className="card" style={{ flex: '2 1 460px', gap: 0 }}>
+        <section className="card" style={{ flex: '2 1 460px', gap: 0 }} data-tour="feed">
           <h2 style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}>عمليات النهارده</h2>
           {entries.length === 0 && <div className="empty">لسه مسجلتش أي عملية</div>}
           {entries.map((e) => (
@@ -143,7 +146,7 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
         </section>
       </div>
 
-      {shopSafes(shop).some((x) => x.key !== 'drawer') && <section className="card">
+      {shopSafes(shop).some((x) => x.key !== 'drawer') && <section className="card" data-tour="safes">
         <div className="spread"><h2 style={{ fontSize: 17, fontWeight: 700 }}>أرصدة الخزن دلوقتي</h2><span className="tiny muted">بتتحدث مع كل عملية</span></div>
         <div className="safes-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(175px, 1fr))', gap: 10 }}>
           {shopSafes(shop).filter((x) => x.key !== 'drawer').flatMap((x) => {
