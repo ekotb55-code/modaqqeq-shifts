@@ -4,7 +4,7 @@ import { collection, doc, onSnapshot, serverTimestamp, setDoc, writeBatch } from
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { Avatar, Icon, Modal, useToast } from '../ui.jsx';
-import { DEFAULT_SHOP, ROLE_LABEL, allOpen } from '../lib';
+import { DEFAULT_SHOP, ROLE_LABEL, allOpen, isAdminRole } from '../lib';
 import Review from './Review.jsx';
 import Ledger from './Ledger.jsx';
 import Reports from './Reports.jsx';
@@ -13,7 +13,7 @@ import Safes from './Safes.jsx';
 import { NetStrip, ThemePicker, useTheme } from '../theme.jsx';
 
 export default function StaffApp({ profile }) {
-  const isAdmin = profile.role === 'admin';
+  const isAdmin = isAdminRole(profile.role);
   const canReview = isAdmin || ['reviewer', 'accountant'].includes(profile.role);
   const [shops, setShops] = useState([]);
   const tabs = [

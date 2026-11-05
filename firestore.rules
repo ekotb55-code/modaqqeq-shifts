@@ -7,7 +7,10 @@ service cloud.firestore {
     function profilePath() { return /databases/$(database)/documents/users/$(request.auth.uid); }
     function hasProfile() { return signedIn() && exists(profilePath()); }
     function me() { return get(profilePath()).data; }
-    function isAdmin() { return isSuper() || (hasProfile() && me().role == 'admin'); }
+    function isAdmin() { return isSuper() || (hasProfile() && me().role in ['admin', 'support']); }
+    function isTopAdmin() { return isSuper() || (hasProfile() && me().role == 'admin'); }
+    // Support may manage everyone except Modaqqeq admins.
+    function notAdminUser(uid) { return get(/databases/$(database)/documents/users/$(uid)).data.role != 'admin'; }
     function inShop(shopId) { return hasProfile() && shopId in me().shopIds; }
     function staffOf(shopId) {
       return isAdmin() || (inShop(shopId) && me().role in ['reviewer', 'accountant', 'manager', 'owner']);
@@ -36,8 +39,8 @@ service cloud.firestore {
 
     // Cashier PINs so Modaqqeq admins can change them later (free plan has no server).
     match /cashierSecrets/{uid} {
-      allow read: if isAdmin();
-      allow write: if isAdmin() || (signedIn() && request.auth.uid == uid);
+      allow read: if isTopAdmin() || (isAdmin() && notAdminUser(uid));
+      allow write: if isTopAdmin() || (isAdmin() && notAdminUser(uid)) || (signedIn() && request.auth.uid == uid);
     }
 
     // Numbers typed on the computer, waiting for the photos from the phone. Only the owner sees them.
@@ -47,7 +50,9 @@ service cloud.firestore {
 
     match /users/{uid} {
       allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
-      allow write: if isAdmin();
+      allow create, update: if isTopAdmin()
+        || (isAdmin() && request.resource.data.role != 'admin' && (resource == null || resource.data.role != 'admin'));
+      allow delete: if isTopAdmin();
       // Anyone may change only his own app colours.
       allow update: if signedIn() && request.auth.uid == uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['theme']);

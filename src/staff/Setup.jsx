@@ -3,7 +3,7 @@ import { collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, s
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { Avatar, Icon, Modal, useToast } from '../ui.jsx';
-import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, REG_KIND, allOpen, newRegister, newExpenseType, RATE_FROM, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, num, pickImage } from '../lib';
+import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, REG_KIND, allOpen, isAdminRole, newRegister, newExpenseType, RATE_FROM, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, num, pickImage } from '../lib';
 
 export default function Setup({ profile, shops, sel, setSel }) {
   const [view, setView] = useState('shops');
@@ -540,6 +540,7 @@ function CashierRow({ c, shop, all, writeList, open, onToggle, onPhoto }) {
 const ACCOUNT_GROUPS = [
   { id: 'acc', title: 'المحاسبين والمراجعين', roles: ['accountant', 'reviewer'], hint: 'بيراجعوا الورديات ويقفلوها', tint: '' },
   { id: 'own', title: 'المديرين والأونرز', roles: ['manager', 'owner'], hint: 'بيشوفوا التقارير والخزن بتاعة محلاتهم', tint: 'tint-violet' },
+  { id: 'sup', title: 'دعم مدقق', roles: ['support'], hint: 'زي الإدارة: بيضيفوا محلات ويشيكوا على كله، بس مايقدروش يعدّلوا حسابات الإدارة', tint: 'tint-lime' },
   { id: 'adm', title: 'إدارة مدقق', roles: ['admin'], hint: 'بيشوفوا كل المحلات ويعدّلوا الإعدادات', tint: 'tint-blue' },
 ];
 
@@ -693,7 +694,11 @@ function ShopPeople({ shop }) {
   );
 }
 
-function StaffAccounts({ shops }) {
+function StaffAccounts({ shops, profile }) {
+  // Support can do everything except touch Modaqqeq admin accounts or make new admins.
+  const isSupport = profile?.role === 'support';
+  const roleOptions = ['accountant', 'reviewer', 'manager', 'owner', 'support', ...(isSupport ? [] : ['admin'])];
+  const locked = (u) => isSupport && u.role === 'admin';
   const toast = useToast();
   const [users, setUsers] = useState([]);
   const [form, setForm] = useState({ name: '', email: '', pass: '', role: 'accountant', shopIds: [] });
@@ -731,11 +736,11 @@ function StaffAccounts({ shops }) {
           <label className="field" style={{ flex: '1 1 160px' }}>الباسورد<input className="input" dir="ltr" value={form.pass} onChange={(e) => setForm({ ...form, pass: e.target.value })} /></label>
           <label className="field" style={{ flex: '1 1 160px' }}>الدور
             <select className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-              {['accountant', 'reviewer', 'manager', 'owner', 'admin'].map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+              {roleOptions.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
             </select>
           </label>
         </div>
-        {form.role !== 'admin' && (
+        {!isAdminRole(form.role) && (
           <div className="stack"><span className="small muted">المحلات اللي هيشوفها</span>
             <div className="chips">{shops.map((s) => <button key={s.id} type="button" className={'chip sm' + (form.shopIds.includes(s.id) ? ' on' : '')} onClick={() => setForm({ ...form, shopIds: toggleShop(form.shopIds, s.id) })}>{s.name}</button>)}</div>
           </div>
@@ -757,15 +762,15 @@ function StaffAccounts({ shops }) {
                   <span className="stack" style={{ gap: 0 }}><strong>{u.name}</strong><span className="tiny muted" dir="ltr">{u.email}</span></span>
                 </span>
                 <select className="input" style={{ width: 150, height: 44 }} value={u.role} onChange={(e) => update(u, { role: e.target.value })} aria-label={`دور ${u.name}`}>
-                  {['accountant', 'reviewer', 'manager', 'owner', 'admin'].map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+                  {roleOptions.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
                 </select>
                 {u.role !== 'admin' && (
                   <div className="chips" style={{ flex: '1 1 260px' }}>
                     {shops.map((s) => <button key={s.id} type="button" className={'chip sm' + ((u.shopIds || []).includes(s.id) ? ' on' : '')} onClick={() => update(u, { shopIds: toggleShop(u.shopIds || [], s.id) })}>{shopName(s.id)}</button>)}
                   </div>
                 )}
-                <button type="button" className="btn sm soft" onClick={() => setPassFor(u)} aria-label={`غيّر باسورد ${u.name}`}><Icon d="lock" size={15} />الباسورد</button>
-                <button type="button" className="copy" aria-label={`اقفل حساب ${u.name}`} title="اقفل الحساب" onClick={() => window.confirm(`تقفل حساب ${u.name}؟`) && update(u, { disabled: true })}><Icon d="trash" size={16} /></button>
+                {!locked(u) && <button type="button" className="btn sm soft" onClick={() => setPassFor(u)} aria-label={`غيّر باسورد ${u.name}`}><Icon d="lock" size={15} />الباسورد</button>}
+                {!locked(u) && <button type="button" className="copy" aria-label={`اقفل حساب ${u.name}`} title="اقفل الحساب" onClick={() => window.confirm(`تقفل حساب ${u.name}؟`) && update(u, { disabled: true })}><Icon d="trash" size={16} /></button>}
               </div>
             ))}
           </section>

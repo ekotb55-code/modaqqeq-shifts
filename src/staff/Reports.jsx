@@ -58,12 +58,14 @@ export default function Reports({ profile, shops }) {
 
   const byAccountant = useMemo(() => {
     const m = {};
-    reviews.filter((r) => r.closedAt).forEach((r) => {
+    // An accountant sees only his own performance; managers, owners and Modaqqeq see everyone.
+    const mineOnly = ['accountant', 'reviewer'].includes(profile.role);
+    reviews.filter((r) => r.closedAt && (!mineOnly || r.accountantUid === profile.id)).forEach((r) => {
       const a = (m[r.accountantName] ||= { name: r.accountantName, n: 0, close: 0, wait: 0 });
       a.n += 1; a.close += num(r.closeMinutes); a.wait += num(r.waitMinutes);
     });
     return Object.values(m);
-  }, [reviews]);
+  }, [reviews, profile.role, profile.id]);
 
   const openShift = rows.find((r) => r.id === openId);
   const hm = (mins) => `${Math.floor(mins / 60)} س ${mins % 60} د`;
@@ -132,7 +134,7 @@ export default function Reports({ profile, shops }) {
             {byCashier.length === 0 && <div className="empty">—</div>}
           </section>
           <section className="card" style={{ flex: '1 1 380px' }}>
-            <h2 className="h2">أداء المحاسبين</h2>
+            <h2 className="h2">{['accountant', 'reviewer'].includes(profile.role) ? 'أدائي' : 'أداء المحاسبين'}</h2>
             <table className="table">
               <thead><tr><th>المحاسب</th><th>قفل</th><th>متوسط الانتظار قبل ما يبدأ</th><th>متوسط وقت التقفيل</th></tr></thead>
               <tbody>{byAccountant.map((a) => <tr key={a.name}><td><b>{a.name}</b></td><td>{a.n}</td><td>{Math.round(a.wait / a.n)} د</td><td>{Math.round(a.close / a.n)} د</td></tr>)}</tbody>
