@@ -65,7 +65,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
   };
 
   const addWalletPhoto = async (k) => {
-    const data = await captureDocument({ maxSide: 1100, quality: 0.7 });
+    const data = await captureDocument({ maxSide: 1100, quality: 0.7, kind: 'phone', title: `صوّر شاشة ${walletKeys.find((x) => x.key === k)?.label || 'المحفظة'}` });
     if (data) { setWphotos((p) => ({ ...p, [k]: data })); toast('الصورة اترفعت · كمّل عادي'); }
   };
   const walletPhotoDocs = (pb, shiftId) => Object.entries(wphotos).forEach(([k, data]) => {
@@ -73,7 +73,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
     pb.set(doc(collection(db, 'shifts', shiftId, 'photos')), { kind: 'wallet', stage: 'receive', wallet: k, label: w?.label || k, amount: num(wallets[k]), data, check: 'pending', createdAt: serverTimestamp() });
   });
   const addPhoto = async (i) => {
-    const data = await captureDocument({ maxSide: 1100, quality: 0.7 });
+    const data = await captureDocument({ maxSide: 1100, quality: 0.7, kind: 'machine', title: 'صوّر شاشة المكنة' });
     if (data) { setPhotos((p) => ({ ...p, [i]: data })); toast('الصورة اترفعت · كمّل عادي'); }
   };
 

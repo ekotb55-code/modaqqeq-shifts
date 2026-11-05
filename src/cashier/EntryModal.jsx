@@ -85,7 +85,9 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
   const reasonValue = reason === '__new' ? custom.trim() : reason;
 
   const takePhoto = async () => {
-    const data = await captureDocument({ maxSide: 1200, quality: 0.7 });
+    const data = await captureDocument(type === 'transfer'
+      ? { maxSide: 1200, quality: 0.7, kind: 'phone', title: 'صوّر شاشة التحويل' }
+      : { maxSide: 1200, quality: 0.7, kind: 'paper', title: kind === 'supplier' ? 'صوّر الفاتورة' : 'صوّر الإيصال' });
     if (data) setPhoto(data);
   };
 

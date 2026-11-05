@@ -8,8 +8,15 @@ import { createRoot } from 'react-dom/client';
 
 const FULL = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }];
 
+// What we're looking for. Receipts/invoices = paper; InstaPay & wallets = a phone screen; machines = the machine's screen.
+const KINDS = {
+  paper: { screen: false, minArea: 0.07, minFill: 0.6, what: 'الفاتورة أو الإيصال', got: 'لقطنا الورقة', guide: [0.7, 0.78], filter: 'auto' },
+  phone: { screen: true, minArea: 0.04, minFill: 0.72, what: 'شاشة الموبايل', got: 'لقطنا شاشة الموبايل', guide: [0.5, 0.66], filter: 'orig' },
+  machine: { screen: true, minArea: 0.03, minFill: 0.72, what: 'شاشة المكنة', got: 'لقطنا شاشة المكنة', guide: [0.74, 0.42], filter: 'orig' },
+};
+
 // ---------- corner detection on a small copy of the frame ----------
-function findQuad(ctx, w, h) {
+function findQuad(ctx, w, h, kind = 'paper') {
   const { data } = ctx.getImageData(0, 0, w, h);
   const total = w * h;
   const g0 = new Uint8Array(total);
@@ -39,21 +46,44 @@ function findQuad(ctx, w, h) {
     const between = wB * wF * (mB - mF) * (mB - mF);
     if (between > best) { best = between; thr = t; gap = mF - mB; }
   }
-  if (gap < 28) return null; // flat picture, nothing stands out
+  if (gap < 24) return null; // flat picture, nothing stands out
+  const K = KINDS[kind] || KINDS.paper;
+  // passes: normal split, then only the brightest part (white paper on a light table, a lit screen),
+  // and for screens the dark body of the phone / machine around it.
+  let p98 = 255;
+  for (let t = 255, acc = 0; t >= 0; t--) { acc += hist[t]; if (acc > total * 0.02) { p98 = t; break; } }
+  const passes = [{ t: thr, inv: false }];
+  if (p98 - thr > 25) passes.push({ t: Math.round(thr + (p98 - thr) * 0.55), inv: false });
+  // a phone is a dark body around its screen → try its outline first (keeps the app header in the picture)
+  // (dark threshold split again inside the dark half, so a mid-tone table isn't counted as dark)
+  const tDark = otsuRange(hist, 0, thr);
+  const dark = [{ t: tDark, inv: true }, { t: thr, inv: true }];
+  if (kind === 'phone') passes.unshift(...dark);
+  else if (K.screen) passes.push(...dark);
   const mask = new Uint8Array(total);
-  let bright = 0;
-  for (let i = 0; i < total; i++) if (g[i] > thr) { mask[i] = 1; bright++; }
-  if (bright < total * 0.05 || bright > total * 0.92) return null;
-
-  // bright blobs with their extreme points (corners of a tilted rectangle)
-  const seen = new Uint8Array(total);
+  const seen = new Int32Array(total);
   const stack = new Int32Array(total);
+  for (const pass of passes) {
+    let on = 0;
+    for (let i = 0; i < total; i++) { const m = pass.inv ? g[i] < pass.t : g[i] > pass.t; mask[i] = m ? 1 : 0; on += mask[i]; }
+    if (on < total * K.minArea * 0.7 || on > total * 0.92) continue;
+    seen.fill(0);
+    const q = bestBlob(mask, seen, stack, w, h, K, kind === 'phone' && pass.inv);
+    if (q) return q;
+  }
+  return null;
+}
+
+// Largest blob that looks like a rectangle seen at an angle → its 4 corners (TL, TR, BR, BL), 0..1.
+function bestBlob(mask, seen, stack, w, h, K, holes) {
+  const total = w * h;
   const blobs = [];
   for (let s = 0; s < total; s++) {
     if (!mask[s] || seen[s]) continue;
     let sp = 0, n = 0, edges = 0;
     let minS = 1e9, maxS = -1e9, minD = 1e9, maxD = -1e9, tl = 0, br = 0, tr = 0, bl = 0;
-    stack[sp++] = s; seen[s] = 1;
+    const id = blobs.length + 1;
+    stack[sp++] = s; seen[s] = id;
     while (sp) {
       const p = stack[--sp]; n++;
       const x = p % w, y = (p / w) | 0;
@@ -61,23 +91,26 @@ function findQuad(ctx, w, h) {
       const S = x + y, D = x - y;
       if (S < minS) { minS = S; tl = p; } if (S > maxS) { maxS = S; br = p; }
       if (D > maxD) { maxD = D; tr = p; } if (D < minD) { minD = D; bl = p; }
-      if (x > 0 && mask[p - 1] && !seen[p - 1]) { seen[p - 1] = 1; stack[sp++] = p - 1; }
-      if (x < w - 1 && mask[p + 1] && !seen[p + 1]) { seen[p + 1] = 1; stack[sp++] = p + 1; }
-      if (y > 0 && mask[p - w] && !seen[p - w]) { seen[p - w] = 1; stack[sp++] = p - w; }
-      if (y < h - 1 && mask[p + w] && !seen[p + w]) { seen[p + w] = 1; stack[sp++] = p + w; }
+      if (x > 0 && mask[p - 1] && !seen[p - 1]) { seen[p - 1] = id; stack[sp++] = p - 1; }
+      if (x < w - 1 && mask[p + 1] && !seen[p + 1]) { seen[p + 1] = id; stack[sp++] = p + 1; }
+      if (y > 0 && mask[p - w] && !seen[p - w]) { seen[p - w] = id; stack[sp++] = p - w; }
+      if (y < h - 1 && mask[p + w] && !seen[p + w]) { seen[p + w] = id; stack[sp++] = p + w; }
     }
-    if (n >= total * 0.06) blobs.push({ n, edges, c: [tl, tr, br, bl] });
+    blobs.push({ id, n, edges, c: [tl, tr, br, bl] });
   }
-  blobs.sort((a, b) => b.n - a.n);
-  for (const b of blobs) {
-    if (b.edges === 15) continue; // touches all 4 sides: that's the background, not a paper
+  const big = blobs.filter((b) => b.n >= total * K.minArea * 0.7).sort((a, b) => b.n - a.n);
+  for (const b of big) {
+    if (b.edges === 15) continue; // touches all 4 sides: that's the background
+    if (K.screen && (b.edges & 3) === 3 && (b.edges & 12)) continue; // screens are fully inside the picture
     const q = b.c.map((p) => ({ x: (p % w) + 0.5, y: ((p / w) | 0) + 0.5 }));
     const area = polyArea(q);
-    if (area < total * 0.07 || !convex(q)) continue;
-    const fill = b.n / area;
-    if (fill < 0.6 || fill > 1.3) continue;
+    if (area < total * K.minArea || !convex(q)) continue;
+    let fill = b.n / area;
+    // the phone's screen is a hole inside its dark body: count it as part of the phone
+    if (holes && fill < K.minFill) fill = filledCount(seen, stack, w, h, b.id) / area;
+    if (fill < K.minFill || fill > 1.3) continue;
     const minEdge = Math.min(...q.map((p, i) => Math.hypot(p.x - q[(i + 1) % 4].x, p.y - q[(i + 1) % 4].y)));
-    if (minEdge < Math.min(w, h) * 0.15) continue;
+    if (minEdge < Math.min(w, h) * (K.screen ? 0.12 : 0.15)) continue;
     // push the corners out a little (blur eats the edge)
     const cx = (q[0].x + q[1].x + q[2].x + q[3].x) / 4, cy = (q[0].y + q[1].y + q[2].y + q[3].y) / 4;
     return q.map((p) => ({
@@ -86,6 +119,34 @@ function findQuad(ctx, w, h) {
     }));
   }
   return null;
+}
+function otsuRange(hist, lo, hi) {
+  let n = 0, sum = 0;
+  for (let t = lo; t <= hi; t++) { n += hist[t]; sum += t * hist[t]; }
+  let wB = 0, sumB = 0, best = -1, thr = (lo + hi) >> 1;
+  for (let t = lo; t <= hi; t++) {
+    wB += hist[t]; if (!wB) continue;
+    const wF = n - wB; if (!wF) break;
+    sumB += t * hist[t];
+    const d = sumB / wB - (sum - sumB) / wF, between = wB * wF * d * d;
+    if (between > best) { best = between; thr = t; }
+  }
+  return thr;
+}
+// Pixels of blob `id` plus the holes inside it (everything the outside can't reach).
+function filledCount(label, stack, w, h, id) {
+  const total = w * h, out = new Uint8Array(total);
+  let sp = 0, outside = 0;
+  const push = (p) => { if (!out[p] && label[p] !== id) { out[p] = 1; stack[sp++] = p; } };
+  for (let x = 0; x < w; x++) { push(x); push((h - 1) * w + x); }
+  for (let y = 0; y < h; y++) { push(y * w); push(y * w + w - 1); }
+  while (sp) {
+    const p = stack[--sp]; outside++;
+    const x = p % w;
+    if (x > 0) push(p - 1); if (x < w - 1) push(p + 1);
+    if (p >= w) push(p - w); if (p < total - w) push(p + w);
+  }
+  return total - outside;
 }
 function polyArea(q) {
   let a = 0;
@@ -102,12 +163,12 @@ function convex(q) {
   }
   return true;
 }
-function detectOn(source, sw, sh, DW = 200) {
+function detectOn(source, sw, sh, kind, DW = 200) {
   const W = DW, H = Math.max(1, Math.round((sh / sw) * W));
   const c = document.createElement('canvas'); c.width = W; c.height = H;
   const ctx = c.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(source, 0, 0, W, H);
-  return findQuad(ctx, W, H);
+  return findQuad(ctx, W, H, kind);
 }
 const moved = (a, b) => Math.max(...a.map((p, i) => Math.hypot(p.x - b[i].x, p.y - b[i].y)));
 
@@ -244,7 +305,9 @@ const I = {
 
 const AUTO_FRAMES = 8; // ≈1.1 s steady → shoot
 
-function CameraUI({ maxSide, quality, title, onDone }) {
+function CameraUI({ maxSide, quality, title, kind: kindIn, onDone }) {
+  const kind = KINDS[kindIn] ? kindIn : 'paper';
+  const K = KINDS[kind];
   const video = useRef(null);
   const overlay = useRef(null);
   const fileRef = useRef(null);
@@ -270,7 +333,7 @@ function CameraUI({ maxSide, quality, title, onDone }) {
   const [shot, setShot] = useState(null); // { canvas, data, auto }
   const [quad, setQuad] = useState(FULL);
   const [rot, setRot] = useState(0);
-  const [filter, setFilter] = useState(() => store.get('mdq-cam-filter', 'auto'));
+  const [filter, setFilter] = useState(() => store.get(`mdq-cam-filter-${kind}`, K.filter));
   const [showFilters, setShowFilters] = useState(false);
   modeRef.current = mode; autoRef.current = auto;
 
@@ -293,9 +356,20 @@ function CameraUI({ maxSide, quality, title, onDone }) {
       if (t) shown.current = shown.current ? shown.current.map((p, i) => ({ x: p.x + (t[i].x - p.x) * 0.35, y: p.y + (t[i].y - p.y) * 0.35 })) : t;
       alpha.current += ((t ? 1 : 0) - alpha.current) * 0.2;
       const q = shown.current;
-      if (!q || alpha.current < 0.02) return;
       const s = Math.min(r.width / v.videoWidth, r.height / v.videoHeight);
       const vw = v.videoWidth * s, vh = v.videoHeight * s, ox = (r.width - vw) / 2, oy = (r.height - vh) / 2;
+      // dashed guide in the shape of what we want (phone / machine screen / paper) while nothing is found
+      if (alpha.current < 0.6) {
+        const [gw, gh] = K.guide;
+        let w = vw * gw, h = vh * gh;
+        if (kind === 'phone') { h = Math.min(vh * gh, w * 2.05); w = h / 2.05; }
+        const x = ox + (vw - w) / 2, y = oy + (vh - h) / 2, rr = kind === 'phone' ? 26 : 14;
+        ctx.globalAlpha = 0.75 * (1 - alpha.current / 0.6);
+        ctx.setLineDash([12, 9]); ctx.lineWidth = 2.5; ctx.strokeStyle = '#fff';
+        ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, rr) : ctx.rect(x, y, w, h); ctx.stroke();
+        ctx.setLineDash([]); ctx.globalAlpha = 1;
+      }
+      if (!q || alpha.current < 0.02) return;
       const P = q.map((p) => [ox + p.x * vw, oy + p.y * vh]);
       ctx.globalAlpha = alpha.current;
       ctx.beginPath(); P.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath();
@@ -327,7 +401,7 @@ function CameraUI({ maxSide, quality, title, onDone }) {
           const W = 200, H = Math.round((v.videoHeight / v.videoWidth) * W);
           if (small.width !== W || small.height !== H) { small.width = W; small.height = H; }
           sctx.drawImage(v, 0, 0, W, H);
-          const q = findQuad(sctx, W, H);
+          const q = findQuad(sctx, W, H, kind);
           const prev = target.current;
           if (q && prev && moved(q, prev) < 0.02) steady.current++; else steady.current = q ? 1 : 0;
           target.current = q;
@@ -350,10 +424,10 @@ function CameraUI({ maxSide, quality, title, onDone }) {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const openShot = (canvas, q) => {
+  const openShot = (canvas, q, start) => {
     const data = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, canvas.width, canvas.height);
-    setShot({ canvas, data, auto: q });
-    setQuad(q || FULL); setRot(0); setShowFilters(false);
+    setShot({ canvas, data, auto: q, whole: !!start });
+    setQuad(start || q || FULL); setRot(0); setShowFilters(false);
     setMode('review');
   };
 
@@ -367,7 +441,7 @@ function CameraUI({ maxSide, quality, title, onDone }) {
     c.getContext('2d', { willReadFrequently: true }).drawImage(v, 0, 0);
     // sharper corners from a bigger copy of the same frame
     const live = target.current;
-    const fine = detectOn(c, c.width, c.height, 480);
+    const fine = detectOn(c, c.width, c.height, kind, 480);
     const q = fine && (!live || moved(fine, live) < 0.08) ? fine : live;
     steady.current = 0; setProgress(0);
     openShot(c, q);
@@ -384,7 +458,9 @@ function CameraUI({ maxSide, quality, title, onDone }) {
       const k = Math.min(1, 2200 / Math.max(img.width, img.height));
       const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
       c.getContext('2d', { willReadFrequently: true }).drawImage(img, 0, 0, c.width, c.height);
-      openShot(c, detectOn(c, c.width, c.height, 480));
+      const found = detectOn(c, c.width, c.height, kind, 480);
+      // a screenshot from the gallery is already the screen → keep it whole; the auto frame stays one tap away
+      openShot(c, found, K.screen ? FULL : null);
     } catch { setErr('الصورة دي مش بتتفتح، جرّب صورة تانية'); } finally { URL.revokeObjectURL(url); }
   };
 
@@ -393,7 +469,7 @@ function CameraUI({ maxSide, quality, title, onDone }) {
     try { await t.applyConstraints({ advanced: [{ torch: !torch }] }); setTorch(!torch); } catch { setTorchOk(false); }
   };
   const setAutoMode = (v) => { setAuto(v); store.set('mdq-cam-auto', v ? '1' : '0'); steady.current = 0; setProgress(0); };
-  const chooseFilter = (id) => { setFilter(id); store.set('mdq-cam-filter', id); };
+  const chooseFilter = (id) => { setFilter(id); store.set(`mdq-cam-filter-${kind}`, id); };
   const retake = () => { setShot(null); setMode('live'); target.current = null; shown.current = null; steady.current = 0; };
 
   // ── result ──
@@ -407,8 +483,8 @@ function CameraUI({ maxSide, quality, title, onDone }) {
   }, [shot, quad, rot, showFilters]);
 
   const hint = err ? '' : !ready ? 'بنفتح الكاميرا…'
-    : found ? (auto ? 'جاري المسح… ثبّت الموبايل ومتحركوش' : 'لقطنا الورقة · دوس على زرار التصوير')
-      : 'حط الفاتورة أو الشاشة قدام الكاميرا';
+    : found ? (auto ? `${K.got}… ثبّت الموبايل ومتحركوش` : `${K.got} · دوس على زرار التصوير`)
+      : `حط ${K.what} جوّه الإطار`;
 
   return (
     <div className="cam-ui" role="dialog" aria-label={title || 'التصوير'}>
@@ -469,7 +545,8 @@ function CameraUI({ maxSide, quality, title, onDone }) {
               <button type="button" className="cam-round" onClick={retake} aria-label="امسحها وصوّر تاني" title="صوّر تاني"><Ico d={I.trash} size={22} /></button>
               <button type="button" className="cam-round" onClick={() => setMode('crop')} aria-label="القص والتدوير" title="القص والتدوير"><Ico d={I.crop} size={22} /></button>
             </div>
-            {!shot.auto && <span className="cam-note">مقدرناش نحدد الورقة لوحدنا · ظبطها من «القص والتدوير»</span>}
+            {shot.whole ? <span className="cam-note">دي الصورة كاملة · لو عايز تقصها دوس «القص والتدوير»</span>
+              : !shot.auto && <span className="cam-note">مقدرناش نحدد {K.screen ? 'الشاشة' : 'الورقة'} لوحدنا · ظبطها من «القص والتدوير»</span>}
           </div>
           <div className="cam-chips">
             <button type="button" className="cam-chip" onClick={() => setMode('crop')}><Ico d={I.crop} size={18} />القص والتدوير</button>
@@ -537,7 +614,7 @@ function CropView({ shot, quad, rot: rot0, title, onCancel, onDone }) {
     <div className="cam-rev">
       <div className="cam-top">
         <button type="button" className="cam-ib" onClick={onCancel} aria-label="رجوع من غير حفظ"><Ico d={I.x} /></button>
-        <span className="cam-title">اسحب النقط على أطراف الورقة</span>
+        <span className="cam-title">اسحب النقط على الأطراف</span>
         <span className="cam-ib" aria-hidden="true" />
       </div>
       <div className="cam-cropwrap" ref={wrap}>
@@ -580,12 +657,13 @@ function CropView({ shot, quad, rot: rot0, title, onCancel, onDone }) {
 }
 
 // Opens the scanner over the page and resolves with a JPEG data URL (or null).
-export function captureDocument({ maxSide = 1100, quality = 0.7, title } = {}) {
+// kind: 'paper' (receipt / invoice), 'phone' (InstaPay / wallet screen), 'machine' (machine screen).
+export function captureDocument({ maxSide = 1100, quality = 0.7, title, kind = 'paper' } = {}) {
   return new Promise((resolve) => {
     const host = document.createElement('div');
     document.body.appendChild(host);
     const root = createRoot(host);
     const done = (v) => { root.unmount(); host.remove(); resolve(v); };
-    root.render(<CameraUI maxSide={maxSide} quality={quality} title={title} onDone={done} />);
+    root.render(<CameraUI maxSide={maxSide} quality={quality} title={title} kind={kind} onDone={done} />);
   });
 }

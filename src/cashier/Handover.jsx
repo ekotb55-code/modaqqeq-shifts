@@ -77,11 +77,11 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
     } catch (e) { console.error(e); toast('مش قادرين نحفظ، اتأكد من النت', 'err'); }
   };
   const addWalletPhoto = async (k) => {
-    const data = await captureDocument({ maxSide: 1100, quality: 0.7 });
+    const data = await captureDocument({ maxSide: 1100, quality: 0.7, kind: 'phone', title: 'صوّر شاشة المحفظة' });
     if (data) { setWphotos((p) => ({ ...p, [k]: data })); toast('الصورة اترفعت · كمّل عادي'); }
   };
   const addPhoto = async (i) => {
-    const data = await captureDocument({ maxSide: 1100, quality: 0.7 });
+    const data = await captureDocument({ maxSide: 1100, quality: 0.7, kind: 'machine', title: 'صوّر شاشة المكنة' });
     if (data) { setPhotos((p) => ({ ...p, [i]: data })); toast('الصورة اترفعت · كمّل عادي'); }
   };
 
