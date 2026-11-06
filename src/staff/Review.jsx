@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Avatar, CopyBtn, Icon, Modal, PhotoView, ZoomImage, useToast } from '../ui.jsx';
-import { BILL_BG, FACES, SRC_LABEL, WALLETS, shopForRegister, computeShift, diffText, durationStr, fmt, minutesBetween, num, safeLabel, timeStr, toDate, dateStr } from '../lib';
+import { BILL_BG, ENTRY_TYPES, FACES, SRC_LABEL, WALLETS, shopForRegister, computeShift, diffText, durationStr, fmt, minutesBetween, num, safeLabel, timeStr, toDate, dateStr } from '../lib';
 import Statements from './Statements.jsx';
 import ShiftChat from '../ShiftChat.jsx';
 import { DeletedList, entryTitle } from '../cashier/Dash.jsx';
@@ -17,6 +17,30 @@ const STATUS = {
   reopened: { label: 'مفتوحة للكاشير يعدّل', cls: 'info' },
   closed: { label: 'اتقفلت', cls: 'ok' },
 };
+
+const DRAWER_NAME = { drawer: 'درج الكاشير', side: 'الدرج الجانبي' };
+const DIR_STYLE = {
+  out: { background: '#FFE4E4', color: '#B42318' },
+  in: { background: '#E1F7E4', color: '#106B21' },
+  move: { background: '#E6F4FF', color: '#144F86' },
+};
+// Which way did the money go for this operation, and out of / into which drawer.
+function dirOf(e, shop) {
+  if (e.type === 'transfer') return null;
+  const where = DRAWER_NAME[e.src] || SRC_LABEL[e.src] || safeLabel(e.src, shop);
+  if (e.type === 'move') {
+    const to = (e.to || 'side') === 'side' ? 'side' : 'drawer';
+    const from = to === 'side' ? 'drawer' : 'side';
+    return { kind: 'move', text: `⇄ نقل من ${DRAWER_NAME[from]} إلى ${DRAWER_NAME[to]}` };
+  }
+  if (e.type === 'liquidate' && (e.to === 'drawer' || e.to === 'side')) return { kind: 'in', text: `⬇ دخل ${DRAWER_NAME[e.to]}` };
+  if (['expense', 'topup', 'withdraw', 'xfer_out', 'liquidate'].includes(e.type)) return { kind: 'out', text: `⬆ خرج من ${where}` };
+  if (['income', 'xfer_in'].includes(e.type)) return { kind: 'in', text: `⬇ دخل ${where}` };
+  const sign = ENTRY_TYPES[e.type]?.sign;
+  if (sign < 0) return { kind: 'out', text: `⬆ خرج من ${where}` };
+  if (sign > 0) return { kind: 'in', text: `⬇ دخل ${where}` };
+  return null;
+}
 
 export function useShopShifts(shops, statuses) {
   const [list, setList] = useState([]);
@@ -267,10 +291,18 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
 
   const resultStyle = sum.diff === null ? { background: 'var(--chip)' } : sum.diff < 0 ? { background: 'var(--red-soft)', color: '#9B1C1C' } : sum.diff > 0 ? { background: 'var(--lime-soft)', color: 'var(--lime-ink)' } : { background: 'var(--blue-soft)', color: '#144F86' };
 
+  const flowOf = (list) => {
+    let o = 0;
+    let i = 0;
+    list.forEach((e) => { const d = dirOf(e, shop); if (d?.kind === 'out') o += num(e.amount); else if (d?.kind === 'in') i += num(e.amount); });
+    return `خرج ${fmt(o)} · دخل ${fmt(i)}`;
+  };
+
   // One operation row (used for both "عمليات الكاشير" and "الجانبي").
   const renderOp = (e) => {
     const ph = e.photoId && photoOf(e.photoId);
     const name = e.sub || e.reason || e.machine || '';
+    const dir = dirOf(e, shop);
     return (
       <div key={e.id} className="list-row">
         <label style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '1 1 260px', minWidth: 0 }}>
@@ -278,6 +310,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
           <span className="stack" style={{ gap: 1 }}>
             <span style={{ fontWeight: 700 }}>{entryTitle(e)}{e.newItem && <span className="badge warn" style={{ marginInlineStart: 6 }}>جديد</span>}</span>
             <span className="tiny muted">{timeStr(e.createdAt || e.createdAtLocal)} · {SRC_LABEL[e.src] || safeLabel(e.src, shop)}{e.type === 'liquidate' ? ` ← ${safeLabel(e.to, shop)}` : ''}</span>
+            {dir && <span style={{ alignSelf: 'flex-start', marginTop: 3, padding: '2px 10px', borderRadius: 999, fontSize: 12, fontWeight: 800, ...DIR_STYLE[dir.kind] }}>{dir.text}</span>}
           </span>
         </label>
         {ph && <img className="thumb" style={{ width: 44, height: 44 }} src={ph.data} alt="صورة" onClick={() => setView(ph.data)} />}
@@ -376,7 +409,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
         {cashierOps.length > 0 && (
           <div className="spread" style={{ margin: '18px 0 6px', padding: '10px 14px', borderRadius: 12, background: '#E6F4FF', color: '#144F86', borderInlineStart: '6px solid var(--blue)', fontSize: 17, fontWeight: 800 }}>
             <span>عمليات درج الكاشير</span>
-            <span style={{ fontSize: 14, fontWeight: 700 }}>{cashierOps.length} عملية · {fmt(cashierOps.reduce((a, e) => a + num(e.amount), 0))}</span>
+            <span style={{ fontSize: 14, fontWeight: 700 }}>{cashierOps.length} عملية · {flowOf(cashierOps)}</span>
           </div>
         )}
         {cashierOps.map(renderOp)}
@@ -384,7 +417,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
         {sideOps.length > 0 && (
           <div className="spread" style={{ margin: '22px 0 6px', padding: '10px 14px', borderRadius: 12, background: '#FFF1DE', color: '#8A4B00', borderInlineStart: '6px solid #FF9F43', fontSize: 17, fontWeight: 800 }}>
             <span>عمليات الدرج الجانبي</span>
-            <span style={{ fontSize: 14, fontWeight: 700 }}>{sideOps.length} عملية · {fmt(sideOps.reduce((a, e) => a + num(e.amount), 0))}</span>
+            <span style={{ fontSize: 14, fontWeight: 700 }}>{sideOps.length} عملية · {flowOf(sideOps)}</span>
           </div>
         )}
         {sideOps.map(renderOp)}
