@@ -109,6 +109,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
   const [sales, setSales] = useState('');
   const [view, setView] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [forceOpen, setForceOpen] = useState(false); // التحكم في ظهور نافذة القفل بالنيابة
 
   useEffect(() => {
     const a = onSnapshot(query(collection(db, 'shifts', shift.id, 'entries'), orderBy('createdAt', 'asc')), (q) => setEntries(q.docs.map((d) => ({ id: d.id, ...d.data() }))), () => {});
@@ -203,18 +204,6 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
     setBusy(false);
   };
 
-  const forceSubmit = async () => {
-    if (!window.confirm('هتقفل الوردية بالنيابة عن الكاشير من غير تسليم. متأكد؟')) return;
-    try {
-      const b = writeBatch(db);
-      b.update(doc(db, 'shifts', shift.id), { status: 'submitted', submittedAt: serverTimestamp(), forced: true, forcedBy: profile.name, handover: shift.handover || null });
-      if (shop?.openShift?.id === shift.id) b.update(doc(db, 'shops', shift.shopId), { openShift: null });
-      await b.commit();
-      logAct('force', `قفل وردية ${shift.cashierName} بالنيابة عن الكاشير`, { shopId: shift.shopId, shiftId: shift.id });
-      toast('الوردية اتقفلت ووصلت للمراجعة');
-    } catch (e) { console.error(e); toast('حصلت مشكلة', 'err'); }
-  };
-
   const deleteShift = async () => {
     if (profile?.role !== 'admin') return;
     const confirmDelete = window.confirm(`هل أنت متأكد من حذف وردية ${shift.cashierName} نهائياً؟ \n\nسيتم مسحها من السيستم ولن يمكن استرجاعها!`);
@@ -235,6 +224,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
   const [addOpen, setAddOpen] = useState(false);
   const [reopenOpen, setReopenOpen] = useState(false);
   const logFix = (what, from, to) => ({ corrections: [...(shift.corrections || []), { what, from, to, by: profile.name, at: new Date().toISOString() }] });
+  
   const fixEntry = async (e, amount) => {
     try {
       await updateDoc(doc(db, 'shifts', shift.id, 'entries', e.id), { amount: num(amount), originalAmount: e.originalAmount ?? e.amount, correctedBy: profile.name, correctedAt: serverTimestamp() });
@@ -272,6 +262,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
       toast('الرقم اتعدّل والحساب اتحدّث'); setFix(null);
     } catch (err) { console.error(err); toast('مش قادرين نعدّل', 'err'); }
   };
+
   const photoFields = (p) => {
     if (p.entryId || p.kind === 'wallet') return [{ label: 'الرقم الصح', value: photoTyped(p) }];
     const list = (p.stage === 'receive' ? rcv.machines : hnd.machines) || [];
@@ -281,9 +272,12 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
   const togglePosted = (e) => updateDoc(doc(db, 'shifts', shift.id, 'entries', e.id), { posted: !e.posted, postedBy: profile.name })
     .then(() => logAct('post', `${e.posted ? 'شال العلامة من' : 'علّم ✓ على'} «${entryTitle(e)}» ${fmt(e.amount)} ج · وردية ${shift.cashierName}`, { shopId: shift.shopId, shiftId: shift.id }))
     .catch(() => toast('مش قادرين نحفظ', 'err'));
+  
   const photoOf = (id) => photos.find((p) => p.id === id);
+  
   const checkPhoto = (p, check) => updateDoc(doc(db, 'shifts', shift.id, 'photos', p.id), { check, checkedBy: profile.name, checkedAt: serverTimestamp() })
     .then(() => logAct('photo', `${check === 'ok' ? 'علّم صورة «' + p.label + '» مطابقة' : check === 'bad' ? 'علّم صورة «' + p.label + '» مش مطابقة' : 'شال العلامة من صورة «' + p.label + '»'} · وردية ${shift.cashierName}`, { shopId: shift.shopId, shiftId: shift.id })).catch(() => toast('مش قادرين نحفظ', 'err'));
+  
   const photoTyped = (p) => {
     if (p.kind === 'wallet') return (p.stage === 'receive' ? rcv.wallets?.[p.wallet] : hnd.walletsTyped?.[p.wallet]) ?? p.amount ?? null;
     if (p.kind !== 'machine') return p.amount ?? null;
@@ -363,7 +357,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
           
           {profile?.role === 'admin' && (
             <button type="button" className="btn sm" style={{ background: '#FEE2E2', color: '#991B1B', border: '1px solid #FCA5A5' }} onClick={deleteShift}>
-              <Icon d="trash" size={16} /> حذف الوردية نهائياً
+              <Icon d="trash" size={16} /> حذف الوردية
             </button>
           )}
 
@@ -378,9 +372,11 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
       {status === 'open' && canReview && (
         <section className="card spread" data-tour="force">
           <span className="muted">الوردية لسه شغالة. لو الكاشير مشي من غير ما يسلّم تقدر تقفلها بالنيابة عنه.</span>
-          <button type="button" className="btn soft sm" onClick={forceSubmit}>قفل بالنيابة</button>
+          <button type="button" className="btn soft sm" onClick={() => setForceOpen(true)}>قفل بالنيابة</button>
         </section>
       )}
+
+      {forceOpen && <ForceCloseModal shift={shift} shop={shop} profile={profile} onClose={() => setForceOpen(false)} />}
 
       {status === 'reopened' && (
         <section className="card spread" style={{ background: '#E6F4FF' }}>
@@ -552,6 +548,124 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
   );
 }
 
+// مكون نافذة الإغلاق بالنيابة
+function ForceCloseModal({ shift, shop, profile, onClose }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  
+  // حقول بيانات التسليم
+  const [drawerTotal, setDrawerTotal] = useState('');
+  const [sideTotal, setSideTotal] = useState('');
+  
+  // بناء حقول للمكن (لو المحل فيه مكن)
+  const machines = shop.machines || [];
+  const [machineVals, setMachineVals] = useState(machines.reduce((acc, m) => ({ ...acc, [m.machine]: '' }), {}));
+
+  // بناء حقول للمحافظ (لو الكاشير بيستلم رصيد محافظ)
+  const wallets = shop.wallets || [];
+  const shopWallets = wallets.filter((w) => walletModeOf(shop, w) === 'shop');
+  const [walletVals, setWalletVals] = useState(shopWallets.reduce((acc, w) => ({ ...acc, [w]: '' }), {}));
+
+  const go = async () => {
+    if (drawerTotal === '') { toast('لازم تكتب إجمالي درج الكاشير', 'err'); return; }
+    if (!shop.noSide && sideTotal === '') { toast('لازم تكتب إجمالي الدرج الجانبي', 'err'); return; }
+
+    setBusy(true);
+    try {
+      const now = new Date();
+      const b = writeBatch(db);
+
+      // بناء أوبجيكت handover بنفس شكل اللي بيتبعت من الكاشير
+      const handover = {
+        drawerTotal: num(drawerTotal),
+        side: num(sideTotal),
+        keepDrawer: 'stay', 
+        keepSide: 'stay',
+        machines: machines.map((m) => ({ ...m, value: num(machineVals[m.machine]), photo: false })),
+        walletsTyped: Object.fromEntries(shopWallets.map(w => [w, num(walletVals[w])])),
+      };
+
+      b.update(doc(db, 'shifts', shift.id), { 
+        status: 'submitted', 
+        submittedAt: serverTimestamp(), 
+        forced: true, 
+        forcedBy: profile.name, 
+        handover 
+      });
+      
+      if (shop?.openShift?.id === shift.id) {
+        b.update(doc(db, 'shops', shift.shopId), { openShift: null });
+      }
+      
+      await b.commit();
+      logAct('force', `قفل وردية ${shift.cashierName} بالنيابة وسجّل الأرصدة`, { shopId: shift.shopId, shiftId: shift.id });
+      toast('الوردية اتقفلت ووصلت للمراجعة');
+      onClose();
+    } catch (e) { 
+      console.error(e); 
+      toast('حصلت مشكلة في القفل', 'err'); 
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title="قفل الوردية بالنيابة" icon="gear" color="var(--red)" onClose={onClose} width={500}>
+      <span className="small muted" style={{ lineHeight: 1.7, marginBottom: 12 }}>
+        اكتب الموجود الفعلي في الدرج دلوقتي عشان الحسابات تظبط قبل المراجعة.
+      </span>
+      
+      <div className="row" style={{ gap: 10 }}>
+        <label className="field" style={{ flex: '1 1 150px' }}>
+          درج الكاشير الفعلي
+          <input className="input" type="number" value={drawerTotal} onChange={(e) => setDrawerTotal(e.target.value)} placeholder="0" autoFocus />
+        </label>
+        
+        {!shop.noSide && (
+          <label className="field" style={{ flex: '1 1 150px' }}>
+            الدرج الجانبي الفعلي
+            <input className="input" type="number" value={sideTotal} onChange={(e) => setSideTotal(e.target.value)} placeholder="0" />
+          </label>
+        )}
+      </div>
+
+      {machines.length > 0 && (
+        <div className="stack" style={{ marginTop: 12 }}>
+          <span className="small muted">أرصدة المكن:</span>
+          <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+            {machines.map((m) => (
+              <label key={m.machine} className="field" style={{ flex: '1 1 120px' }}>
+                {m.machine}
+                <input className="input" type="number" value={machineVals[m.machine]} onChange={(e) => setMachineVals({ ...machineVals, [m.machine]: e.target.value })} placeholder="0" />
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {shopWallets.length > 0 && (
+        <div className="stack" style={{ marginTop: 12 }}>
+          <span className="small muted">أرصدة المحافظ:</span>
+          <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+            {shopWallets.map((w) => {
+              const wl = WALLETS.find(x => x.key === w);
+              return (
+                <label key={w} className="field" style={{ flex: '1 1 120px' }}>
+                  {wl?.label || w}
+                  <input className="input" type="number" value={walletVals[w]} onChange={(e) => setWalletVals({ ...walletVals, [w]: e.target.value })} placeholder="0" />
+                </label>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      <button type="button" className="btn full" style={{ marginTop: 16 }} onClick={go} disabled={busy}>
+        {busy ? 'لحظة…' : 'حفظ وقفل الوردية'}
+      </button>
+    </Modal>
+  );
+}
+
 function MoveRow({ m, on, onToggle, canReview, photoOf, onView }) {
   return (
     <div className="list-row" style={{ background: on ? undefined : '#F2F7FF', flexWrap: 'wrap' }}>
@@ -573,7 +687,6 @@ function MoveRow({ m, on, onToggle, canReview, photoOf, onView }) {
   );
 }
 
-// Safe-to-safe moves the accountant has to make in the POS system for this shift.
 function systemMoves(shift, sum, cashierSafe) {
   const rcv = shift.receive || {};
   const hnd = shift.handover || null;
