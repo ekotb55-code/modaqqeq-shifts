@@ -9,7 +9,7 @@ const INFO = {
   closed: { label: 'اتقفلت', cls: 'ok', text: 'المحاسب راجع الوردية وقفلها.' },
 };
 
-export default function Follow({ shift, profile, onNew, onEdit }) {
+export default function Follow({ shift, profile, onNew, onEdit, newLabel = 'ابدأ استلام جديد' }) {
   const status = INFO[shift.status] ? shift.status : 'submitted';
   const info = INFO[status];
   const diff = typeof shift.diff === 'number' ? shift.diff : null;
@@ -31,7 +31,7 @@ export default function Follow({ shift, profile, onNew, onEdit }) {
     <div className="wrap" style={{ maxWidth: 820 }}>
       <div className="stack" style={{ gap: 4 }}>
         <h1 className="title">أهلًا يا {firstName(profile.name)}</h1>
-        <span className="sub">دي آخر وردية سلّمتها. تابع حالتها وكلّم المحاسب من هنا.</span>
+        <span className="sub">تابع حالة الوردية وكلّم المحاسب من هنا.</span>
       </div>
 
       <section className="card" style={{ gap: 14 }}>
@@ -77,7 +77,7 @@ export default function Follow({ shift, profile, onNew, onEdit }) {
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {status === 'reopened' && <button type="button" className="btn" onClick={onEdit}>عدّل الوردية</button>}
-          <button type="button" className={'btn' + (closed ? '' : ' soft')} onClick={onNew}>ابدأ استلام جديد</button>
+          <button type="button" className={'btn' + (closed ? '' : ' soft')} onClick={onNew}>{newLabel}</button>
         </div>
       </section>
 
