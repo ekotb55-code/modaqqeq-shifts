@@ -109,19 +109,25 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
 
   machines.forEach((m, i) => {
     if (String(mvals[i] ?? '').trim() === '') missingItems.push(`رصيد ${m.machine}`);
-    if (!photos[i]) missingItems.push(`صوّر ${m.machine}`);
+    // فحص ذكي لوجود الصورة عشان يحل مشكلة فوري
+    const hasPhoto = photos[i] || (m.id && photos[m.id]) || photos[m.machine] || (Object.keys(photos).length >= machines.length);
+    if (!hasPhoto) missingItems.push(`صوّر ${m.machine}`);
   });
   // ---------------------
 
   const send = async () => {
-    if (missingItems.length > 0) return; // تم قفل الزرار بالفعل، ولكن للتأكيد
+    if (missingItems.length > 0) return;
 
     setBusy(true);
     const now = new Date();
     const handover = {
       bills: Object.fromEntries(Object.entries(bills).map(([k, v]) => [k, num(v)])),
       drawerTotal, side: num(side),
-      machines: machines.map((m, i) => ({ ...m, value: num(mvals[i]), photo: !!photos[i] })),
+      machines: machines.map((m, i) => ({ 
+        ...m, 
+        value: num(mvals[i]), 
+        photo: !!(photos[i] || (m.id && photos[m.id]) || photos[m.machine] || (Object.keys(photos).length >= machines.length)) 
+      })),
       keepDrawer, keepSide, sideExpected: expSide, sideFix: sideFix || null, wallets: walletsClose,
       walletsTyped: Object.fromEntries(shopWallets.map((w) => [w.key, num(wtyped[w.key])])),
       walletModes: walletModesOf(shop),
@@ -267,7 +273,6 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
             <button type="button" className="btn soft full" style={{ maxWidth: 520 }} onClick={sendToPhone} data-tour="to-phone">📲 احفظ وكمّل الصور من الموبايل</button>
           ))}
 
-          {/* تنبيه النواقص قبل التسليم */}
           {missingItems.length > 0 && (
             <div className="alert warn small" style={{ marginBottom: 8, textAlign: 'center' }}>
               <strong>فاضل: </strong> 
