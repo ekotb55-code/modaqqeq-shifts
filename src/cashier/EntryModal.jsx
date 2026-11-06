@@ -101,6 +101,7 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
     if (type === 'expense' && ['refund', 'other'].includes(kind) && !note.trim()) return kind === 'refund' ? 'اكتب رقم فاتورة البيع' : 'اكتب المصروف ده إيه';
     if (type === 'expense' && kd.needNote && !note.trim()) return 'اكتب ملاحظة';
     if (type === 'income' && !reasonValue) return 'اختار سبب الإيراد';
+    if (type === 'withdraw' && !subValue) return 'اختار مين اللي سحب';
     if (type === 'topup' && !machine) return 'اختار المكنة';
     if (type === 'liquidate' && !liqTo) return 'اختار الفلوس رايحة فين';
     if (type === 'liquidate' && liqTo === src) return 'اختار خزنة تانية';
@@ -118,13 +119,38 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
       type, amount: num(amount), by: profile.id, byName: profile.name,
       createdAt: serverTimestamp(), createdAtLocal: now.toISOString(), posted: false,
     };
-    if (type === 'expense') Object.assign(entry, { src, kind, kindLabel: kd.label, sub: subValue || '', note: note.trim(), invoice: kind === 'supplier' ? invoice : null, newItem: sub === '__new' });
-    if (type === 'income') Object.assign(entry, { src, reason: reasonValue, note: note.trim(), newItem: reason === '__new' });
+    
+    let shopUpdate = null; // لتخزين الإعدادات الجديدة لو الكاشير كتب اسم جديد
+
+    if (type === 'expense') {
+      Object.assign(entry, { src, kind, kindLabel: kd.label, sub: subValue || '', note: note.trim(), invoice: kind === 'supplier' ? invoice : null, newItem: sub === '__new' });
+      // لو كتب مورد/موظف جديد، بنجهزه يتحفظ في إعدادات المحل
+      if (sub === '__new' && custom.trim()) {
+        const val = custom.trim();
+        if (kind === 'supplier') shopUpdate = { suppliers: [...(shop.suppliers || []), val] };
+        else if (['advance', 'wage', 'delivery'].includes(kind)) shopUpdate = { staff: [...(shop.staff || []), val] };
+        else if (kind === 'shop') shopUpdate = { shopExpenses: [...(shop.shopExpenses || []), val] };
+      }
+    }
+    if (type === 'income') {
+      Object.assign(entry, { src, reason: reasonValue, note: note.trim(), newItem: reason === '__new' });
+      // لو كتب سبب إيراد جديد
+      if (reason === '__new' && custom.trim()) {
+        shopUpdate = { incomeReasons: [...(shop.incomeReasons || []), custom.trim()] };
+      }
+    }
     if (type === 'transfer') Object.assign(entry, { wallet, src: wallet });
     if (type === 'topup') { const mm = machineSafes.find((x) => x.key === machine); Object.assign(entry, { src, machineKey: machine, machine: mm?.m?.machine || '', account: mm?.m?.account || '' }); }
     if (type === 'liquidate') Object.assign(entry, { src, to: liqTo, note: note.trim(), fromLabel: safeLabel(src, shop), toLabel: safeLabel(liqTo, shop), fee: fee > 0 ? fee : 0, net: Math.round((num(amount) - fee) * 100) / 100 });
     if (type === 'move') Object.assign(entry, { src: moveTo === 'side' ? 'drawer' : 'side', to: moveTo });
-    if (type === 'withdraw') Object.assign(entry, { src, note: note.trim() });
+    if (type === 'withdraw') {
+      Object.assign(entry, { src, note: note.trim(), sub: subValue, newItem: sub === '__new' });
+      // لو كتب اسم شريك جديد في سحب المالك
+      if (sub === '__new' && custom.trim()) {
+        shopUpdate = { partners: [...(shop.partners || []), custom.trim()] };
+      }
+    }
+    
     try {
       const b = writeBatch(db);
       const eref = doc(collection(db, 'shifts', shift.id, 'entries'));
@@ -134,6 +160,12 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
         b.set(pref, { kind: type === 'transfer' ? 'transfer' : 'invoice', entryId: eref.id, label: type === 'transfer' ? SRC_LABEL[wallet] : subValue, amount: num(amount), data: photo, check: 'pending', createdAt: serverTimestamp() });
       }
       b.set(eref, entry);
+      
+      // حفظ الإعدادات الجديدة في المحل (تلقائياً)
+      if (shopUpdate) {
+        b.update(doc(db, 'shops', shop.id), shopUpdate);
+      }
+
       const p = b.commit();
       if (navigator.onLine) await p; else p.catch(() => {});
       logAct('entry', `سجّل ${META[type].title}${entry.kindLabel ? ` (${entry.kindLabel}${entry.sub ? ` · ${entry.sub}` : ''})` : ''} · ${fmt(entry.amount)} ج`, { shopId: shop.id, shiftId: shift.id });
@@ -270,8 +302,19 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
           <span className="small muted">ده مش بيأثر على إجمالي الفلوس، بس بيظبط حساب كل درج.</span>
         </div>
       )}
+      
       {type === 'withdraw' && (
-        <label className="field">ملاحظة (اختياري)<input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="مثلًا أ. سامح خد إيراد الضهر" /></label>
+        <div className="stack" style={{ gap: 12 }}>
+          <div className="stack" style={{ background: '#F7F6FB', borderRadius: 22, padding: '12px 14px' }}>
+            <span className="small muted">لمين؟</span>
+            <div className="chips">
+              {(shop.partners || []).map((x) => <button key={x} type="button" className={'chip sm' + (sub === x ? ' on' : '')} onClick={() => setSub(x)}>{x}</button>)}
+              <button type="button" className={'chip sm' + (sub === '__new' ? ' on' : '')} onClick={() => setSub('__new')}>+ شريك تاني</button>
+            </div>
+            {sub === '__new' && <input className="input white" placeholder="اكتب اسم الشريك" value={custom} onChange={(e) => setCustom(e.target.value)} autoFocus />}
+          </div>
+          <label className="field">ملاحظة (اختياري)<input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="مثلًا إيراد الضهر" /></label>
+        </div>
       )}
 
       {needsPhoto && (
