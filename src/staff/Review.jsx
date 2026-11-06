@@ -24,7 +24,7 @@ const DIR_STYLE = {
   in: { background: '#E1F7E4', color: '#106B21' },
   move: { background: '#E6F4FF', color: '#144F86' },
 };
-// Which way did the money go for this operation, and out of / into which drawer.
+
 function dirOf(e, shop) {
   if (e.type === 'transfer') return null;
   const where = DRAWER_NAME[e.src] || SRC_LABEL[e.src] || safeLabel(e.src, shop);
@@ -152,10 +152,8 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
 
   const unchecked = photos.filter((p) => p.check !== 'ok' && p.check !== 'bad').length;
   const cashierSafe = `خزنة ${shift.cashierName}`;
-  // Owner wallets: all transfers of one wallet are posted as one statement (700 + 67 …).
   const transferEntries = entries.filter((e) => e.type === 'transfer');
   const opEntries = entries.filter((e) => e.type !== 'transfer');
-  // Split operations by drawer: cashier drawer vs side drawer.
   const cashierOps = opEntries.filter((e) => e.src !== 'side');
   const sideOps = opEntries.filter((e) => e.src === 'side');
   const transferMoves = WALLETS.map((w) => {
@@ -218,14 +216,14 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
   };
 
   const deleteShift = async () => {
-    if (profile.role !== 'admin') return;
+    if (profile?.role !== 'admin') return;
     const confirmDelete = window.confirm(`هل أنت متأكد من حذف وردية ${shift.cashierName} نهائياً؟ \n\nسيتم مسحها من السيستم ولن يمكن استرجاعها!`);
     if (!confirmDelete) return;
 
     try {
       await deleteDoc(doc(db, 'shifts', shift.id));
       toast('تم حذف الوردية بنجاح');
-      if (onDeleted) onDeleted(); // نرجع لورا في القايمة
+      if (onDeleted) onDeleted();
       logAct('delete_shift', `قام بحذف وردية ${shift.cashierName}`, { shopId: shift.shopId });
     } catch (e) {
       console.error(e);
@@ -233,7 +231,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
     }
   };
 
-  const [fix, setFix] = useState(null); // { kind: 'entry' | 'photo', target, value }
+  const [fix, setFix] = useState(null);
   const [addOpen, setAddOpen] = useState(false);
   const [reopenOpen, setReopenOpen] = useState(false);
   const logFix = (what, from, to) => ({ corrections: [...(shift.corrections || []), { what, from, to, by: profile.name, at: new Date().toISOString() }] });
@@ -245,7 +243,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
       toast('المبلغ اتعدّل والحساب اتحدّث'); setFix(null);
     } catch (err) { console.error(err); toast('مش قادرين نعدّل', 'err'); }
   };
-  // A photo marked "not matching": put the right number where the cashier typed it.
+  
   const fixPhoto = async (p, values) => {
     logAct('fix_photo', `عدّل رقم صورة «${p.label}» لـ ${values.map((v) => fmt(num(v))).join(' + ')} ج · وردية ${shift.cashierName}`, { shopId: shift.shopId, shiftId: shift.id });
     try {
@@ -314,7 +312,6 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
     return `خرج ${fmt(o)} · دخل ${fmt(i)}`;
   };
 
-  // One operation row (used for both "عمليات الكاشير" and "الجانبي").
   const renderOp = (e) => {
     const ph = e.photoId && photoOf(e.photoId);
     const name = e.sub || e.reason || e.machine || '';
@@ -364,7 +361,6 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
           {shift.staffUnread && <span className="badge warn">💬 رسالة جديدة من الكاشير</span>}
           {reviewing && review?.startedAt && <span className="badge info">بدأت من {durationStr(review.startedAt)}</span>}
           
-          {/* زرار الحذف مخصص للإدارة بس وهيظهر هنا جنب البادجات دي */}
           {profile?.role === 'admin' && (
             <button type="button" className="btn sm" style={{ background: '#FEE2E2', color: '#991B1B', border: '1px solid #FCA5A5' }} onClick={deleteShift}>
               <Icon d="trash" size={16} /> حذف الوردية نهائياً
