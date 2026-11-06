@@ -101,25 +101,26 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
   if (side === '') missingItems.push('اكتب مبلغ الجانبي');
   else if (!sideOk) missingItems.push('ظبط الجانبي');
 
-  // بنعد إجمالي الصور المطلوبة مقابل المرفوعة عشان نتخطى مشكلة اختلاف الأسماء
-  const totalRequiredPhotos = shopWallets.length + machines.length;
-  const totalUploadedPhotos = Object.values(wphotos).filter(Boolean).length + Object.values(photos).filter(Boolean).length;
-  const photosComplete = totalUploadedPhotos >= totalRequiredPhotos;
-
   shopWallets.forEach((w) => {
     if (needsOpen(w.key) && String(wopen[w.key] ?? '').trim() === '') missingItems.push(`رصيد ${w.label} الأول`);
     if (String(wtyped[w.key] ?? '').trim() === '') missingItems.push(`رصيد ${w.label}`);
-    
-    if (!photosComplete && !wphotos[w.key]) missingItems.push(`صوّر ${w.label}`);
+    if (!wphotos[w.key]) missingItems.push(`صوّر ${w.label}`);
   });
 
+  // فحص أرصدة المكن
   machines.forEach((m, i) => {
     if (String(mvals[i] ?? '').trim() === '') missingItems.push(`رصيد ${m.machine}`);
-    
-    // فحص شامل بأي شكل
-    const hasPhoto = photos[i] || photos[m.id] || photos[m.machine] || photos[String(i)] || wphotos[m.machine];
-    if (!photosComplete && !hasPhoto) missingItems.push(`صوّر ${m.machine}`);
   });
+
+  // فحص صور المكن بطريقة ذكية بالعدد بدل الأسماء
+  if (machines.length > 0) {
+    const uploadedPhotosCount = Object.values(photos).filter(Boolean).length;
+    const requiredPhotosGroups = machineGroupsOf(machines).length;
+    // لو عدد الصور المرفوعة أقل من المطلوب، هيطلب يكمل الصور
+    if (uploadedPhotosCount < requiredPhotosGroups && uploadedPhotosCount < machines.length) {
+      missingItems.push('صوّر المكن');
+    }
+  }
   // ---------------------
 
   const send = async () => {
@@ -127,19 +128,23 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
 
     setBusy(true);
     const now = new Date();
+    
+    // بناء الأوبجيكت بتاع التسليم
     const handover = {
       bills: Object.fromEntries(Object.entries(bills).map(([k, v]) => [k, num(v)])),
       drawerTotal, side: num(side),
       machines: machines.map((m, i) => ({ 
         ...m, 
         value: num(mvals[i]), 
-        photo: !!(photos[i] || photos[m.id] || photos[m.machine] || photosComplete) 
+        // طالما وصل هنا يبقى رفع صور، فبنديها true عشان تتسجل صح عند المحاسب
+        photo: Object.values(photos).filter(Boolean).length > 0 
       })),
       keepDrawer, keepSide, sideExpected: expSide, sideFix: sideFix || null, wallets: walletsClose,
       walletsTyped: Object.fromEntries(shopWallets.map((w) => [w.key, num(wtyped[w.key])])),
       walletModes: walletModesOf(shop),
       walletsOpenFix: Object.fromEntries(shopWallets.filter((w) => needsOpen(w.key)).map((w) => [w.key, num(wopen[w.key])])),
     };
+    
     try {
       const b = writeBatch(db);
       Object.entries(photos).forEach(([i, data]) => {
