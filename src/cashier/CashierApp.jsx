@@ -14,7 +14,15 @@ import Receive from './Receive.jsx';
 import Dash from './Dash.jsx';
 import Handover from './Handover.jsx';
 import Follow from './Follow.jsx';
+import History from './History.jsx';
 import { logAct, logout as doLogout } from '../activity.js';
+
+const PREV_STATUS = {
+  submitted: { label: 'مستنية المحاسب', cls: 'warn' },
+  reviewing: { label: 'بتتراجع', cls: 'dark' },
+  reopened: { label: 'مفتوحة لك تعدّل', cls: 'info' },
+  closed: { label: 'اتقفلت', cls: 'ok' },
+};
 
 export default function CashierApp({ profile }) {
   const toast = useToast();
@@ -37,6 +45,10 @@ export default function CashierApp({ profile }) {
   // The cashier's latest handed-in shift (today or yesterday) that isn't open anymore.
   const [recent, setRecent] = useState(null);
   const [skipFollow, setSkipFollow] = useState(false);
+  // Following a specific shift (from the "previous shift" strip or from the history page).
+  const [viewId, setViewId] = useState(null);
+  const [viewDoc, setViewDoc] = useState(null);
+  const [histOpen, setHistOpen] = useState(false);
 
   useEffect(() => {
     if (!shopId) return undefined;
@@ -59,6 +71,11 @@ export default function CashierApp({ profile }) {
     );
   }, [profile.id]);
 
+  useEffect(() => {
+    if (!viewId) { setViewDoc(null); return undefined; }
+    return onSnapshot(doc(db, 'shifts', viewId), (d) => setViewDoc(d.exists() ? { id: d.id, ...d.data() } : null), () => {});
+  }, [viewId]);
+
   const regs = registersOf(shop);
   const mineOpen = allOpen(shop).find((o) => o.cashierUid === profile.id) || null;
   const reg = mineOpen ? mineOpen.reg : regs.length ? pickReg : MAIN_REG;
@@ -79,7 +96,10 @@ export default function CashierApp({ profile }) {
     doLogout();
   };
 
-  const showFollow = !done && !mine && !!recent && !skipFollow;
+  const autoFollow = !done && !mine && !!recent && !skipFollow;
+  const followShift = viewId ? viewDoc : (autoFollow ? recent : null);
+  const showFollow = !done && !histOpen && !!followShift;
+  const startNew = () => { setViewId(null); setHistOpen(false); if (!mine) setSkipFollow(true); };
 
   const steps = useMemo(() => {
     if (done) return [{ title: 'الاستلام', n: 1, state: 'done' }, { title: 'العمليات', n: 2, state: 'done' }, { title: 'التسليم', n: 3, state: 'done' }];
@@ -101,11 +121,13 @@ export default function CashierApp({ profile }) {
   const me = { ...profile, photo: pub?.photos?.[profile.id] || profile.photo };
   const active = entries.filter((e) => !e.deleted);
   const deleted = entries.filter((e) => e.deleted);
-  const top = <Topbar shopPub={pub} profile={me} regLabel={reg && reg !== MAIN_REG ? regName(shop, reg) : (regs.length && reg ? regName(shop, reg) : null)} onPhoto={() => setPhotoOpen(true)} onTheme={() => setThemeOpen(true)} steps={showFollow || (open && !mine && !done) || !reg ? null : steps} onLogout={logout} posUrl={shop.posUrl} onPin={() => setPinOpen(true)} />;
+  const top = <Topbar shopPub={pub} profile={me} regLabel={reg && reg !== MAIN_REG ? regName(shop, reg) : (regs.length && reg ? regName(shop, reg) : null)} onPhoto={() => setPhotoOpen(true)} onTheme={() => setThemeOpen(true)} steps={showFollow || histOpen || (open && !mine && !done) || !reg ? null : steps} onLogout={logout} posUrl={shop.posUrl} onPin={() => setPinOpen(true)} />;
 
   let body;
   if (done) body = <Done info={done} profile={me} onFollow={() => setDone(null)} />;
-  else if (showFollow) body = <Follow shift={recent} profile={me} onNew={() => setSkipFollow(true)} onEdit={() => setAttn(recent)} />;
+  else if (histOpen) body = <History profile={me} onBack={() => setHistOpen(false)} onOpen={(id) => { setHistOpen(false); setViewId(id); }} />;
+  else if (viewId && !viewDoc) body = <Spinner text="بنفتح الوردية…" />;
+  else if (showFollow) body = <Follow shift={followShift} profile={me} onNew={startNew} onEdit={() => setAttn(followShift)} newLabel={mine ? 'رجوع للوردية الحالية' : undefined} />;
   else if (!reg) body = <RegisterPicker shop={shop} pub={pub} regs={regs} onPick={setPickReg} />;
   else if (open && !mine) body = <Blocked open={open} pub={pub} onOther={regs.length ? () => setPickReg(null) : null} />;
   else if (!mine) body = <Receive shop={rshop} reg={reg} profile={profile} onStarted={() => setScreen('dash')} onCancel={regs.length ? () => setPickReg(null) : null} />;
@@ -127,6 +149,18 @@ export default function CashierApp({ profile }) {
       )}
       {top}
       {themeOpen && <ThemePicker value={theme} onChange={setTheme} onClose={() => setThemeOpen(false)} />}
+      {!done && !(mine && screen === 'handover' && !showFollow && !histOpen) && (
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center', padding: '10px 16px 0' }}>
+          {recent && !(showFollow && followShift?.id === recent.id) && (
+            <button type="button" className="btn soft sm" style={{ position: 'relative' }} onClick={() => { setHistOpen(false); setViewId(recent.id); }}>
+              الوردية اللي فاتت
+              <span className={'badge ' + (PREV_STATUS[recent.status]?.cls || 'warn')} style={{ marginInlineStart: 8 }}>{PREV_STATUS[recent.status]?.label || 'مستنية المحاسب'}</span>
+              {recent.cashierUnread && <span className="dot-new" />}
+            </button>
+          )}
+          <button type="button" className="btn soft sm" onClick={() => { setViewId(null); setHistOpen(true); }}>سجلي · التسليمات والعجز</button>
+        </div>
+      )}
       {!done && <AttentionBar list={attention} currentId={shiftId} onOpen={setAttn} />}
       {body}
       {attn && <AttentionModal shift={attn} shop={shop} profile={me} onClose={() => setAttn(null)} />}
