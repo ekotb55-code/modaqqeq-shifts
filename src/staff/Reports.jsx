@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, deleteDoc, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Icon } from '../ui.jsx';
+import { Icon, useToast } from '../ui.jsx';
 import { diffText, durationStr, fmt, minutesBetween, num, todayKey, timeStr } from '../lib';
 import { ShiftDetail } from './Review.jsx';
+import { logAct } from '../activity.js';
 
 export function useByShops(coll, shops, field, value) {
   const [rows, setRows] = useState([]);
@@ -21,6 +22,7 @@ export function useByShops(coll, shops, field, value) {
 }
 
 export default function Reports({ profile, shops }) {
+  const toast = useToast();
   const [mode, setMode] = useState('day');
   const [day, setDay] = useState(todayKey());
   const [month, setMonth] = useState(todayKey().slice(0, 7));
@@ -69,6 +71,22 @@ export default function Reports({ profile, shops }) {
 
   const openShift = rows.find((r) => r.id === openId);
   const hm = (mins) => `${Math.floor(mins / 60)} س ${mins % 60} د`;
+
+  const deleteShift = async (shiftToDelete) => {
+    if (profile.role !== 'admin') return;
+    const confirmDelete = window.confirm(`هل أنت متأكد من حذف وردية ${shiftToDelete.cashierName} نهائياً؟ لا يمكن التراجع عن هذا الإجراء!`);
+    if (!confirmDelete) return;
+
+    try {
+      await deleteDoc(doc(db, 'shifts', shiftToDelete.id));
+      toast('تم حذف الوردية بنجاح');
+      setOpenId(null);
+      logAct('delete_shift', `قام بحذف وردية ${shiftToDelete.cashierName} (محل ${shopName(shiftToDelete.shopId)})`, { shopId: shiftToDelete.shopId });
+    } catch (e) {
+      console.error(e);
+      toast('حدث خطأ أثناء الحذف', 'err');
+    }
+  };
 
   return (
     <div className="wrap">
@@ -146,7 +164,14 @@ export default function Reports({ profile, shops }) {
 
       {openShift && (
         <div className="no-print">
-          <h2 className="h2" style={{ margin: '8px 0' }}>تفاصيل وردية {openShift.cashierName} · {durationStr(openShift.openedAt || openShift.openedAtLocal, openShift.submittedAt)}</h2>
+          <div className="spread" style={{ margin: '16px 0 8px' }}>
+            <h2 className="h2">تفاصيل وردية {openShift.cashierName} · {durationStr(openShift.openedAt || openShift.openedAtLocal, openShift.submittedAt)}</h2>
+            {profile.role === 'admin' && (
+              <button type="button" className="btn sm" style={{ background: '#FEE2E2', color: '#991B1B', border: '1px solid #FCA5A5' }} onClick={() => deleteShift(openShift)}>
+                <Icon d="trash" size={16} /> حذف الوردية نهائياً
+              </button>
+            )}
+          </div>
           <ShiftDetail shift={openShift} shop={shops.find((s) => s.id === openShift.shopId)} profile={profile} canReview={false} />
         </div>
       )}
