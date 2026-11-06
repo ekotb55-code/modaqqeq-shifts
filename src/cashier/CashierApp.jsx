@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { signOut, updatePassword } from 'firebase/auth';
-import { collection, deleteField, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, deleteField, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Icon, Avatar, Modal, Spinner, useToast } from '../ui.jsx';
-import { DEFAULT_SHOP, MAIN_REG, allOpen, cashierPassword, firstName, openOf, regName, registersOf, shopForRegister, timeStr } from '../lib';
+import { DEFAULT_SHOP, MAIN_REG, allOpen, cashierPassword, firstName, openOf, regName, registersOf, shopForRegister, timeStr, todayKey } from '../lib';
 import { usePendingTransfers } from './Transfers.jsx';
 import { AttentionBar, AttentionModal, useAttention } from './Attention.jsx';
 import { NetStrip, ThemePicker, useTheme } from '../theme.jsx';
@@ -13,6 +13,7 @@ import { Topbar } from './parts.jsx';
 import Receive from './Receive.jsx';
 import Dash from './Dash.jsx';
 import Handover from './Handover.jsx';
+import Follow from './Follow.jsx';
 import { logAct, logout as doLogout } from '../activity.js';
 
 export default function CashierApp({ profile }) {
@@ -33,6 +34,9 @@ export default function CashierApp({ profile }) {
   const [attn, setAttn] = useState(null);
   const [theme, setTheme] = useTheme(profile);
   const [themeOpen, setThemeOpen] = useState(false);
+  // The cashier's latest handed-in shift (today or yesterday) that isn't open anymore.
+  const [recent, setRecent] = useState(null);
+  const [skipFollow, setSkipFollow] = useState(false);
 
   useEffect(() => {
     if (!shopId) return undefined;
@@ -40,6 +44,20 @@ export default function CashierApp({ profile }) {
     const b = onSnapshot(doc(db, 'shopsPublic', shopId), (s) => setPub(s.data() || null), () => {});
     return () => { a(); b(); };
   }, [shopId]);
+
+  useEffect(() => {
+    const days = [todayKey(new Date()), todayKey(new Date(Date.now() - 864e5))];
+    return onSnapshot(
+      query(collection(db, 'shifts'), where('cashierUid', '==', profile.id), where('day', 'in', days)),
+      (s) => {
+        const list = s.docs.map((d) => ({ id: d.id, ...d.data() }))
+          .filter((x) => x.status !== 'open')
+          .sort((a, b) => String(b.openedAtLocal || '').localeCompare(String(a.openedAtLocal || '')));
+        setRecent(list[0] || null);
+      },
+      (e) => console.warn('recent shift', e.code),
+    );
+  }, [profile.id]);
 
   const regs = registersOf(shop);
   const mineOpen = allOpen(shop).find((o) => o.cashierUid === profile.id) || null;
@@ -61,6 +79,8 @@ export default function CashierApp({ profile }) {
     doLogout();
   };
 
+  const showFollow = !done && !mine && !!recent && !skipFollow;
+
   const steps = useMemo(() => {
     if (done) return [{ title: 'الاستلام', n: 1, state: 'done' }, { title: 'العمليات', n: 2, state: 'done' }, { title: 'التسليم', n: 3, state: 'done' }];
     if (!mine) return [{ title: 'الاستلام', n: 1, state: 'on' }, { title: 'العمليات', n: 2, state: '' }, { title: 'التسليم', n: 3, state: '' }];
@@ -81,10 +101,11 @@ export default function CashierApp({ profile }) {
   const me = { ...profile, photo: pub?.photos?.[profile.id] || profile.photo };
   const active = entries.filter((e) => !e.deleted);
   const deleted = entries.filter((e) => e.deleted);
-  const top = <Topbar shopPub={pub} profile={me} regLabel={reg && reg !== MAIN_REG ? regName(shop, reg) : (regs.length && reg ? regName(shop, reg) : null)} onPhoto={() => setPhotoOpen(true)} onTheme={() => setThemeOpen(true)} steps={(open && !mine && !done) || !reg ? null : steps} onLogout={logout} posUrl={shop.posUrl} onPin={() => setPinOpen(true)} />;
+  const top = <Topbar shopPub={pub} profile={me} regLabel={reg && reg !== MAIN_REG ? regName(shop, reg) : (regs.length && reg ? regName(shop, reg) : null)} onPhoto={() => setPhotoOpen(true)} onTheme={() => setThemeOpen(true)} steps={showFollow || (open && !mine && !done) || !reg ? null : steps} onLogout={logout} posUrl={shop.posUrl} onPin={() => setPinOpen(true)} />;
 
   let body;
-  if (done) body = <Done info={done} profile={me} />;
+  if (done) body = <Done info={done} profile={me} onFollow={() => setDone(null)} />;
+  else if (showFollow) body = <Follow shift={recent} profile={me} onNew={() => setSkipFollow(true)} onEdit={() => setAttn(recent)} />;
   else if (!reg) body = <RegisterPicker shop={shop} pub={pub} regs={regs} onPick={setPickReg} />;
   else if (open && !mine) body = <Blocked open={open} pub={pub} onOther={regs.length ? () => setPickReg(null) : null} />;
   else if (!mine) body = <Receive shop={rshop} reg={reg} profile={profile} onStarted={() => setScreen('dash')} onCancel={regs.length ? () => setPickReg(null) : null} />;
@@ -221,7 +242,7 @@ function Blocked({ open, pub, onOther }) {
   );
 }
 
-function Done({ info, profile }) {
+function Done({ info, profile, onFollow }) {
   return (
     <div className="wrap" style={{ maxWidth: 720 }}>
       <section className="card card-lg center" style={{ textAlign: 'center', gap: 18, position: 'relative', overflow: 'hidden' }}>
@@ -238,7 +259,10 @@ function Done({ info, profile }) {
             </div>
           ))}
         </div>
-        <button type="button" className="btn" style={{ position: 'relative' }} onClick={() => doLogout()}>تسجيل خروج</button>
+        <span style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center', position: 'relative' }}>
+          {onFollow && <button type="button" className="btn" onClick={onFollow}>تابع الوردية وكلّم المحاسب</button>}
+          <button type="button" className="btn soft" onClick={() => doLogout()}>تسجيل خروج</button>
+        </span>
       </section>
     </div>
   );
