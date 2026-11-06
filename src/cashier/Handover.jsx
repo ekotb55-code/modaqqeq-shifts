@@ -50,15 +50,17 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
   const preview = filled ? computeShift({ ...shift, handover: { machines: machines.map((m, i) => ({ ...m, value: String(mvals[i]).trim() === '' ? null : num(mvals[i]) })) } }, entries, shop) : null;
   const feeGroups = preview ? preview.machineGroups.filter((g) => g.affects && g.sales && g.rateFrom === 'cashier' && g.fee) : [];
   const expSide = calc.side.expected;
-  // The shop's current setting decides; a wallet that wasn't "shop" at receive also needs its opening balance.
+  
   const modeOf = (k) => walletModeOf(shop, k);
   const needsOpen = (k) => shift.receive?.walletModes?.[k] !== 'shop';
   const walletKeys = WALLETS.filter((w) => (shop.wallets || ['insta', 'vf']).includes(w.key) || num(shift.receive?.wallets?.[w.key]) || calc.safes[w.key]?.lines.length);
   const shopWallets = walletKeys.filter((w) => modeOf(w.key) === 'shop');
   const ownerWallets = walletKeys.filter((w) => modeOf(w.key) !== 'shop');
+  
   const [wtyped, setWtyped] = useDraft(dkey, 'wtyped', () => Object.fromEntries(shopWallets.map((w) => [w.key, ''])));
   const [wopen, setWopen] = useDraft(dkey, 'wopen', () => Object.fromEntries(shopWallets.filter((w) => needsOpen(w.key)).map((w) => [w.key, shift.receive?.wallets?.[w.key] !== undefined ? String(num(shift.receive.wallets[w.key])) : ''])));
   const walletsClose = Object.fromEntries(walletKeys.map((w) => [w.key, modeOf(w.key) === 'shop' ? num(wtyped[w.key]) : calc.safes[w.key].expected]));
+  
   const sideDiff = side === '' ? 0 : Math.round((num(side) - expSide) * 100) / 100;
   const sideOk = side !== '' && Math.abs(sideDiff) < 0.01;
   const fixSide = () => {
@@ -66,14 +68,17 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
     setSide(String(expSide));
     toast(sideDiff < 0 ? `حط ${fmt(-sideDiff)} ج من درجك في الجانبي، وبعدين عدّ الدرج تاني` : `رجّع ${fmt(sideDiff)} ج من الجانبي لدرجك، وبعدين عدّ الدرج تاني`);
   };
+  
   const [wphotos, setWphotos] = useDraft(dkey, 'wphotos', {});
   const [sentToPhone, setSentToPhone] = useState(false);
+  
   useRemoteDraft(profile.id, dkey, (v, ph) => {
     ['bills', 'side', 'mvals', 'keepDrawer', 'keepSide', 'wtyped', 'wopen'].forEach((k) => { if (v[k] !== undefined) ({ bills: setBills, side: setSide, mvals: setMvals, keepDrawer: setKeepDrawer, keepSide: setKeepSide, wtyped: setWtyped, wopen: setWopen })[k](v[k]); });
     if (ph.photos) setPhotos((p) => ({ ...ph.photos, ...p }));
     if (ph.wphotos) setWphotos((p) => ({ ...ph.wphotos, ...p }));
     toast('الأرقام اللي اتكتبت على الكمبيوتر وصلت هنا · صوّر وسلّم');
   });
+  
   const sendToPhone = async () => {
     try {
       await saveRemoteDraft(profile.id, dkey, { bills, side, mvals, keepDrawer, keepSide, wtyped, wopen }, { photos, wphotos });
@@ -81,6 +86,7 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
       setSentToPhone(true);
     } catch (e) { console.error(e); toast('مش قادرين نحفظ، اتأكد من النت', 'err'); }
   };
+  
   const addWalletPhoto = async (k) => {
     const data = await captureDocument({ maxSide: 1100, quality: 0.7, kind: 'phone', title: 'صوّر شاشة المحفظة' });
     if (data) { setWphotos((p) => ({ ...p, [k]: data })); toast('الصورة اترفعت · كمّل عادي'); }
@@ -90,15 +96,26 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
     if (data) { setPhotos((p) => ({ ...p, [i]: data })); toast('الصورة اترفعت · كمّل عادي'); }
   };
 
+  // --- تجميع النواقص ---
+  const missingItems = [];
+  if (side === '') missingItems.push('اكتب مبلغ الجانبي');
+  else if (!sideOk) missingItems.push('ظبط الجانبي');
+
+  shopWallets.forEach((w) => {
+    if (needsOpen(w.key) && String(wopen[w.key] ?? '').trim() === '') missingItems.push(`رصيد ${w.label} الأول`);
+    if (String(wtyped[w.key] ?? '').trim() === '') missingItems.push(`رصيد ${w.label}`);
+    if (!wphotos[w.key]) missingItems.push(`صوّر ${w.label}`);
+  });
+
+  machines.forEach((m, i) => {
+    if (String(mvals[i] ?? '').trim() === '') missingItems.push(`رصيد ${m.machine}`);
+    if (!photos[i]) missingItems.push(`صوّر ${m.machine}`);
+  });
+  // ---------------------
+
   const send = async () => {
-    if (side === '') { toast('اكتب مبلغ الدرج الجانبي (ولو صفر اكتب 0)', 'err'); return; }
-    if (!sideOk) { toast(`الجانبي لازم يبقى ${fmt(expSide)} ج · ظبطه الأول`, 'err'); return; }
-    const wMissing = shopWallets.find((w) => String(wtyped[w.key] ?? '').trim() === '');
-    if (wMissing) { toast(`اكتب رصيد ${wMissing.label} دلوقتي`, 'err'); return; }
-    const oMissing = shopWallets.find((w) => needsOpen(w.key) && String(wopen[w.key] ?? '').trim() === '');
-    if (oMissing) { toast(`اكتب رصيد ${oMissing.label} أول الوردية`, 'err'); return; }
-    const missing = mvals.findIndex((v) => String(v).trim() === '');
-    if (missing >= 0) { toast(`اكتب رصيد ${machines[missing].machine} · ${machines[missing].account}`, 'err'); return; }
+    if (missingItems.length > 0) return; // تم قفل الزرار بالفعل، ولكن للتأكيد
+
     setBusy(true);
     const now = new Date();
     const handover = {
@@ -222,7 +239,7 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
           </div>
         </section>
       )}
-          {feeGroups.length > 0 && (
+      {feeGroups.length > 0 && (
         <section className="card" style={{ background: '#FFE4E4', gap: 8 }}>
           <h2 className="h2">مصاريف المكن</h2>
           {feeGroups.map((g) => (
@@ -249,7 +266,16 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
           ) : (
             <button type="button" className="btn soft full" style={{ maxWidth: 520 }} onClick={sendToPhone} data-tour="to-phone">📲 احفظ وكمّل الصور من الموبايل</button>
           ))}
-          <button type="button" className="btn full" style={{ height: 66, fontSize: 20 }} data-tour="send" onClick={send} disabled={busy}>
+
+          {/* تنبيه النواقص قبل التسليم */}
+          {missingItems.length > 0 && (
+            <div className="alert warn small" style={{ marginBottom: 8, textAlign: 'center' }}>
+              <strong>فاضل: </strong> 
+              {missingItems.length > 4 ? missingItems.slice(0, 4).join(' • ') + '...' : missingItems.join(' • ')}
+            </div>
+          )}
+
+          <button type="button" className="btn full" style={{ height: 66, fontSize: 20 }} data-tour="send" onClick={send} disabled={busy || missingItems.length > 0}>
             <span className="ic"><Icon d="send" size={18} /></span>{busy ? 'لحظة…' : 'سلّم وابعت للمحاسب'}
           </button>
           <span className="small muted" style={{ textAlign: 'center' }}>العجز أو الزيادة بيطلعوا عند المحاسب</span>
