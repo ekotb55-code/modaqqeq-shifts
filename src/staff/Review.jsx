@@ -373,13 +373,18 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
         {moves.map((m) => <MoveRow key={m.id} m={m} on={!!autoPosted[m.id]} onToggle={() => toggleMove(m)} canReview={canReview} photoOf={photoOf} onView={setView} />)}
         {opEntries.length === 0 && moves.length === 0 && endMoves.length === 0 && <div className="empty">مفيش عمليات في الوردية دي</div>}
 
-        {cashierOps.length > 0 && <div className="tiny muted" style={{ fontWeight: 700, padding: '10px 0 6px' }}>عمليات الكاشير</div>}
+        {cashierOps.length > 0 && (
+          <div className="spread" style={{ margin: '18px 0 6px', padding: '10px 14px', borderRadius: 12, background: '#E6F4FF', color: '#144F86', borderInlineStart: '6px solid var(--blue)', fontSize: 17, fontWeight: 800 }}>
+            <span>عمليات درج الكاشير</span>
+            <span style={{ fontSize: 14, fontWeight: 700 }}>{cashierOps.length} عملية · {fmt(cashierOps.reduce((a, e) => a + num(e.amount), 0))}</span>
+          </div>
+        )}
         {cashierOps.map(renderOp)}
 
         {sideOps.length > 0 && (
-          <div className="spread" style={{ padding: '14px 0 6px' }}>
-            <span className="tiny muted" style={{ fontWeight: 700 }}>الجانبي</span>
-            <span className="tiny muted">{sideOps.length} عملية · {fmt(sideOps.reduce((a, e) => a + num(e.amount), 0))}</span>
+          <div className="spread" style={{ margin: '22px 0 6px', padding: '10px 14px', borderRadius: 12, background: '#FFF1DE', color: '#8A4B00', borderInlineStart: '6px solid #FF9F43', fontSize: 17, fontWeight: 800 }}>
+            <span>عمليات الدرج الجانبي</span>
+            <span style={{ fontSize: 14, fontWeight: 700 }}>{sideOps.length} عملية · {fmt(sideOps.reduce((a, e) => a + num(e.amount), 0))}</span>
           </div>
         )}
         {sideOps.map(renderOp)}
