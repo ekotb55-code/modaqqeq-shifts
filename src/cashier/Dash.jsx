@@ -1,9 +1,9 @@
 import { useTour } from '../Tour.jsx';
 import { CASHIER_DASH } from '../tours.js';
 import { useEffect, useState } from 'react';
-import { doc, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { collection, doc, onSnapshot, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Avatar, Icon, Modal, NetMeter, WALLET_LOOK, WalletMark, useToast } from '../ui.jsx';
+import { Avatar, Icon, Modal, NetMeter, PhotoView, WALLET_LOOK, WalletMark, useToast } from '../ui.jsx';
 import { ENTRY_TYPES, SRC_LABEL, WALLETS, durationStr, firstName, fmt, liveBalances, machineTotals, num, walletModeOf, registersOf, safeLabel, shopSafes, timeStr } from '../lib';
 import { Incoming, SendModal } from './Transfers.jsx';
 import EntryModal from './EntryModal.jsx';
@@ -29,6 +29,19 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
   const [showDeleted, setShowDeleted] = useState(false);
   const [, tick] = useState(0);
   useEffect(() => { const id = setInterval(() => tick((x) => x + 1), 60000); return () => clearInterval(id); }, []);
+
+  // Photos attached to operations (transfer screenshots, invoices…): id -> image data.
+  const [photoMap, setPhotoMap] = useState({});
+  const [viewPhoto, setViewPhoto] = useState(null);
+  useEffect(() => onSnapshot(
+    collection(db, 'shifts', shift.id, 'photos'),
+    (q) => {
+      const m = {};
+      q.docs.forEach((d) => { const p = d.data(); if (p.entryId && p.data) m[d.id] = p.data; });
+      setPhotoMap(m);
+    },
+    (err) => console.warn('dash photos', err.code),
+  ), [shift.id]);
 
   const sum = (f) => entries.filter(f).reduce((a, e) => a + num(e.amount), 0);
   const balances = liveBalances(shift, entries, shop);
@@ -120,21 +133,25 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
         <section className="card" style={{ flex: '2 1 460px', gap: 0 }} data-tour="feed">
           <h2 style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}>عمليات النهارده</h2>
           {entries.length === 0 && <div className="empty">لسه مسجلتش أي عملية</div>}
-          {entries.map((e) => (
-            <div key={e.id} className="feed-row">
-              <span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-                <span className="feed-ic" style={{ background: ENTRY_TYPES[e.type]?.color }}><Icon d={{ expense: 'up', income: 'down', transfer: 'phone', topup: 'bolt', move: 'swap', withdraw: 'person', liquidate: 'swap', xfer_out: 'swap', xfer_in: 'down' }[e.type]} size={18} /></span>
-                <span className="stack" style={{ gap: 0, minWidth: 0 }}>
-                  <span style={{ fontSize: 15, fontWeight: 600 }}>{entryTitle(e)}</span>
-                  <span className="tiny muted">{timeStr(e.createdAt || e.createdAtLocal)} · {SRC_LABEL[e.src] || SRC_LABEL[e.wallet] || safeLabel(e.src, shop)}{e.hasPendingWrites ? ' · لسه بيترفع' : ''}{e.type === 'xfer_out' ? (pendingIds.has(e.transferId) ? ' · مستني تأكيد' : ' · ✓ اتأكد') : ''}</span>
+          {entries.map((e) => {
+            const ph = e.photoId && photoMap[e.photoId];
+            return (
+              <div key={e.id} className="feed-row">
+                <span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                  <span className="feed-ic" style={{ background: ENTRY_TYPES[e.type]?.color }}><Icon d={{ expense: 'up', income: 'down', transfer: 'phone', topup: 'bolt', move: 'swap', withdraw: 'person', liquidate: 'swap', xfer_out: 'swap', xfer_in: 'down' }[e.type]} size={18} /></span>
+                  <span className="stack" style={{ gap: 0, minWidth: 0 }}>
+                    <span style={{ fontSize: 15, fontWeight: 600 }}>{entryTitle(e)}</span>
+                    <span className="tiny muted">{timeStr(e.createdAt || e.createdAtLocal)} · {SRC_LABEL[e.src] || SRC_LABEL[e.wallet] || safeLabel(e.src, shop)}{e.hasPendingWrites ? ' · لسه بيترفع' : ''}{e.type === 'xfer_out' ? (pendingIds.has(e.transferId) ? ' · مستني تأكيد' : ' · ✓ اتأكد') : ''}</span>
+                  </span>
                 </span>
-              </span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 17, fontWeight: 700, whiteSpace: 'nowrap' }}>{ENTRY_TYPES[e.type]?.sign < 0 ? '−' : ENTRY_TYPES[e.type]?.sign > 0 ? '+' : ''}{fmt(e.amount)}</span>
-                {shift.status === 'open' && e.type !== 'xfer_in' && (e.type !== 'xfer_out' || pendingIds.has(e.transferId)) && <button type="button" className="icon-btn del-btn" aria-label={`امسح ${entryTitle(e)}`} title="امسح العملية" onClick={() => setDel(e)}><Icon d="trash" size={17} /></button>}
-              </span>
-            </div>
-          ))}
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {ph && <img className="thumb" style={{ width: 44, height: 44 }} src={ph} alt="صورة العملية" title="افتح الصورة" onClick={() => setViewPhoto(ph)} />}
+                  <span style={{ fontSize: 17, fontWeight: 700, whiteSpace: 'nowrap' }}>{ENTRY_TYPES[e.type]?.sign < 0 ? '−' : ENTRY_TYPES[e.type]?.sign > 0 ? '+' : ''}{fmt(e.amount)}</span>
+                  {shift.status === 'open' && e.type !== 'xfer_in' && (e.type !== 'xfer_out' || pendingIds.has(e.transferId)) && <button type="button" className="icon-btn del-btn" aria-label={`امسح ${entryTitle(e)}`} title="امسح العملية" onClick={() => setDel(e)}><Icon d="trash" size={17} /></button>}
+                </span>
+              </div>
+            );
+          })}
           {deleted.length > 0 && (
             <div style={{ marginTop: 12 }}>
               <button type="button" className="extra" style={{ background: 'var(--bad-soft, #FFE4E4)' }} onClick={() => setShowDeleted(!showDeleted)} aria-expanded={showDeleted}>
@@ -184,6 +201,7 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
       {del && <DeleteModal entry={del} shift={shift} profile={profile} onClose={() => setDel(null)} />}
       {modal === 'xfer' && <SendModal shop={shop} shift={shift} profile={profile} balances={balances} onClose={() => setModal(null)} />}
       {modal && modal !== 'xfer' && <EntryModal type={modal} shop={shop} shift={shift} profile={profile} balances={balances} onClose={() => setModal(null)} />}
+      <PhotoView src={viewPhoto} onClose={() => setViewPhoto(null)} />
     </div>
   );
 }
