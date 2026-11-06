@@ -1,7 +1,7 @@
 import { useTour } from '../Tour.jsx';
 import { CASHIER_RECEIVE } from '../tours.js';
-import { useMemo, useState } from 'react';
-import { collection, doc, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore';
+import { useEffect, useMemo, useState } from 'react';
+import { collection, doc, onSnapshot, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, useToast, WalletField, clearDraft, useDraft } from '../ui.jsx';
 import { captureDocument } from '../DocCamera.jsx';
@@ -32,6 +32,34 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
   const [photos, setPhotos] = useDraft(dkey, 'photos', {});
   const [wphotos, setWphotos] = useDraft(dkey, 'wphotos', {});
   const [busy, setBusy] = useState(false);
+
+  // Edit mode: load the receive photos that were already saved with this shift,
+  // so they show up in the boxes. They are kept apart from the newly taken photos
+  // so saving the edit doesn't upload them a second time.
+  const [oldM, setOldM] = useState({});
+  const [oldW, setOldW] = useState({});
+  useEffect(() => {
+    if (!editShift) return undefined;
+    return onSnapshot(collection(db, 'shifts', editShift.id, 'photos'), (q) => {
+      const list = q.docs.map((d) => d.data())
+        .filter((p) => p.stage === 'receive' && p.data)
+        .sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+      const m = {};
+      const w = {};
+      list.forEach((p) => {
+        if (p.kind === 'wallet') { w[p.wallet] = p.data; return; }
+        if (p.kind !== 'machine') return;
+        for (let i = 0; i < machines.length; i += 1) {
+          if (machinePhotoLabel(machines, i) === p.label) { m[i] = p.data; break; }
+        }
+      });
+      setOldM(m);
+      setOldW(w);
+    }, (e) => console.warn('receive photos', e.code));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editShift?.id]);
+  const shownPhotos = { ...oldM, ...photos };
+  const shownWPhotos = { ...oldW, ...wphotos };
 
   const changed = Object.keys(bills).filter((f) => num(bills[f]) !== num(prevBills[f])).length;
   const sideChanged = num(side) !== prevSide;
@@ -89,7 +117,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
         ...er,
         bills: Object.fromEntries(Object.entries(bills).map(([k, v]) => [k, num(v)])),
         drawerTotal: billsTotal(bills), side: num(side),
-        machines: machines.map((m, i) => ({ ...m, value: num(mvals[i]), photo: !!photos[i] || !!(er.machines || [])[i]?.photo })),
+        machines: machines.map((m, i) => ({ ...m, value: num(mvals[i]), photo: !!photos[i] || !!oldM[i] || !!(er.machines || [])[i]?.photo })),
         wallets: walletsOut(), walletModes: er.walletModes || walletModesOf(shop),
         diffFromPrev: er.diffFromPrev || changed > 0 || sideChanged || mChanged > 0 || wChanged > 0,
         editedAtLocal: new Date().toISOString(),
@@ -181,9 +209,9 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
             {walletKeys.map((w) => (
               <WalletField key={w.key} k={w.key} label={w.label} value={wallets[w.key]} onChange={(v) => setWallets({ ...wallets, [w.key]: v })}
                 hint={last ? `${last.cashierName} سلّم ${fmt(prevWallets[w.key])}` : 'الرصيد اللي في المحفظة دلوقتي'} warn={last && String(wallets[w.key] ?? '').trim() !== '' && num(wallets[w.key]) !== prevWallets[w.key] ? `مختلف عن اللي اتسلّم (${fmt(prevWallets[w.key])})` : null}
-                onPhoto={() => addWalletPhoto(w.key)} photo={wphotos[w.key]} />
+                onPhoto={() => addWalletPhoto(w.key)} photo={shownWPhotos[w.key]} />
             ))}
-            <MachineRows inline machines={machines} values={mvals} setValues={setMvals} photos={photos} onPhoto={addPhoto} prev={last ? prevMachines : null} prevName={last?.cashierName} />
+            <MachineRows inline machines={machines} values={mvals} setValues={setMvals} photos={shownPhotos} onPhoto={addPhoto} prev={last ? prevMachines : null} prevName={last?.cashierName} />
           </div>
         </section>
       )}
