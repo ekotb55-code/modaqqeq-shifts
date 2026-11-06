@@ -2,7 +2,8 @@ import { useTour } from '../Tour.jsx';
 import { STAFF_DETAIL, STAFF_REVIEWING } from '../tours.js';
 import { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, doc, deleteDoc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
-import { db } from '../firebase';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth, db } from '../firebase';
 import { Avatar, CopyBtn, Icon, Modal, PhotoView, ZoomImage, useToast } from '../ui.jsx';
 import { BILL_BG, ENTRY_TYPES, FACES, SRC_LABEL, WALLETS, shopForRegister, computeShift, diffText, durationStr, fmt, minutesBetween, num, safeLabel, timeStr, toDate, dateStr, walletModeOf } from '../lib';
 import Statements from './Statements.jsx';
@@ -110,6 +111,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
   const [view, setView] = useState(null);
   const [busy, setBusy] = useState(false);
   const [forceOpen, setForceOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false); // التحكم في نافذة الحذف بالباسورد
 
   useEffect(() => {
     const a = onSnapshot(query(collection(db, 'shifts', shift.id, 'entries'), orderBy('createdAt', 'asc')), (q) => setEntries(q.docs.map((d) => ({ id: d.id, ...d.data() }))), () => {});
@@ -204,11 +206,20 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
     setBusy(false);
   };
 
+  const forceSubmit = async () => {
+    if (!window.confirm('هتقفل الوردية بالنيابة عن الكاشير من غير تسليم. متأكد؟')) return;
+    try {
+      const b = writeBatch(db);
+      b.update(doc(db, 'shifts', shift.id), { status: 'submitted', submittedAt: serverTimestamp(), forced: true, forcedBy: profile.name, handover: shift.handover || null });
+      if (shop?.openShift?.id === shift.id) b.update(doc(db, 'shops', shift.shopId), { openShift: null });
+      await b.commit();
+      logAct('force', `قفل وردية ${shift.cashierName} بالنيابة عن الكاشير`, { shopId: shift.shopId, shiftId: shift.id });
+      toast('الوردية اتقفلت ووصلت للمراجعة');
+    } catch (e) { console.error(e); toast('حصلت مشكلة', 'err'); }
+  };
+
   const deleteShift = async () => {
     if (profile?.role !== 'admin') return;
-    const confirmDelete = window.confirm(`هل أنت متأكد من حذف وردية ${shift.cashierName} نهائياً؟ \n\nسيتم مسحها من السيستم ولن يمكن استرجاعها!`);
-    if (!confirmDelete) return;
-
     try {
       await deleteDoc(doc(db, 'shifts', shift.id));
       toast('تم حذف الوردية بنجاح');
@@ -356,7 +367,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
           {reviewing && review?.startedAt && <span className="badge info">بدأت من {durationStr(review.startedAt)}</span>}
           
           {profile?.role === 'admin' && (
-            <button type="button" className="btn sm" style={{ background: '#FEE2E2', color: '#991B1B', border: '1px solid #FCA5A5' }} onClick={deleteShift}>
+            <button type="button" className="btn sm" style={{ background: '#FEE2E2', color: '#991B1B', border: '1px solid #FCA5A5' }} onClick={() => setDeleteOpen(true)}>
               <Icon d="trash" size={16} /> حذف الوردية
             </button>
           )}
@@ -377,6 +388,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
       )}
 
       {forceOpen && <ForceCloseModal shift={shift} shop={shop} profile={profile} onClose={() => setForceOpen(false)} />}
+      {deleteOpen && <DeleteConfirmModal shift={shift} onClose={() => setDeleteOpen(false)} onConfirm={deleteShift} />}
 
       {status === 'reopened' && (
         <section className="card spread" style={{ background: '#E6F4FF' }}>
@@ -545,6 +557,46 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
       </div>
       <PhotoView src={view} onClose={() => setView(null)} />
     </div>
+  );
+}
+
+// مكون تأكيد الحذف بالباسورد
+function DeleteConfirmModal({ shift, onClose, onConfirm }) {
+  const toast = useToast();
+  const [pass, setPass] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const go = async () => {
+    if (!pass) { toast('اكتب الباسورد الأول', 'err'); return; }
+    setBusy(true);
+    try {
+      // إعادة تسجيل دخول للإدارة بالباسورد اللي اتكتب للتأكد منه
+      await signInWithEmailAndPassword(auth, auth.currentUser.email, pass);
+      onClose();
+      onConfirm();
+    } catch (e) {
+      console.error(e);
+      toast('الباسورد غلط', 'err');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title="تأكيد الحذف النهائي" icon="trash" color="var(--red)" onClose={onClose} width={420}>
+      <div className="alert bad small" style={{ marginBottom: 12 }}>
+        ⚠️ تحذير: أنت على وشك حذف وردية {shift.cashierName} بالكامل من النظام ولن يمكن استرجاعها!
+      </div>
+      <label className="field">
+        باسورد حسابك (إدارة مدقق) للتأكيد
+        <input className="input" type="password" value={pass} onChange={(e) => setPass(e.target.value)} autoFocus dir="ltr" />
+      </label>
+      <div className="row" style={{ gap: 10, marginTop: 16 }}>
+        <button type="button" className="btn full" style={{ background: 'var(--red)', color: '#fff', flex: 1 }} onClick={go} disabled={busy}>
+          {busy ? 'لحظة…' : 'تأكيد الحذف'}
+        </button>
+        <button type="button" className="btn soft full" style={{ flex: 1 }} onClick={onClose} disabled={busy}>إلغاء</button>
+      </div>
+    </Modal>
   );
 }
 
