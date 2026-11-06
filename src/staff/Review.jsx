@@ -670,4 +670,124 @@ function MoveRow({ m, on, onToggle, canReview, photoOf, onView }) {
         <span className="stack" style={{ gap: 1 }}>
           <span style={{ fontWeight: 700 }}>{m.title}{m.parts ? <span className="tiny muted" style={{ fontWeight: 500 }}> · {m.parts.length} تحويل</span> : null}</span>
           <span className="tiny muted">{m.from} ← {m.to}</span>
-          {m.parts && <span className="small" style={{ fontWeight: 700, direction: 'ltr', textAlign: 'right' }}>{m.parts.
+          {m.parts && <span className="small" style={{ fontWeight: 700, direction: 'ltr', textAlign: 'right' }}>{m.parts.map((e) => fmt(e.amount)).join(' + ')}</span>}
+        </span>
+      </label>
+      {m.parts && (
+        <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          {m.parts.map((e) => { const ph = e.photoId && photoOf(e.photoId); return ph ? <img key={e.id} className="thumb" style={{ width: 38, height: 38 }} src={ph.data} alt={`صورة تحويل ${fmt(e.amount)}`} title={fmt(e.amount)} onClick={() => onView(ph.data)} /> : null; })}
+        </span>
+      )}
+      <span style={{ display: 'flex', alignItems: 'center', fontWeight: 700, fontSize: 16, minWidth: 90, justifyContent: 'flex-end' }}>{fmt(m.amount)}<CopyBtn value={fmt(m.amount)} label="نسخ المبلغ" /></span>
+    </div>
+  );
+}
+
+function systemMoves(shift, sum, cashierSafe) {
+  const rcv = shift.receive || {};
+  const hnd = shift.handover || null;
+  const list = [];
+  if (num(rcv.drawerTotal) > 0) list.push({ id: 'open', title: 'استلام أول المدة', from: 'خزنة التسليم', to: cashierSafe, amount: num(rcv.drawerTotal) });
+  (sum.walletInfo || []).filter((w) => w.mode === 'shop' && w.sales).forEach((w) => {
+    list.push({ id: 'w:' + w.key, title: `فرق ${w.label}`, from: w.sales < 0 ? w.label : cashierSafe, to: w.sales < 0 ? cashierSafe : w.label, amount: Math.abs(w.sales) });
+  });
+  (sum.machineGroups || []).filter((g) => g.affects && g.sales).forEach((g) => {
+    list.push({ id: 'm:' + g.machine, title: `فرق ${g.machine} الإجمالي`, from: g.sales < 0 ? g.machine : cashierSafe, to: g.sales < 0 ? cashierSafe : g.machine, amount: Math.abs(g.sales) });
+    if (g.fee) list.push({ id: 'f:' + g.machine, title: `مصاريف ${g.machine} (${fmt(g.rate)}%)`, from: cashierSafe, to: 'مصروف', amount: g.fee });
+  });
+  if (hnd && hnd.keepDrawer === 'stay' && num(hnd.drawerTotal) > 0) list.push({ id: 'close', title: 'تسليم آخر المدة للي بعده', from: cashierSafe, to: 'خزنة التسليم', amount: num(hnd.drawerTotal) });
+  return list;
+}
+
+function BillsCompare({ rcv, hnd }) {
+  const tot = (b) => FACES.reduce((a, f) => a + f * num(b?.[f]), 0);
+  if (!rcv?.bills && !hnd?.bills) return null;
+  return (
+    <section className="card" style={{ gap: 10 }} data-tour="bills-compare">
+      <h2 className="h2">الفئات · استلم وسلّم</h2>
+      <div style={{ overflowX: 'auto' }}>
+        <table className="table" style={{ minWidth: 420 }}>
+          <thead><tr><th>الفئة</th>{FACES.map((f, i) => <th key={f} style={{ background: BILL_BG[i] }}>{f}</th>)}<th>الإجمالي</th></tr></thead>
+          <tbody>
+            <tr><td><b>استلم</b></td>{FACES.map((f) => <td key={f}>{num(rcv?.bills?.[f])}</td>)}<td><b>{fmt(tot(rcv?.bills))}</b></td></tr>
+            <tr><td><b>سلّم</b></td>{FACES.map((f) => <td key={f}>{hnd?.bills ? num(hnd.bills[f]) : '—'}</td>)}<td><b>{hnd?.bills ? fmt(tot(hnd.bills)) : '—'}</b></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function PhotoFix({ fields, done, onSave }) {
+  const [vals, setVals] = useState(() => fields.map((f) => (f.value === null || f.value === undefined ? '' : String(f.value))));
+  return (
+    <div className="stack" style={{ gap: 6, background: '#FFF1F1', borderRadius: 14, padding: 10 }}>
+      <span className="tiny" style={{ fontWeight: 700, color: '#9B1C1C' }}>{done ? '✓ اتعدّل · تقدر تعدّل تاني' : 'اكتب الرقم اللي في الصورة'}</span>
+      {fields.map((f, i) => (
+        <label key={i} className="small" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ minWidth: 70 }}>{f.label}</span>
+          <input className="input" style={{ height: 40, flex: 1 }} inputMode="decimal" value={vals[i]} onChange={(e) => setVals(vals.map((v, j) => (j === i ? e.target.value : v)))} />
+        </label>
+      ))}
+      <button type="button" className="btn sm" onClick={() => onSave(vals)}>عدّل الرقم</button>
+    </div>
+  );
+}
+
+function AddCorrection({ shift, shop, profile, onClose }) {
+  const toast = useToast();
+  const [type, setType] = useState('expense');
+  const [src, setSrc] = useState('drawer');
+  const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    if (num(amount) <= 0) { toast('اكتب المبلغ', 'err'); return; }
+    if (!note.trim()) { toast('اكتب السبب', 'err'); return; }
+    setBusy(true);
+    try {
+      await addDoc(collection(db, 'shifts', shift.id, 'entries'), {
+        type, src, amount: num(amount), ...(type === 'expense' ? { kind: 'correction', kindLabel: 'تصحيح من المحاسب', note: note.trim() } : { reason: 'تصحيح من المحاسب', note: note.trim() }),
+        byAccountant: true, by: profile.id, byName: profile.name, posted: false,
+        createdAt: serverTimestamp(), createdAtLocal: new Date().toISOString(),
+      });
+      await updateDoc(doc(db, 'shifts', shift.id), { corrections: [...(shift.corrections || []), { what: `${type === 'expense' ? 'مصروف' : 'إيراد'} جديد · ${note.trim()}`, from: 0, to: num(amount), by: profile.name, at: new Date().toISOString() }] });
+      logAct('correction', `ضاف ${type === 'expense' ? 'مصروف' : 'إيراد'} تصحيح ${fmt(num(amount))} ج · ${note.trim()} · وردية ${shift.cashierName}`, { shopId: shift.shopId, shiftId: shift.id });
+      toast('العملية اتضافت والحساب اتحدّث'); onClose();
+    } catch (e) { console.error(e); toast('مش قادرين نضيف', 'err'); setBusy(false); }
+  };
+  return (
+    <Modal title="إضافة عملية تصحيح" icon="plus" color="var(--blue)" onClose={onClose} width={460}>
+      <div className="chips">
+        <button type="button" className={'chip' + (type === 'expense' ? ' on' : '')} onClick={() => setType('expense')}>مصروف</button>
+        <button type="button" className={'chip' + (type === 'income' ? ' on' : '')} onClick={() => setType('income')}>إيراد</button>
+      </div>
+      <div className="chips">
+        <button type="button" className={'chip' + (src === 'drawer' ? ' on' : '')} onClick={() => setSrc('drawer')}>درج الكاشير</button>
+        {!shop?.noSide && <button type="button" className={'chip' + (src === 'side' ? ' on' : '')} onClick={() => setSrc('side')}>الدرج الجانبي</button>}
+      </div>
+      <label className="field">المبلغ<input className="input" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus /></label>
+      <label className="field">السبب<input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="مثلًا: مصروف الكاشير نسي يسجله" /></label>
+      <button type="button" className="btn full" onClick={save} disabled={busy}>{busy ? 'لحظة…' : 'أضف'}</button>
+    </Modal>
+  );
+}
+
+function ReopenModal({ shift, profile, onClose }) {
+  const toast = useToast();
+  const [note, setNote] = useState('');
+  const go = async () => {
+    try {
+      await updateDoc(doc(db, 'shifts', shift.id), { status: 'reopened', reopenPending: true, cashierAttention: true, reopenNote: note.trim(), reopenedBy: profile.name, reopenedAt: serverTimestamp(), reopenCount: (shift.reopenCount || 0) + 1 });
+      logAct('reopen', `فتح وردية ${shift.cashierName} للكاشير يعدّلها${note.trim() ? ` · ${note.trim()}` : ''}`, { shopId: shift.shopId, shiftId: shift.id });
+      toast(`الوردية اتفتحت لـ ${shift.cashierName} يعدّلها`); onClose();
+    } catch (e) { console.error(e); toast('مش قادرين نفتحها', 'err'); }
+  };
+  return (
+    <Modal title="افتح الوردية للكاشير" icon="undo" color="var(--blue)" onClose={onClose} width={460}>
+      <span className="small" style={{ lineHeight: 1.7 }}>{shift.cashierName} هيلاقي رسالة أول ما يدخل إن الوردية دي مفتوحة يعدّلها: يضيف أو يمسح عمليات. لما يخلّص هترجعلك «جديدة».</span>
+      <label className="field">عاوزه يعدّل إيه؟ (اختياري)<input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="مثلًا: سجّل مصروف المواصلات" /></label>
+      <button type="button" className="btn full" onClick={go}>افتحها</button>
+    </Modal>
+  );
+}
