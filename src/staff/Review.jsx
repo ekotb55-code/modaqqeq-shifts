@@ -1,7 +1,7 @@
 import { useTour } from '../Tour.jsx';
 import { STAFF_DETAIL, STAFF_REVIEWING } from '../tours.js';
 import { useEffect, useMemo, useState } from 'react';
-import { addDoc, collection, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { addDoc, collection, doc, deleteDoc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Avatar, CopyBtn, Icon, Modal, PhotoView, ZoomImage, useToast } from '../ui.jsx';
 import { BILL_BG, ENTRY_TYPES, FACES, SRC_LABEL, WALLETS, shopForRegister, computeShift, diffText, durationStr, fmt, minutesBetween, num, safeLabel, timeStr, toDate, dateStr } from '../lib';
@@ -88,14 +88,14 @@ export default function Review({ profile, shops }) {
           })}
         </aside>
         <div className="grow">
-          {sel ? <ShiftDetail key={sel.id} shift={sel} shop={shops.find((x) => x.id === sel.shopId)} profile={profile} canReview /> : <div className="card empty" style={{ minHeight: 300, justifyContent: 'center' }}>اختار وردية من القايمة علشان تراجعها</div>}
+          {sel ? <ShiftDetail key={sel.id} shift={sel} shop={shops.find((x) => x.id === sel.shopId)} profile={profile} canReview onDeleted={() => setSelId(null)} /> : <div className="card empty" style={{ minHeight: 300, justifyContent: 'center' }}>اختار وردية من القايمة علشان تراجعها</div>}
         </div>
       </div>
     </div>
   );
 }
 
-export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
+export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDeleted }) {
   const shop = shopForRegister(fullShop, shift.register);
   const toast = useToast();
   const [allEntries, setEntries] = useState([]);
@@ -215,6 +215,22 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
       logAct('force', `قفل وردية ${shift.cashierName} بالنيابة عن الكاشير`, { shopId: shift.shopId, shiftId: shift.id });
       toast('الوردية اتقفلت ووصلت للمراجعة');
     } catch (e) { console.error(e); toast('حصلت مشكلة', 'err'); }
+  };
+
+  const deleteShift = async () => {
+    if (profile.role !== 'admin') return;
+    const confirmDelete = window.confirm(`هل أنت متأكد من حذف وردية ${shift.cashierName} نهائياً؟ \n\nسيتم مسحها من السيستم ولن يمكن استرجاعها!`);
+    if (!confirmDelete) return;
+
+    try {
+      await deleteDoc(doc(db, 'shifts', shift.id));
+      toast('تم حذف الوردية بنجاح');
+      if (onDeleted) onDeleted(); // نرجع لورا في القايمة
+      logAct('delete_shift', `قام بحذف وردية ${shift.cashierName}`, { shopId: shift.shopId });
+    } catch (e) {
+      console.error(e);
+      toast('حدث خطأ أثناء الحذف', 'err');
+    }
   };
 
   const [fix, setFix] = useState(null); // { kind: 'entry' | 'photo', target, value }
@@ -347,6 +363,14 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
           <span className={'badge ' + (STATUS[status] || STATUS.submitted).cls}>{(STATUS[status] || STATUS.submitted).label}</span>
           {shift.staffUnread && <span className="badge warn">💬 رسالة جديدة من الكاشير</span>}
           {reviewing && review?.startedAt && <span className="badge info">بدأت من {durationStr(review.startedAt)}</span>}
+          
+          {/* زرار الحذف مخصص للإدارة بس وهيظهر هنا جنب البادجات دي */}
+          {profile?.role === 'admin' && (
+            <button type="button" className="btn sm" style={{ background: '#FEE2E2', color: '#991B1B', border: '1px solid #FCA5A5' }} onClick={deleteShift}>
+              <Icon d="trash" size={16} /> حذف الوردية نهائياً
+            </button>
+          )}
+
           {fullShop?.posUrl && (
             <a className="pos-link keep" data-tour="pos" href={fullShop.posUrl} target="_blank" rel="noopener noreferrer">
               <span className="ic"><Icon d="monitor" size={18} /></span>برنامج البيع بتاع الفرع<Icon d="up" size={14} />
