@@ -131,6 +131,9 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
   // Owner wallets: all transfers of one wallet are posted as one statement (700 + 67 …).
   const transferEntries = entries.filter((e) => e.type === 'transfer');
   const opEntries = entries.filter((e) => e.type !== 'transfer');
+  // Split operations by drawer: cashier drawer vs side drawer.
+  const cashierOps = opEntries.filter((e) => e.src !== 'side');
+  const sideOps = opEntries.filter((e) => e.src === 'side');
   const transferMoves = WALLETS.map((w) => {
     const list = transferEntries.filter((e) => e.wallet === w.key);
     if (!list.length) return null;
@@ -264,6 +267,37 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
 
   const resultStyle = sum.diff === null ? { background: 'var(--chip)' } : sum.diff < 0 ? { background: 'var(--red-soft)', color: '#9B1C1C' } : sum.diff > 0 ? { background: 'var(--lime-soft)', color: 'var(--lime-ink)' } : { background: 'var(--blue-soft)', color: '#144F86' };
 
+  // One operation row (used for both "عمليات الكاشير" and "الجانبي").
+  const renderOp = (e) => {
+    const ph = e.photoId && photoOf(e.photoId);
+    const name = e.sub || e.reason || e.machine || '';
+    return (
+      <div key={e.id} className="list-row">
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '1 1 260px', minWidth: 0 }}>
+          <input type="checkbox" checked={!!e.posted} onChange={() => togglePosted(e)} disabled={!canReview} style={{ width: 20, height: 20, accentColor: 'var(--blue)' }} />
+          <span className="stack" style={{ gap: 1 }}>
+            <span style={{ fontWeight: 700 }}>{entryTitle(e)}{e.newItem && <span className="badge warn" style={{ marginInlineStart: 6 }}>جديد</span>}</span>
+            <span className="tiny muted">{timeStr(e.createdAt || e.createdAtLocal)} · {SRC_LABEL[e.src] || safeLabel(e.src, shop)}{e.type === 'liquidate' ? ` ← ${safeLabel(e.to, shop)}` : ''}</span>
+          </span>
+        </label>
+        {ph && <img className="thumb" style={{ width: 44, height: 44 }} src={ph.data} alt="صورة" onClick={() => setView(ph.data)} />}
+        {name && <span className="small" style={{ display: 'flex', alignItems: 'center' }}>{name}<CopyBtn value={name} label="نسخ الاسم" /></span>}
+        <span style={{ display: 'flex', alignItems: 'center', fontWeight: 700, fontSize: 16, minWidth: 90, justifyContent: 'flex-end', gap: 4 }}>
+          {e.originalAmount !== undefined && <span className="tiny muted" style={{ textDecoration: 'line-through' }}>{fmt(e.originalAmount)}</span>}
+          {fmt(e.amount)}<CopyBtn value={fmt(e.amount)} label="نسخ المبلغ" />
+          {canReview && !closed && <button type="button" className="icon-btn" style={{ width: 32, height: 32 }} aria-label={`عدّل مبلغ ${entryTitle(e)}`} title="عدّل المبلغ" onClick={() => setFix({ e, value: String(e.amount) })}><Icon d="gear" size={15} /></button>}
+        </span>
+        {fix?.e?.id === e.id && (
+          <div className="row" style={{ gap: 8, flex: '1 1 100%', alignItems: 'center' }}>
+            <input className="input" inputMode="decimal" style={{ flex: '1 1 140px', height: 44 }} value={fix.value} onChange={(ev) => setFix({ ...fix, value: ev.target.value })} aria-label="المبلغ الصح" autoFocus />
+            <button type="button" className="btn sm" onClick={() => fixEntry(e, fix.value)}>حفظ التعديل</button>
+            <button type="button" className="link" onClick={() => setFix(null)}>إلغاء</button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="stack" style={{ gap: 16 }}>
       <section className="card spread shift-head" style={{ gap: 16 }} data-tour="shift-head">
@@ -337,37 +371,19 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
         </div>
         {moves.length > 0 && <div className="tiny muted" style={{ fontWeight: 700, padding: '6px 0' }}>حركات الخزن (المحاسب بيعملها)</div>}
         {moves.map((m) => <MoveRow key={m.id} m={m} on={!!autoPosted[m.id]} onToggle={() => toggleMove(m)} canReview={canReview} photoOf={photoOf} onView={setView} />)}
-        {moves.length > 0 && opEntries.length > 0 && <div className="tiny muted" style={{ fontWeight: 700, padding: '10px 0 6px' }}>عمليات الكاشير</div>}
         {opEntries.length === 0 && moves.length === 0 && endMoves.length === 0 && <div className="empty">مفيش عمليات في الوردية دي</div>}
-        {opEntries.map((e) => {
-          const ph = e.photoId && photoOf(e.photoId);
-          const name = e.sub || e.reason || e.machine || '';
-          return (
-            <div key={e.id} className="list-row">
-              <label style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '1 1 260px', minWidth: 0 }}>
-                <input type="checkbox" checked={!!e.posted} onChange={() => togglePosted(e)} disabled={!canReview} style={{ width: 20, height: 20, accentColor: 'var(--blue)' }} />
-                <span className="stack" style={{ gap: 1 }}>
-                  <span style={{ fontWeight: 700 }}>{entryTitle(e)}{e.newItem && <span className="badge warn" style={{ marginInlineStart: 6 }}>جديد</span>}</span>
-                  <span className="tiny muted">{timeStr(e.createdAt || e.createdAtLocal)} · {SRC_LABEL[e.src] || safeLabel(e.src, shop)}{e.type === 'liquidate' ? ` ← ${safeLabel(e.to, shop)}` : ''}</span>
-                </span>
-              </label>
-              {ph && <img className="thumb" style={{ width: 44, height: 44 }} src={ph.data} alt="صورة" onClick={() => setView(ph.data)} />}
-              {name && <span className="small" style={{ display: 'flex', alignItems: 'center' }}>{name}<CopyBtn value={name} label="نسخ الاسم" /></span>}
-              <span style={{ display: 'flex', alignItems: 'center', fontWeight: 700, fontSize: 16, minWidth: 90, justifyContent: 'flex-end', gap: 4 }}>
-                {e.originalAmount !== undefined && <span className="tiny muted" style={{ textDecoration: 'line-through' }}>{fmt(e.originalAmount)}</span>}
-                {fmt(e.amount)}<CopyBtn value={fmt(e.amount)} label="نسخ المبلغ" />
-                {canReview && !closed && <button type="button" className="icon-btn" style={{ width: 32, height: 32 }} aria-label={`عدّل مبلغ ${entryTitle(e)}`} title="عدّل المبلغ" onClick={() => setFix({ e, value: String(e.amount) })}><Icon d="gear" size={15} /></button>}
-              </span>
-              {fix?.e?.id === e.id && (
-                <div className="row" style={{ gap: 8, flex: '1 1 100%', alignItems: 'center' }}>
-                  <input className="input" inputMode="decimal" style={{ flex: '1 1 140px', height: 44 }} value={fix.value} onChange={(ev) => setFix({ ...fix, value: ev.target.value })} aria-label="المبلغ الصح" autoFocus />
-                  <button type="button" className="btn sm" onClick={() => fixEntry(e, fix.value)}>حفظ التعديل</button>
-                  <button type="button" className="link" onClick={() => setFix(null)}>إلغاء</button>
-                </div>
-              )}
-            </div>
-          );
-        })}
+
+        {cashierOps.length > 0 && <div className="tiny muted" style={{ fontWeight: 700, padding: '10px 0 6px' }}>عمليات الكاشير</div>}
+        {cashierOps.map(renderOp)}
+
+        {sideOps.length > 0 && (
+          <div className="spread" style={{ padding: '14px 0 6px' }}>
+            <span className="tiny muted" style={{ fontWeight: 700 }}>الجانبي</span>
+            <span className="tiny muted">{sideOps.length} عملية · {fmt(sideOps.reduce((a, e) => a + num(e.amount), 0))}</span>
+          </div>
+        )}
+        {sideOps.map(renderOp)}
+
         {canReview && !closed && (
           <div className="row" style={{ gap: 8, paddingTop: 12 }}>
             <button type="button" className="btn soft sm" onClick={() => setAddOpen(true)} data-tour="add-fix"><Icon d="plus" size={16} />إضافة مصروف أو إيراد (تصحيح)</button>
