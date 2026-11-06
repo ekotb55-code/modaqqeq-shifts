@@ -176,6 +176,7 @@ function ShopEditor({ shop }) {
   const [pub, setPub] = useState(null);
   const [f, setF] = useState(() => ({
     name: shop.name || '', posUrl: shop.posUrl || '', walletName: shop.walletName || '',
+    shiftsCount: shop.shiftsCount || 1, firstShiftStart: shop.firstShiftStart || '09:00', shiftDuration: shop.shiftDuration || 12,
     machineList: machineListOf(shop), wallets: shop.wallets || ['insta', 'vf'], walletModes: walletModesOf(shop), suppliers: shop.suppliers || [], staff: shop.staff || [],
     shopExpenses: shop.shopExpenses || [], customExpenseTypes: shop.customExpenseTypes || [], hiddenExpenseTypes: shop.hiddenExpenseTypes || [], incomeReasons: shop.incomeReasons || [], advanceDays: shop.advanceDays || [],
     registers: shop.registers || [],
@@ -225,6 +226,22 @@ function ShopEditor({ shop }) {
             <label className="field">اسم المحل<input className="input" value={f.name} onChange={(e) => set('name', e.target.value)} /></label>
             <label className="field">لينك برنامج البيع<input className="input" dir="ltr" placeholder="https://" value={f.posUrl} onChange={(e) => set('posUrl', e.target.value)} /></label>
             <label className="field">اسم الحساب اللي بيستلم انستاباي (للمطابقة)<input className="input" value={f.walletName} onChange={(e) => set('walletName', e.target.value)} /></label>
+            
+            <div className="row" style={{ gap: 10, marginTop: 4 }}>
+              <label className="field" style={{ flex: '1 1 120px' }}>عدد الورديات
+                <select className="input" value={f.shiftsCount} onChange={(e) => set('shiftsCount', num(e.target.value))}>
+                  <option value="1">وردية واحدة</option>
+                  <option value="2">ورديتين</option>
+                  <option value="3">3 ورديات</option>
+                </select>
+              </label>
+              <label className="field" style={{ flex: '1 1 120px' }}>بداية أول وردية
+                <input type="time" className="input" dir="ltr" value={f.firstShiftStart} onChange={(e) => set('firstShiftStart', e.target.value)} />
+              </label>
+              <label className="field" style={{ flex: '1 1 120px' }}>مدة الوردية (ساعات)
+                <input type="number" className="input" dir="ltr" min="1" max="24" value={f.shiftDuration} onChange={(e) => set('shiftDuration', num(e.target.value))} />
+              </label>
+            </div>
           </div>
         </div>
       </section>
