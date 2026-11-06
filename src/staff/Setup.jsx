@@ -31,12 +31,13 @@ export default function Setup({ profile, shops, sel, setSel }) {
   );
 }
 
-function TagList({ title, items, onChange, placeholder }) {
+function TagList({ title, items, onChange, placeholder, hint }) {
   const [v, setV] = useState('');
   const add = () => { const t = v.trim(); if (!t || items.includes(t)) return; onChange([...items, t]); setV(''); };
   return (
     <div className="stack">
       <strong className="small">{title}</strong>
+      {hint && <span className="tiny muted">{hint}</span>}
       <div className="chips">
         {items.map((x) => (
           <span key={x} className="chip sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{x}
@@ -48,6 +49,56 @@ function TagList({ title, items, onChange, placeholder }) {
         <input className="input" value={v} placeholder={placeholder} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }} />
         <button type="button" className="btn soft sm" onClick={add}>إضافة</button>
       </div>
+    </div>
+  );
+}
+
+// مكون جديد مخصص للموظفين (شغال / موقوف)
+function StaffList({ title, active, stopped, onChangeActive, onChangeStopped, placeholder, hint }) {
+  const [v, setV] = useState('');
+  const add = () => { const t = v.trim(); if (!t || active.includes(t) || stopped.includes(t)) return; onChangeActive([...active, t]); setV(''); };
+  const stop = (x) => { onChangeActive(active.filter((y) => y !== x)); onChangeStopped([...stopped, x]); };
+  const activate = (x) => { onChangeStopped(stopped.filter((y) => y !== x)); onChangeActive([...active, x]); };
+  const removeAct = (x) => { if (window.confirm(`تحذف الموظف ${x} نهائي؟`)) onChangeActive(active.filter((y) => y !== x)); };
+  const removeStp = (x) => { if (window.confirm(`تحذف الموظف ${x} نهائي؟`)) onChangeStopped(stopped.filter((y) => y !== x)); };
+
+  return (
+    <div className="stack" style={{ background: 'rgba(255,255,255,0.6)', padding: 14, borderRadius: 16, border: '1px solid rgba(0,0,0,0.05)' }}>
+      <strong className="small">{title}</strong>
+      {hint && <span className="tiny muted">{hint}</span>}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 8, marginTop: 4 }}>
+        <input className="input" value={v} placeholder={placeholder} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }} />
+        <button type="button" className="btn soft sm" onClick={add}>إضافة موظف</button>
+      </div>
+
+      <span className="tiny muted" style={{ marginTop: 4 }}>شغالين دلوقتي</span>
+      <div className="chips">
+        {active.length === 0 && <span className="tiny muted">مفيش</span>}
+        {active.map((x) => (
+          <span key={x} className="chip sm on" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>{x}
+            <span style={{ borderInlineStart: '1px solid rgba(0,0,0,0.1)', display: 'inline-flex', paddingInlineStart: 6, gap: 4, marginInlineStart: 4 }}>
+              <button type="button" onClick={() => stop(x)} title="إيقاف الموظف" style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', fontSize: 13 }}>⏸️</button>
+              <button type="button" onClick={() => removeAct(x)} title="حذف نهائي" style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', color: 'var(--red)' }}><Icon d="x" size={14} /></button>
+            </span>
+          </span>
+        ))}
+      </div>
+
+      {stopped.length > 0 && (
+        <>
+          <span className="tiny muted" style={{ marginTop: 12 }}>موقوفين</span>
+          <div className="chips">
+            {stopped.map((x) => (
+              <span key={x} className="chip sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, opacity: 0.85 }}>{x}
+                <span style={{ borderInlineStart: '1px solid rgba(0,0,0,0.1)', display: 'inline-flex', paddingInlineStart: 6, gap: 4, marginInlineStart: 4 }}>
+                  <button type="button" onClick={() => activate(x)} title="تفعيل تاني" style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', fontSize: 13 }}>▶️</button>
+                  <button type="button" onClick={() => removeStp(x)} title="حذف نهائي" style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', color: 'var(--red)' }}><Icon d="x" size={14} /></button>
+                </span>
+              </span>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -177,7 +228,8 @@ function ShopEditor({ shop }) {
   const [f, setF] = useState(() => ({
     name: shop.name || '', posUrl: shop.posUrl || '', walletName: shop.walletName || '',
     shiftsCount: shop.shiftsCount || 1, firstShiftStart: shop.firstShiftStart || '09:00', shiftDuration: shop.shiftDuration || 12,
-    machineList: machineListOf(shop), wallets: shop.wallets || ['insta', 'vf'], walletModes: walletModesOf(shop), suppliers: shop.suppliers || [], staff: shop.staff || [],
+    machineList: machineListOf(shop), wallets: shop.wallets || ['insta', 'vf'], walletModes: walletModesOf(shop), 
+    suppliers: shop.suppliers || [], staff: shop.staff || [], stoppedStaff: shop.stoppedStaff || [], partners: shop.partners || [],
     shopExpenses: shop.shopExpenses || [], customExpenseTypes: shop.customExpenseTypes || [], hiddenExpenseTypes: shop.hiddenExpenseTypes || [], incomeReasons: shop.incomeReasons || [], advanceDays: shop.advanceDays || [],
     registers: shop.registers || [],
   }));
@@ -288,8 +340,20 @@ function ShopEditor({ shop }) {
 
       <section className="card tint-violet" style={{ gap: 18 }}>
         <h2 className="h2">القوايم</h2>
+        
+        <StaffList 
+          title="الموظفين (للسلف، العجز، واليوميات)" 
+          active={f.staff} 
+          stopped={f.stoppedStaff} 
+          onChangeActive={(v) => set('staff', v)} 
+          onChangeStopped={(v) => set('stoppedStaff', v)} 
+          placeholder="اسم الموظف" 
+          hint="الموظف الموقوف مش هيظهر قدام الكاشير، بس هيفضل متسجل في الورديات القديمة."
+        />
+
+        <TagList title="الشركاء (لمسحوبات المالك)" items={f.partners} onChange={(v) => set('partners', v)} placeholder="اسم الشريك" hint="الأسماء اللي هتظهر لما الكاشير يختار سحب المالك." />
+        
         <TagList title="الموردين" items={f.suppliers} onChange={(v) => set('suppliers', v)} placeholder="اسم المورد" />
-        <TagList title="الموظفين (للسلف واليوميات)" items={f.staff} onChange={(v) => set('staff', v)} placeholder="اسم الموظف" />
         <TagList title="اختيارات «مصروف محل»" items={f.shopExpenses} onChange={(v) => set('shopExpenses', v)} placeholder="مثلًا كهربا" />
         <TagList title="أسباب الإيراد" items={f.incomeReasons} onChange={(v) => set('incomeReasons', v)} placeholder="مثلًا سداد آجل" />
         <div className="stack">
