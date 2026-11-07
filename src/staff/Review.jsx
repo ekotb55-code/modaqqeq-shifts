@@ -1,11 +1,10 @@
 import { useTour } from '../Tour.jsx';
 import { STAFF_DETAIL, STAFF_REVIEWING } from '../tours.js';
 import { useEffect, useMemo, useState } from 'react';
-import { addDoc, collection, doc, deleteDoc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth, db } from '../firebase';
+import { addDoc, collection, deleteField, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { db } from '../firebase';
 import { Avatar, CopyBtn, Icon, Modal, PhotoView, ZoomImage, useToast } from '../ui.jsx';
-import { BILL_BG, ENTRY_TYPES, FACES, SRC_LABEL, WALLETS, shopForRegister, computeShift, diffText, durationStr, fmt, minutesBetween, num, safeLabel, timeStr, toDate, dateStr, walletModeOf } from '../lib';
+import { BILL_BG, ENTRY_TYPES, FACES, SRC_LABEL, WALLETS, shopForRegister, computeShift, diffText, durationStr, fmt, minutesBetween, num, safeLabel, timeStr, toDate, dateStr } from '../lib';
 import Statements from './Statements.jsx';
 import ShiftChat from '../ShiftChat.jsx';
 import { DeletedList, entryTitle } from '../cashier/Dash.jsx';
@@ -16,6 +15,7 @@ const STATUS = {
   submitted: { label: 'جديدة', cls: 'warn' },
   reviewing: { label: 'بتتراجع', cls: 'dark' },
   reopened: { label: 'مفتوحة للكاشير يعدّل', cls: 'info' },
+  disputed: { label: 'طلب من الكاشير', cls: 'bad' },
   closed: { label: 'اتقفلت', cls: 'ok' },
 };
 
@@ -25,7 +25,7 @@ const DIR_STYLE = {
   in: { background: '#E1F7E4', color: '#106B21' },
   move: { background: '#E6F4FF', color: '#144F86' },
 };
-
+// Which way did the money go for this operation, and out of / into which drawer.
 function dirOf(e, shop) {
   if (e.type === 'transfer') return null;
   const where = DRAWER_NAME[e.src] || SRC_LABEL[e.src] || safeLabel(e.src, shop);
@@ -60,11 +60,11 @@ export function useShopShifts(shops, statuses) {
 }
 
 export default function Review({ profile, shops }) {
-  const pending = useShopShifts(shops, ['open', 'submitted', 'reviewing', 'reopened']);
+  const pending = useShopShifts(shops, ['open', 'submitted', 'reviewing', 'reopened', 'disputed']);
   const [selId, setSelId] = useState(null);
   const shopName = (id) => shops.find((s) => s.id === id)?.name || '';
   const sorted = useMemo(() => {
-    const rank = { reviewing: 0, submitted: 1, open: 2 };
+    const rank = { reviewing: 0, disputed: 1, submitted: 1, open: 2, reopened: 3 };
     return [...pending].sort((a, b) => rank[a.status] - rank[b.status] || (toDate(a.submittedAt || a.openedAt) - toDate(b.submittedAt || b.openedAt)));
   }, [pending]);
   const sel = sorted.find((s) => s.id === selId) || null;
@@ -89,14 +89,14 @@ export default function Review({ profile, shops }) {
           })}
         </aside>
         <div className="grow">
-          {sel ? <ShiftDetail key={sel.id} shift={sel} shop={shops.find((x) => x.id === sel.shopId)} profile={profile} canReview onDeleted={() => setSelId(null)} /> : <div className="card empty" style={{ minHeight: 300, justifyContent: 'center' }}>اختار وردية من القايمة علشان تراجعها</div>}
+          {sel ? <ShiftDetail key={sel.id} shift={sel} shop={shops.find((x) => x.id === sel.shopId)} profile={profile} canReview /> : <div className="card empty" style={{ minHeight: 300, justifyContent: 'center' }}>اختار وردية من القايمة علشان تراجعها</div>}
         </div>
       </div>
     </div>
   );
 }
 
-export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDeleted }) {
+export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
   const shop = shopForRegister(fullShop, shift.register);
   const toast = useToast();
   const [allEntries, setEntries] = useState([]);
@@ -110,8 +110,6 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
   const [sales, setSales] = useState('');
   const [view, setView] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [forceOpen, setForceOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false); // التحكم في نافذة الحذف بالباسورد
 
   useEffect(() => {
     const a = onSnapshot(query(collection(db, 'shifts', shift.id, 'entries'), orderBy('createdAt', 'asc')), (q) => setEntries(q.docs.map((d) => ({ id: d.id, ...d.data() }))), () => {});
@@ -155,8 +153,10 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
 
   const unchecked = photos.filter((p) => p.check !== 'ok' && p.check !== 'bad').length;
   const cashierSafe = `خزنة ${shift.cashierName}`;
+  // Owner wallets: all transfers of one wallet are posted as one statement (700 + 67 …).
   const transferEntries = entries.filter((e) => e.type === 'transfer');
   const opEntries = entries.filter((e) => e.type !== 'transfer');
+  // Split operations by drawer: cashier drawer vs side drawer.
   const cashierOps = opEntries.filter((e) => e.src !== 'side');
   const sideOps = opEntries.filter((e) => e.src === 'side');
   const transferMoves = WALLETS.map((w) => {
@@ -192,12 +192,23 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
       const b = writeBatch(db);
       const mins = minutesBetween(review?.startedAt, now);
       b.update(doc(db, 'reviews', shift.id), { sales: num(sales), diff: sum.diff, closedAt: serverTimestamp(), closeMinutes: mins, waitMinutes: minutesBetween(shift.submittedAt, review?.startedAt), totals: { expenses: sum.outCash, income: sum.income, insta: sum.insta, vf: sum.vf, cash: sum.handCash, drawerDiff: sum.drawerDiff, sideDiff: sum.sideDiff } });
-      b.update(doc(db, 'shifts', shift.id), { status: 'closed', closedAt: serverTimestamp(), closedBy: profile.name, diff: sum.diff });
+      // Shortage: the cashier is alerted, the number stays hidden from him until he answers.
+      const nowIso = new Date().toISOString();
+      const hadDispute = !!shift.shortageState || (shift.cashierRequests || []).length > 0;
+      const reset = { shortageAck: deleteField(), shortageAckAt: deleteField() };
+      const alertCashier = sum.diff < 0
+        ? { ...reset, shortageState: 'review', cashierAttention: true, cashierUnread: true, lastMsg: { text: 'في عجز في ورديتك · راجع المصروفات والتسليم', side: 'staff', byName: profile.name, at: nowIso } }
+        : hadDispute
+          ? { ...reset, shortageState: 'cleared', cashierAttention: true, cashierUnread: true, lastMsg: { text: sum.diff === 0 ? 'الوردية اتراجعت واتظبطت · مفيش عجز' : 'الوردية اتراجعت', side: 'staff', byName: profile.name, at: nowIso } }
+          : {};
+      b.update(doc(db, 'shifts', shift.id), { status: 'closed', closedAt: serverTimestamp(), closedBy: profile.name, diff: sum.diff, ...alertCashier });
       if (sum.diff !== 0) {
         b.set(doc(db, 'ledger', shift.id), {
           shopId: shift.shopId, shiftId: shift.id, cashierUid: shift.cashierUid, cashierName: shift.cashierName, day: shift.day, month: shift.month,
-          kind: sum.diff < 0 ? 'shortage' : 'overage', amount: Math.abs(sum.diff), confirmed: false, createdAt: serverTimestamp(), by: profile.name,
+          kind: sum.diff < 0 ? 'shortage' : 'overage', amount: Math.abs(sum.diff), confirmed: false, ackRequired: sum.diff < 0, createdAt: serverTimestamp(), by: profile.name,
         });
+      } else if (num(shift.diff) !== 0) {
+        b.delete(doc(db, 'ledger', shift.id));
       }
       await b.commit();
       logAct('close', `قفل وردية ${shift.cashierName} · ${diffText(sum.diff)} · مبيعات ${fmt(num(sales))} ج`, { shopId: shift.shopId, shiftId: shift.id });
@@ -218,24 +229,28 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
     } catch (e) { console.error(e); toast('حصلت مشكلة', 'err'); }
   };
 
-  const deleteShift = async () => {
-    if (profile?.role !== 'admin') return;
+  // Cashier sent a request after the shift was closed with a shortage: take it back for review.
+  const startAgain = async () => {
+    setBusy(true);
     try {
-      await deleteDoc(doc(db, 'shifts', shift.id));
-      toast('تم حذف الوردية بنجاح');
-      if (onDeleted) onDeleted();
-      logAct('delete_shift', `قام بحذف وردية ${shift.cashierName}`, { shopId: shift.shopId });
-    } catch (e) {
-      console.error(e);
-      toast('حدث خطأ أثناء الحذف', 'err');
-    }
+      const b = writeBatch(db);
+      b.update(doc(db, 'reviews', shift.id), { startedAt: serverTimestamp(), reopenedForDispute: true });
+      b.update(doc(db, 'shifts', shift.id), { status: 'reviewing', reviewer: profile.name, reviewStartedAt: serverTimestamp() });
+      await b.commit();
+      logAct('review_start', `بدأ مراجعة طلب ${shift.cashierName} على وردية فيها عجز`, { shopId: shift.shopId, shiftId: shift.id });
+      toast('بدأت مراجعة الطلب');
+    } catch (e) { console.error(e); toast('مش قادرين نبدأ', 'err'); }
+    setBusy(false);
   };
+  const markRequest = (idx, state) => updateDoc(doc(db, 'shifts', shift.id), { cashierRequests: (shift.cashierRequests || []).map((r, i) => (i === idx ? { ...r, state } : r)) })
+    .then(() => logAct('request', `${state === 'rejected' ? 'رفض' : 'نفّذ'} طلب ${shift.cashierName} · وردية ${shift.cashierName}`, { shopId: shift.shopId, shiftId: shift.id }))
+    .catch(() => toast('مش قادرين نحفظ', 'err'));
 
-  const [fix, setFix] = useState(null);
+  const [fix, setFix] = useState(null); // { kind: 'entry' | 'photo', target, value }
   const [addOpen, setAddOpen] = useState(false);
+  const [addInit, setAddInit] = useState(null); // a cashier request being turned into an expense
   const [reopenOpen, setReopenOpen] = useState(false);
   const logFix = (what, from, to) => ({ corrections: [...(shift.corrections || []), { what, from, to, by: profile.name, at: new Date().toISOString() }] });
-  
   const fixEntry = async (e, amount) => {
     try {
       await updateDoc(doc(db, 'shifts', shift.id, 'entries', e.id), { amount: num(amount), originalAmount: e.originalAmount ?? e.amount, correctedBy: profile.name, correctedAt: serverTimestamp() });
@@ -244,7 +259,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
       toast('المبلغ اتعدّل والحساب اتحدّث'); setFix(null);
     } catch (err) { console.error(err); toast('مش قادرين نعدّل', 'err'); }
   };
-  
+  // A photo marked "not matching": put the right number where the cashier typed it.
   const fixPhoto = async (p, values) => {
     logAct('fix_photo', `عدّل رقم صورة «${p.label}» لـ ${values.map((v) => fmt(num(v))).join(' + ')} ج · وردية ${shift.cashierName}`, { shopId: shift.shopId, shiftId: shift.id });
     try {
@@ -273,7 +288,6 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
       toast('الرقم اتعدّل والحساب اتحدّث'); setFix(null);
     } catch (err) { console.error(err); toast('مش قادرين نعدّل', 'err'); }
   };
-
   const photoFields = (p) => {
     if (p.entryId || p.kind === 'wallet') return [{ label: 'الرقم الصح', value: photoTyped(p) }];
     const list = (p.stage === 'receive' ? rcv.machines : hnd.machines) || [];
@@ -283,12 +297,9 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
   const togglePosted = (e) => updateDoc(doc(db, 'shifts', shift.id, 'entries', e.id), { posted: !e.posted, postedBy: profile.name })
     .then(() => logAct('post', `${e.posted ? 'شال العلامة من' : 'علّم ✓ على'} «${entryTitle(e)}» ${fmt(e.amount)} ج · وردية ${shift.cashierName}`, { shopId: shift.shopId, shiftId: shift.id }))
     .catch(() => toast('مش قادرين نحفظ', 'err'));
-  
   const photoOf = (id) => photos.find((p) => p.id === id);
-  
   const checkPhoto = (p, check) => updateDoc(doc(db, 'shifts', shift.id, 'photos', p.id), { check, checkedBy: profile.name, checkedAt: serverTimestamp() })
     .then(() => logAct('photo', `${check === 'ok' ? 'علّم صورة «' + p.label + '» مطابقة' : check === 'bad' ? 'علّم صورة «' + p.label + '» مش مطابقة' : 'شال العلامة من صورة «' + p.label + '»'} · وردية ${shift.cashierName}`, { shopId: shift.shopId, shiftId: shift.id })).catch(() => toast('مش قادرين نحفظ', 'err'));
-  
   const photoTyped = (p) => {
     if (p.kind === 'wallet') return (p.stage === 'receive' ? rcv.wallets?.[p.wallet] : hnd.walletsTyped?.[p.wallet]) ?? p.amount ?? null;
     if (p.kind !== 'machine') return p.amount ?? null;
@@ -317,6 +328,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
     return `خرج ${fmt(o)} · دخل ${fmt(i)}`;
   };
 
+  // One operation row (used for both "عمليات الكاشير" and "الجانبي").
   const renderOp = (e) => {
     const ph = e.photoId && photoOf(e.photoId);
     const name = e.sub || e.reason || e.machine || '';
@@ -365,13 +377,6 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
           <span className={'badge ' + (STATUS[status] || STATUS.submitted).cls}>{(STATUS[status] || STATUS.submitted).label}</span>
           {shift.staffUnread && <span className="badge warn">💬 رسالة جديدة من الكاشير</span>}
           {reviewing && review?.startedAt && <span className="badge info">بدأت من {durationStr(review.startedAt)}</span>}
-          
-          {profile?.role === 'admin' && (
-            <button type="button" className="btn sm" style={{ background: '#FEE2E2', color: '#991B1B', border: '1px solid #FCA5A5' }} onClick={() => setDeleteOpen(true)}>
-              <Icon d="trash" size={16} /> حذف الوردية
-            </button>
-          )}
-
           {fullShop?.posUrl && (
             <a className="pos-link keep" data-tour="pos" href={fullShop.posUrl} target="_blank" rel="noopener noreferrer">
               <span className="ic"><Icon d="monitor" size={18} /></span>برنامج البيع بتاع الفرع<Icon d="up" size={14} />
@@ -383,17 +388,37 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
       {status === 'open' && canReview && (
         <section className="card spread" data-tour="force">
           <span className="muted">الوردية لسه شغالة. لو الكاشير مشي من غير ما يسلّم تقدر تقفلها بالنيابة عنه.</span>
-          <button type="button" className="btn soft sm" onClick={() => setForceOpen(true)}>قفل بالنيابة</button>
+          <button type="button" className="btn soft sm" onClick={forceSubmit}>قفل بالنيابة</button>
         </section>
       )}
-
-      {forceOpen && <ForceCloseModal shift={shift} shop={shop} profile={profile} onClose={() => setForceOpen(false)} />}
-      {deleteOpen && <DeleteConfirmModal shift={shift} onClose={() => setDeleteOpen(false)} onConfirm={deleteShift} />}
 
       {status === 'reopened' && (
         <section className="card spread" style={{ background: '#E6F4FF' }}>
           <span style={{ lineHeight: 1.7 }}><b>الوردية مفتوحة للكاشير يعدّلها</b>{shift.reopenNote ? ` · ${shift.reopenNote}` : ''}. أول ما يخلّص هترجعلك «جديدة».</span>
           {canReview && <button type="button" className="btn soft sm" onClick={() => updateDoc(doc(db, 'shifts', shift.id), { status: 'submitted', reopenPending: false, cashierAttention: false }).then(() => logAct('reclose', `قفل وردية ${shift.cashierName} تاني من غير تعديل الكاشير`, { shopId: shift.shopId, shiftId: shift.id })).catch(() => toast('مش قادرين نحفظ', 'err'))}>اقفلها تاني من غير تعديل</button>}
+        </section>
+      )}
+
+      {status === 'disputed' && (
+        <section className="card" style={{ gap: 10, background: '#FFF1F1' }}>
+          <h2 className="h2">طلب من {shift.cashierName} بعد قفل الوردية <span className="tiny muted" style={{ fontWeight: 500 }}>· العجز الحالي {diffText(shift.diff)}</span></h2>
+          {(shift.cashierRequests || []).map((r, i) => (
+            <div key={i} className="list-row" style={{ flexWrap: 'wrap', gap: 10 }}>
+              <span className="stack" style={{ gap: 1, flex: '1 1 240px' }}>
+                <strong>{r.type === 'expense' ? `مصروف نسيه · ${fmt(r.amount)} ج` : 'طلب تعديل في الاستلام'}</strong>
+                <span className="tiny muted">{r.note}</span>
+              </span>
+              {r.state === 'added' || r.state === 'done' ? <span className="badge ok">اتنفّذ</span> : r.state === 'rejected' ? <span className="badge bad">اترفض</span> : canReview && (
+                <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {r.type === 'expense' && <button type="button" className="btn soft sm" onClick={() => { setAddInit({ index: i, type: 'expense', amount: r.amount, note: r.note }); setAddOpen(true); }}>أضفه</button>}
+                  {r.type !== 'expense' && <button type="button" className="btn soft sm" onClick={() => markRequest(i, 'done')}>تمّ التعديل</button>}
+                  <button type="button" className="btn soft sm" onClick={() => markRequest(i, 'rejected')}>ارفض</button>
+                </span>
+              )}
+            </div>
+          ))}
+          {canReview && <button type="button" className="btn" onClick={startAgain} disabled={busy}>ابدأ مراجعة الطلب</button>}
+          <span className="tiny muted">نفّذ الطلبات، وبعدين دوس «ابدأ مراجعة الطلب» وقفّل الوردية تاني، والنتيجة الجديدة هتوصل للكاشير.</span>
         </section>
       )}
 
@@ -525,7 +550,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
         <h2 className="h2">💬 شات الوردية <span className="tiny muted" style={{ fontWeight: 500 }}>· بينك وبين {shift.cashierName}</span></h2>
         <ShiftChat shift={shift} profile={profile} side="staff" />
       </section>
-      {addOpen && <AddCorrection shift={shift} shop={shop} profile={profile} onClose={() => setAddOpen(false)} />}
+      {addOpen && <AddCorrection shift={shift} shop={shop} profile={profile} initial={addInit} onSaved={() => { if (addInit) markRequest(addInit.index, 'added'); }} onClose={() => { setAddOpen(false); setAddInit(null); }} />}
       {reopenOpen && <ReopenModal shift={shift} profile={profile} onClose={() => setReopenOpen(false)} />}
 
       <div className="row" style={{ gap: 16 }}>
@@ -560,160 +585,6 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview, onDelet
   );
 }
 
-// مكون تأكيد الحذف بالباسورد
-function DeleteConfirmModal({ shift, onClose, onConfirm }) {
-  const toast = useToast();
-  const [pass, setPass] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  const go = async () => {
-    if (!pass) { toast('اكتب الباسورد الأول', 'err'); return; }
-    setBusy(true);
-    try {
-      // إعادة تسجيل دخول للإدارة بالباسورد اللي اتكتب للتأكد منه
-      await signInWithEmailAndPassword(auth, auth.currentUser.email, pass);
-      onClose();
-      onConfirm();
-    } catch (e) {
-      console.error(e);
-      toast('الباسورد غلط', 'err');
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Modal title="تأكيد الحذف النهائي" icon="trash" color="var(--red)" onClose={onClose} width={420}>
-      <div className="alert bad small" style={{ marginBottom: 12 }}>
-        ⚠️ تحذير: أنت على وشك حذف وردية {shift.cashierName} بالكامل من النظام ولن يمكن استرجاعها!
-      </div>
-      <label className="field">
-        باسورد حسابك (إدارة مدقق) للتأكيد
-        <input className="input" type="password" value={pass} onChange={(e) => setPass(e.target.value)} autoFocus dir="ltr" />
-      </label>
-      <div className="row" style={{ gap: 10, marginTop: 16 }}>
-        <button type="button" className="btn full" style={{ background: 'var(--red)', color: '#fff', flex: 1 }} onClick={go} disabled={busy}>
-          {busy ? 'لحظة…' : 'تأكيد الحذف'}
-        </button>
-        <button type="button" className="btn soft full" style={{ flex: 1 }} onClick={onClose} disabled={busy}>إلغاء</button>
-      </div>
-    </Modal>
-  );
-}
-
-// مكون نافذة الإغلاق بالنيابة
-function ForceCloseModal({ shift, shop, profile, onClose }) {
-  const toast = useToast();
-  const [busy, setBusy] = useState(false);
-  
-  const [drawerTotal, setDrawerTotal] = useState('');
-  const [sideTotal, setSideTotal] = useState('');
-  
-  const machines = shop?.machines || [];
-  const machineKey = (m) => m.id || (m.machine + (m.account || ''));
-  const [machineVals, setMachineVals] = useState(() => machines.reduce((acc, m) => ({ ...acc, [machineKey(m)]: '' }), {}));
-
-  const wallets = shop?.wallets || [];
-  const shopWallets = wallets.filter((w) => walletModeOf(shop, w) === 'shop');
-  const [walletVals, setWalletVals] = useState(() => shopWallets.reduce((acc, w) => ({ ...acc, [w]: '' }), {}));
-
-  const go = async () => {
-    if (drawerTotal === '') { toast('لازم تكتب إجمالي درج الكاشير', 'err'); return; }
-    if (!shop?.noSide && sideTotal === '') { toast('لازم تكتب إجمالي الدرج الجانبي', 'err'); return; }
-
-    setBusy(true);
-    try {
-      const b = writeBatch(db);
-
-      const handover = {
-        drawerTotal: num(drawerTotal),
-        side: num(sideTotal),
-        keepDrawer: 'stay', 
-        keepSide: 'stay',
-        machines: machines.map((m) => ({ ...m, value: num(machineVals[machineKey(m)]), photo: false })),
-        walletsTyped: Object.fromEntries(shopWallets.map(w => [w, num(walletVals[w])])),
-      };
-
-      b.update(doc(db, 'shifts', shift.id), { 
-        status: 'submitted', 
-        submittedAt: serverTimestamp(), 
-        forced: true, 
-        forcedBy: profile.name, 
-        handover 
-      });
-      
-      if (shop?.openShift?.id === shift.id) {
-        b.update(doc(db, 'shops', shift.shopId), { openShift: null });
-      }
-      
-      await b.commit();
-      logAct('force', `قفل وردية ${shift.cashierName} بالنيابة وسجّل الأرصدة`, { shopId: shift.shopId, shiftId: shift.id });
-      toast('الوردية اتقفلت ووصلت للمراجعة');
-      onClose();
-    } catch (e) { 
-      console.error(e); 
-      toast('حصلت مشكلة في القفل', 'err'); 
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Modal title="قفل الوردية بالنيابة" icon="gear" color="var(--red)" onClose={onClose} width={500}>
-      <span className="small muted" style={{ lineHeight: 1.7, marginBottom: 12 }}>
-        اكتب الموجود الفعلي في الدرج دلوقتي عشان الحسابات تظبط قبل المراجعة.
-      </span>
-      
-      <div className="row" style={{ gap: 10 }}>
-        <label className="field" style={{ flex: '1 1 150px' }}>
-          درج الكاشير الفعلي
-          <input className="input" type="number" value={drawerTotal} onChange={(e) => setDrawerTotal(e.target.value)} placeholder="0" autoFocus />
-        </label>
-        
-        {!shop?.noSide && (
-          <label className="field" style={{ flex: '1 1 150px' }}>
-            الدرج الجانبي الفعلي
-            <input className="input" type="number" value={sideTotal} onChange={(e) => setSideTotal(e.target.value)} placeholder="0" />
-          </label>
-        )}
-      </div>
-
-      {machines.length > 0 && (
-        <div className="stack" style={{ marginTop: 12 }}>
-          <span className="small muted">أرصدة المكن:</span>
-          <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
-            {machines.map((m) => (
-              <label key={machineKey(m)} className="field" style={{ flex: '1 1 120px' }}>
-                {m.account ? `${m.machine} (${m.account})` : m.machine}
-                <input className="input" type="number" value={machineVals[machineKey(m)]} onChange={(e) => setMachineVals({ ...machineVals, [machineKey(m)]: e.target.value })} placeholder="0" />
-              </label>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {shopWallets.length > 0 && (
-        <div className="stack" style={{ marginTop: 12 }}>
-          <span className="small muted">أرصدة المحافظ:</span>
-          <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
-            {shopWallets.map((w) => {
-              const wl = WALLETS.find(x => x.key === w);
-              return (
-                <label key={w} className="field" style={{ flex: '1 1 120px' }}>
-                  {wl?.label || w}
-                  <input className="input" type="number" value={walletVals[w]} onChange={(e) => setWalletVals({ ...walletVals, [w]: e.target.value })} placeholder="0" />
-                </label>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      <button type="button" className="btn full" style={{ marginTop: 16 }} onClick={go} disabled={busy}>
-        {busy ? 'لحظة…' : 'حفظ وقفل الوردية'}
-      </button>
-    </Modal>
-  );
-}
-
 function MoveRow({ m, on, onToggle, canReview, photoOf, onView }) {
   return (
     <div className="list-row" style={{ background: on ? undefined : '#F2F7FF', flexWrap: 'wrap' }}>
@@ -735,6 +606,7 @@ function MoveRow({ m, on, onToggle, canReview, photoOf, onView }) {
   );
 }
 
+// Safe-to-safe moves the accountant has to make in the POS system for this shift.
 function systemMoves(shift, sum, cashierSafe) {
   const rcv = shift.receive || {};
   const hnd = shift.handover || null;
@@ -786,12 +658,12 @@ function PhotoFix({ fields, done, onSave }) {
   );
 }
 
-function AddCorrection({ shift, shop, profile, onClose }) {
+function AddCorrection({ shift, shop, profile, onClose, initial, onSaved }) {
   const toast = useToast();
-  const [type, setType] = useState('expense');
+  const [type, setType] = useState(initial?.type || 'expense');
   const [src, setSrc] = useState('drawer');
-  const [amount, setAmount] = useState('');
-  const [note, setNote] = useState('');
+  const [amount, setAmount] = useState(initial?.amount != null ? String(initial.amount) : '');
+  const [note, setNote] = useState(initial?.note || '');
   const [busy, setBusy] = useState(false);
   const save = async () => {
     if (num(amount) <= 0) { toast('اكتب المبلغ', 'err'); return; }
@@ -805,7 +677,7 @@ function AddCorrection({ shift, shop, profile, onClose }) {
       });
       await updateDoc(doc(db, 'shifts', shift.id), { corrections: [...(shift.corrections || []), { what: `${type === 'expense' ? 'مصروف' : 'إيراد'} جديد · ${note.trim()}`, from: 0, to: num(amount), by: profile.name, at: new Date().toISOString() }] });
       logAct('correction', `ضاف ${type === 'expense' ? 'مصروف' : 'إيراد'} تصحيح ${fmt(num(amount))} ج · ${note.trim()} · وردية ${shift.cashierName}`, { shopId: shift.shopId, shiftId: shift.id });
-      toast('العملية اتضافت والحساب اتحدّث'); onClose();
+      toast('العملية اتضافت والحساب اتحدّث'); if (onSaved) onSaved(); onClose();
     } catch (e) { console.error(e); toast('مش قادرين نضيف', 'err'); setBusy(false); }
   };
   return (
