@@ -16,10 +16,15 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
   const last = lastOf(shop, reg);
   const isSub = reg !== MAIN_REG;
   const machines = shop.machines || [];
+  // Machines that always start a shift at 0 (e.g. Geidea) are not shown here: no balance, no photo.
+  // They are saved with 0 and only appear at handover.
+  const vis = machines.map((m, i) => i).filter((i) => !machines[i].startZero);
+  const vMachines = vis.map((i) => machines[i]);
 
   const prevBills = useMemo(() => (last && last.keepDrawer !== 'shop' ? { ...emptyBills(), ...last.bills } : emptyBills()), [last]);
   const prevSide = last && last.keepSide !== 'shop' ? num(last.side) : 0;
   const prevMachines = machines.map((m) => {
+    if (m.startZero) return '';
     const f = (last?.machines || []).find((x) => x.machine === m.machine && x.account === m.account);
     return f ? String(f.value ?? '') : '';
   });
@@ -68,17 +73,18 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
   const [wallets, setWallets] = useDraft(dkey, 'wallets', () => Object.fromEntries(walletKeys.map((w) => [w.key, er ? String(num(er.wallets?.[w.key])) : ''])));
   const wChanged = walletKeys.filter((w) => String(wallets[w.key] ?? '').trim() !== '' && num(wallets[w.key]) !== prevWallets[w.key]).length;
   const walletsOut = () => Object.fromEntries(walletKeys.map((w) => [w.key, num(wallets[w.key])]));
-  const mChanged = mvals.filter((v, i) => String(v).trim() !== '' && num(v) !== num(prevMachines[i])).length;
+  const mChanged = mvals.filter((v, i) => vis.includes(i) && String(v).trim() !== '' && num(v) !== num(prevMachines[i])).length;
   // New receive: every wallet and machine number typed by hand, each with its photo.
   const missingNums = editShift ? [] : [
     ...walletKeys.filter((w) => String(wallets[w.key] ?? '').trim() === '').map((w) => `اكتب رصيد ${w.label}`),
-    ...machines.map((m, i) => (String(mvals[i] ?? '').trim() === '' ? `اكتب رصيد ${m.machine} · ${m.account}` : null)).filter(Boolean),
+    ...vis.map((i) => (String(mvals[i] ?? '').trim() === '' ? `اكتب رصيد ${machines[i].machine} · ${machines[i].account}` : null)).filter(Boolean),
   ];
   const missingPhotos = editShift ? [] : [
     ...walletKeys.filter((w) => !wphotos[w.key]).map((w) => `صوّر ${w.label}`),
-    ...machineGroupsOf(machines).filter((g) => !photos[g.items[0]]).map((g) => `صوّر ${g.name}`),
+    ...machineGroupsOf(machines).filter((g) => !machines[g.items[0]].startZero && !photos[g.items[0]]).map((g) => `صوّر ${g.name}`),
   ];
   const missing = [...missingNums, ...missingPhotos];
+  const shownCards = walletKeys.length + machineGroupsOf(machines).filter((g) => !machines[g.items[0]].startZero).length;
   const [sentToPhone, setSentToPhone] = useState(false);
   const remote = useRemoteDraft(editShift ? null : profile.id, dkey, (v, ph) => {
     if (v.bills) setBills(v.bills);
@@ -110,6 +116,9 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
     if (data) { setPhotos((p) => ({ ...p, [i]: data })); toast('الصورة اترفعت · كمّل عادي'); }
   };
 
+  // Hidden (start-at-zero) machines are always saved with 0.
+  const machineValue = (m, i) => (m.startZero ? 0 : num(mvals[i]));
+
   const saveEdit = async () => {
     setBusy(true);
     try {
@@ -117,7 +126,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
         ...er,
         bills: Object.fromEntries(Object.entries(bills).map(([k, v]) => [k, num(v)])),
         drawerTotal: billsTotal(bills), side: num(side),
-        machines: machines.map((m, i) => ({ ...m, value: num(mvals[i]), photo: !!photos[i] || !!oldM[i] || !!(er.machines || [])[i]?.photo })),
+        machines: machines.map((m, i) => ({ ...m, value: machineValue(m, i), photo: !!photos[i] || !!oldM[i] || !!(er.machines || [])[i]?.photo })),
         wallets: walletsOut(), walletModes: er.walletModes || walletModesOf(shop),
         diffFromPrev: er.diffFromPrev || changed > 0 || sideChanged || mChanged > 0 || wChanged > 0,
         editedAtLocal: new Date().toISOString(),
@@ -149,7 +158,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
         bills: Object.fromEntries(Object.entries(bills).map(([k, v]) => [k, num(v)])),
         drawerTotal: billsTotal(bills),
         side: num(side),
-        machines: machines.map((m, i) => ({ ...m, value: num(mvals[i]), photo: !!photos[i] })),
+        machines: machines.map((m, i) => ({ ...m, value: machineValue(m, i), photo: !!photos[i] })),
         prevShiftId: last?.shiftId || null,
         prevCashier: last?.cashierName || null,
         prevDrawerTotal: billsTotal(prevBills),
@@ -183,6 +192,14 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
     } finally { setBusy(false); }
   };
 
+  // MachineRows only sees the visible machines; map its indexes back to the full list.
+  const setVisValues = (arr) => setMvals((old) => {
+    const next = [...old];
+    const a = typeof arr === 'function' ? arr(vis.map((i) => old[i])) : arr;
+    vis.forEach((i, j) => { next[i] = a[j]; });
+    return next;
+  });
+
   return (
     <div className="wrap">
       <div className="stack" style={{ gap: 4 }}>
@@ -199,19 +216,21 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
         <Bills bills={bills} setBills={setBills} orig={last ? prevBills : null} noSteppers />
       </section>
       {!shop.noSide && <SideBox value={side} setValue={setSide} hint={sideChanged && last ? `اتعدّل · كان ${fmt(prevSide)} ج` : 'المبلغ كله · من غير فئات'} />}
-      {(walletKeys.length > 0 || machines.length > 0) && (
+      {(walletKeys.length > 0 || vMachines.length > 0) && (
         <section className="card" style={{ gap: 12 }} data-tour="assets">
           <div className="stack" style={{ gap: 2 }}>
             <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />المحافظ والمكن</h2>
             <span className="tiny muted">اكتب رصيد كل واحدة بإيدك وصوّر شاشتها. المحاسب هيراجع الصور.</span>
           </div>
-          <div className="assets-grid" style={{ '--cols': colsFor(walletKeys.length + machineGroupsOf(machines).length) }}>
+          <div className="assets-grid" style={{ '--cols': colsFor(shownCards) }}>
             {walletKeys.map((w) => (
               <WalletField key={w.key} k={w.key} label={w.label} value={wallets[w.key]} onChange={(v) => setWallets({ ...wallets, [w.key]: v })}
                 hint={last ? `${last.cashierName} سلّم ${fmt(prevWallets[w.key])}` : 'الرصيد اللي في المحفظة دلوقتي'} warn={last && String(wallets[w.key] ?? '').trim() !== '' && num(wallets[w.key]) !== prevWallets[w.key] ? `مختلف عن اللي اتسلّم (${fmt(prevWallets[w.key])})` : null}
                 onPhoto={() => addWalletPhoto(w.key)} photo={shownWPhotos[w.key]} />
             ))}
-            <MachineRows inline machines={machines} values={mvals} setValues={setMvals} photos={shownPhotos} onPhoto={addPhoto} prev={last ? prevMachines : null} prevName={last?.cashierName} />
+            <MachineRows inline machines={vMachines} values={vis.map((i) => mvals[i])} setValues={setVisValues}
+              photos={Object.fromEntries(vis.map((i, j) => [j, shownPhotos[i]]))} onPhoto={(j) => addPhoto(vis[j])}
+              prev={last ? vis.map((i) => prevMachines[i]) : null} prevName={last?.cashierName} />
           </div>
         </section>
       )}
