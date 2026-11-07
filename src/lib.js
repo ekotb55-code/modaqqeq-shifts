@@ -25,9 +25,17 @@ export const SETTLE = { carry: 'مستمرة · بتترحل تلقائي', liqu
 export const settleOf = (m) => (m?.settle === 'liquidate' || m?.settle === 'daily' ? 'liquidate' : 'carry');
 
 // Machines are configured per shop: name, sub-accounts (or one account), commission rate and how it's settled.
+// startZero: the machine always starts a shift at 0 (the cashier doesn't receive a balance, only hands over what came in during the shift).
 export function newMachine() {
-  return { id: Math.random().toString(36).slice(2, 9), name: '', active: true, hasSubs: false, accounts: [], ratePct: 0, rateFrom: 'posting', settle: 'carry', liqFeePct: 0, inCash: true };
+  return { id: Math.random().toString(36).slice(2, 9), name: '', active: true, hasSubs: false, accounts: [], ratePct: 0, rateFrom: 'posting', settle: 'carry', liqFeePct: 0, inCash: true, startZero: false };
 }
+// Ready-made choices shown when adding a machine in the setup screen.
+export const MACHINE_PRESETS = [
+  { name: 'فوري', hasSubs: true, accounts: ['الحساب الرئيسي', 'كاش أوت'] },
+  { name: 'جيديا', ratePct: 0, settle: 'liquidate', liqFeePct: 2, startZero: true },
+  { name: 'ماجيك باي' },
+  { name: 'ممكن' },
+];
 export function machineListOf(shop) {
   if (Array.isArray(shop?.machineList) && shop.machineList.length) return shop.machineList;
   // older shops stored a flat list — group it by machine name
@@ -41,7 +49,7 @@ export function machineListOf(shop) {
 }
 export function flattenMachines(list) {
   return list.filter((m) => m.active && m.name.trim()).flatMap((m) => {
-    const base = { machine: m.name.trim(), machineId: m.id, ratePct: num(m.ratePct), rateFrom: m.rateFrom, settle: settleOf(m), liqFeePct: settleOf(m) === 'liquidate' ? num(m.liqFeePct) : 0, inCash: m.inCash !== false };
+    const base = { machine: m.name.trim(), machineId: m.id, ratePct: num(m.ratePct), rateFrom: m.rateFrom, settle: settleOf(m), liqFeePct: settleOf(m) === 'liquidate' ? num(m.liqFeePct) : 0, inCash: m.inCash !== false, startZero: !!m.startZero };
     const accs = m.hasSubs ? m.accounts.map((a) => a.trim()).filter(Boolean) : [];
     return accs.length ? accs.map((a) => ({ ...base, account: a })) : [{ ...base, account: 'الرصيد' }];
   });
@@ -160,7 +168,7 @@ export const cashierPassword = (pin) => `mdq-${pin}-shift`;
 export const USERNAME_RE = /^[a-z0-9ء-ي._-]{2,30}$/;
 export const normUsername = (u) => String(u || '').trim().toLowerCase()
   .replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
-  .replace(/[ً-ٰٟـ]/g, '')
+  .replace(/[ً-ٰٟـ]/g, '')
   .replace(/[أإآٱ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').replace(/ؤ/g, 'و').replace(/ئ/g, 'ي')
   .replace(/\s+/g, '');
 export const cashierEmail = (u) => {
