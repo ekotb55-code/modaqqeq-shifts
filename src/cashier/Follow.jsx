@@ -1,298 +1,190 @@
-import { useEffect, useMemo, useState } from 'react';
-import { signOut, updatePassword } from 'firebase/auth';
-import { collection, deleteField, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
-import { auth, db } from '../firebase';
-import { Icon, Avatar, Modal, Spinner, useToast } from '../ui.jsx';
-import { DEFAULT_SHOP, MAIN_REG, allOpen, cashierPassword, firstName, openOf, regName, registersOf, shopForRegister, timeStr, todayKey } from '../lib';
-import { usePendingTransfers } from './Transfers.jsx';
-import { AttentionBar, AttentionModal, useAttention } from './Attention.jsx';
-import { NetStrip, ThemePicker, useTheme } from '../theme.jsx';
-import { TourHost } from '../Tour.jsx';
-import MyPhoto from '../MyPhoto.jsx';
-import { Topbar } from './parts.jsx';
-import Receive from './Receive.jsx';
-import Dash from './Dash.jsx';
-import Handover from './Handover.jsx';
-import Follow, { statusOf } from './Follow.jsx';
-import History from './History.jsx';
-import { logAct, logout as doLogout } from '../activity.js';
+import { useState } from 'react';
+import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { db } from '../firebase';
+import { Icon, Modal, useToast } from '../ui.jsx';
+import ShiftChat from '../ShiftChat.jsx';
+import { dateStr, diffText, durationStr, firstName, fmt, num, timeStr } from '../lib';
+import { logAct } from '../activity.js';
 
-export default function CashierApp({ profile }) {
-  const toast = useToast();
-  const shopId = profile.shopIds?.[0];
-  const [photoOpen, setPhotoOpen] = useState(false);
-  const [shop, setShop] = useState(undefined);
-  const [pub, setPub] = useState(null);
-  const [shift, setShift] = useState(null);
-  const [entries, setEntries] = useState([]);
-  const [screen, setScreen] = useState('dash');
-  const [done, setDone] = useState(null);
-  const [askLogout, setAskLogout] = useState(false);
-  const [pinOpen, setPinOpen] = useState(false);
-  const [pickReg, setPickReg] = useState(null);
-  const pending = usePendingTransfers(shopId);
-  const attention = useAttention(profile.id);
-  const [attn, setAttn] = useState(null);
-  const [theme, setTheme] = useTheme(profile);
-  const [themeOpen, setThemeOpen] = useState(false);
-  // The cashier's latest handed-in shift (today or yesterday) that isn't open anymore.
-  const [recent, setRecent] = useState(null);
-  const [skipFollow, setSkipFollow] = useState(false);
-  // Following a specific shift (from the "previous shift" strip or from the history page).
-  const [viewId, setViewId] = useState(null);
-  const [viewDoc, setViewDoc] = useState(null);
-  const [histOpen, setHistOpen] = useState(false);
+const BASE = {
+  submitted: { label: 'اتسلّمت · مستنية المحاسب', cls: 'warn', text: 'الوردية وصلت للمحاسب وهيراجعها في أقرب وقت. لو في حاجة تقولها له، اكتبها في الشات تحت.' },
+  reviewing: { label: 'المحاسب بيراجعها دلوقتي', cls: 'dark', text: 'المحاسب بدأ يراجع ورديتك. ممكن يسألك عن حاجة في الشات، فخلّي بالك.' },
+  reopened: { label: 'المحاسب فتحها لك تعدّلها', cls: 'info', text: 'المحاسب محتاج منك تعديل في الوردية. دوس «عدّل الوردية»، وأول ما تخلّص هترجع له تاني.' },
+  closed: { label: 'اتقفلت', cls: 'ok', text: 'المحاسب راجع الوردية وقفلها.' },
+};
 
-  useEffect(() => {
-    if (!shopId) return undefined;
-    const a = onSnapshot(doc(db, 'shops', shopId), (s) => setShop(s.exists() ? { ...DEFAULT_SHOP, ...s.data(), id: s.id } : null), () => setShop(null));
-    const b = onSnapshot(doc(db, 'shopsPublic', shopId), (s) => setPub(s.data() || null), () => {});
-    return () => { a(); b(); };
-  }, [shopId]);
-
-  useEffect(() => {
-    const days = [todayKey(new Date()), todayKey(new Date(Date.now() - 864e5))];
-    return onSnapshot(
-      query(collection(db, 'shifts'), where('cashierUid', '==', profile.id), where('day', 'in', days)),
-      (s) => {
-        const list = s.docs.map((d) => ({ id: d.id, ...d.data() }))
-          .filter((x) => x.status !== 'open')
-          .sort((a, b) => String(b.openedAtLocal || '').localeCompare(String(a.openedAtLocal || '')));
-        setRecent(list[0] || null);
-      },
-      (e) => console.warn('recent shift', e.code),
-    );
-  }, [profile.id]);
-
-  useEffect(() => {
-    if (!viewId) { setViewDoc(null); return undefined; }
-    return onSnapshot(doc(db, 'shifts', viewId), (d) => setViewDoc(d.exists() ? { id: d.id, ...d.data() } : null), () => {});
-  }, [viewId]);
-
-  const regs = registersOf(shop);
-  const mineOpen = allOpen(shop).find((o) => o.cashierUid === profile.id) || null;
-  const reg = mineOpen ? mineOpen.reg : regs.length ? pickReg : MAIN_REG;
-  const open = reg ? openOf(shop, reg) : null;
-  const mine = !!mineOpen;
-  const shiftId = mine ? mineOpen.id : null;
-
-  useEffect(() => {
-    if (!shiftId) { setShift(null); setEntries([]); return undefined; }
-    const a = onSnapshot(doc(db, 'shifts', shiftId), (s) => setShift(s.exists() ? { id: s.id, ...s.data() } : null), () => {});
-    const b = onSnapshot(query(collection(db, 'shifts', shiftId, 'entries'), orderBy('createdAt', 'desc')),
-      (s) => setEntries(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => {});
-    return () => { a(); b(); };
-  }, [shiftId]);
-
-  const logout = () => {
-    if (mine && !done) { setAskLogout(true); return; }
-    doLogout();
-  };
-
-  // A shortage the cashier hasn't answered yet blocks starting a new receive.
-  const blockedByShortage = !mine && !!recent && statusOf(recent).key === 'shortage';
-  const autoFollow = !done && !mine && !!recent && (!skipFollow || blockedByShortage);
-  const followShift = viewId ? viewDoc : (autoFollow ? recent : null);
-  const showFollow = !done && !histOpen && !!followShift;
-  const startNew = () => { setViewId(null); setHistOpen(false); if (!mine) setSkipFollow(true); };
-
-  const steps = useMemo(() => {
-    if (done) return [{ title: 'الاستلام', n: 1, state: 'done' }, { title: 'العمليات', n: 2, state: 'done' }, { title: 'التسليم', n: 3, state: 'done' }];
-    if (!mine) return [{ title: 'الاستلام', n: 1, state: 'on' }, { title: 'العمليات', n: 2, state: '' }, { title: 'التسليم', n: 3, state: '' }];
-    return [
-      { title: 'الاستلام', n: 1, state: screen === 'receive' ? 'on' : 'done', go: screen !== 'receive' ? () => setScreen('receive') : null },
-      { title: 'العمليات', n: 2, state: screen === 'dash' ? 'on' : 'done', go: screen !== 'dash' ? () => setScreen('dash') : null },
-      { title: 'التسليم', n: 3, state: screen === 'handover' ? 'on' : '', go: screen !== 'handover' ? () => setScreen('handover') : null },
-    ];
-  }, [done, mine, screen]);
-
-  if (!shopId) return <NoShop />;
-  if (shop === undefined) return <Spinner text="بنحمّل المحل…" />;
-  if (shop === null) return <NoShop />;
-  const rshop = reg ? shopForRegister(shop, reg) : shop;
-  const incoming = mine ? pending.filter((t) => t.toReg === reg && t.fromShiftId !== shiftId) : [];
-  const outgoing = mine ? pending.filter((t) => t.fromShiftId === shiftId) : [];
-
-  const me = { ...profile, photo: pub?.photos?.[profile.id] || profile.photo };
-  const active = entries.filter((e) => !e.deleted);
-  const deleted = entries.filter((e) => e.deleted);
-  const top = <Topbar shopPub={pub} profile={me} regLabel={reg && reg !== MAIN_REG ? regName(shop, reg) : (regs.length && reg ? regName(shop, reg) : null)} onPhoto={() => setPhotoOpen(true)} onTheme={() => setThemeOpen(true)} steps={showFollow || histOpen || (open && !mine && !done) || !reg ? null : steps} onLogout={logout} posUrl={shop.posUrl} onPin={() => setPinOpen(true)} />;
-
-  let body;
-  if (done) body = <Done info={done} profile={me} onFollow={() => setDone(null)} />;
-  else if (histOpen) body = <History profile={me} onBack={() => setHistOpen(false)} onOpen={(id) => { setHistOpen(false); setViewId(id); }} />;
-  else if (viewId && !viewDoc) body = <Spinner text="بنفتح الوردية…" />;
-  else if (showFollow) body = <Follow shift={followShift} profile={me} onNew={startNew} onEdit={() => setAttn(followShift)} newLabel={mine ? 'رجوع للوردية الحالية' : undefined} canStartNew={mine || !blockedByShortage} />;
-  else if (!reg) body = <RegisterPicker shop={shop} pub={pub} regs={regs} onPick={setPickReg} />;
-  else if (open && !mine) body = <Blocked open={open} pub={pub} onOther={regs.length ? () => setPickReg(null) : null} />;
-  else if (!mine) body = <Receive shop={rshop} reg={reg} profile={profile} onStarted={() => setScreen('dash')} onCancel={regs.length ? () => setPickReg(null) : null} />;
-  else if (!shift) body = <Spinner text="بنفتح ورديتك…" />;
-  else if (screen === 'receive') body = <Receive key="edit" shop={rshop} reg={reg} profile={profile} editShift={shift} onStarted={() => setScreen('dash')} onCancel={() => setScreen('dash')} />;
-  else if (screen === 'handover') body = <Handover shop={rshop} shift={shift} entries={active} incoming={incoming} profile={me} onBack={() => setScreen('dash')} onDone={setDone} />;
-  else body = <Dash shop={rshop} fullShop={shop} shift={shift} entries={active} deleted={deleted} incoming={incoming} outgoing={outgoing} profile={me} onHandover={() => setScreen('handover')} onReceive={() => setScreen('receive')} onChat={() => setAttn(shift)} />;
-
-  return (
-    <div>
-      <NetStrip />
-      <TourHost />
-      {photoOpen && (
-        <MyPhoto profile={me} photo={me.photo} onClose={() => setPhotoOpen(false)}
-          onSave={async (data) => {
-            await updateDoc(doc(db, 'shopsPublic', shopId), { [`photos.${profile.id}`]: data || deleteField() });
-            logAct('photo_self', data ? 'غيّر صورته' : 'شال صورته', { shopId });
-          }} />
-      )}
-      {top}
-      {themeOpen && <ThemePicker value={theme} onChange={setTheme} onClose={() => setThemeOpen(false)} />}
-      {!done && !(mine && screen === 'handover' && !showFollow && !histOpen) && (
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center', padding: '10px 16px 0' }}>
-          {recent && !(showFollow && followShift?.id === recent.id) && (
-            <button type="button" className="btn soft sm" style={{ position: 'relative' }} onClick={() => { setHistOpen(false); setViewId(recent.id); }}>
-              الوردية اللي فاتت
-              <span className={'badge ' + statusOf(recent).cls} style={{ marginInlineStart: 8 }}>{statusOf(recent).label}</span>
-              {recent.cashierUnread && <span className="dot-new" />}
-            </button>
-          )}
-          <button type="button" className="btn soft sm" onClick={() => { setViewId(null); setHistOpen(true); }}>سجلي · التسليمات والعجز</button>
-        </div>
-      )}
-      {!done && <AttentionBar list={attention} currentId={shiftId} onOpen={(x) => { if (x.shortageState === 'review') { setHistOpen(false); setViewId(x.id); } else setAttn(x); }} />}
-      {body}
-      {attn && <AttentionModal shift={attn} shop={shop} profile={me} onClose={() => setAttn(null)} />}
-      {pinOpen && <PinModal onClose={() => setPinOpen(false)} />}
-      {askLogout && (
-        <div className="overlay">
-          <div role="dialog" aria-label="لسه ما سلّمتش" className="modal center" style={{ maxWidth: 460, textAlign: 'center' }}>
-            <span style={{ width: 72, height: 72, borderRadius: 999, background: 'var(--warn-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon d="warn" size={36} stroke={2} /></span>
-            <h2 style={{ fontSize: 24, fontWeight: 700 }}>لسه ما سلّمتش الوردية</h2>
-            <span className="muted" style={{ lineHeight: 1.7 }}>لو خرجت دلوقتي الوردية هتفضل مفتوحة باسمك، ومحدش هيقدر يستلم بعدك غير لما ترجع تسلّم.</span>
-            <button type="button" className="btn full" onClick={() => { setAskLogout(false); setScreen('handover'); }}>سلّم دلوقتي</button>
-            <button type="button" className="btn soft full" onClick={() => doLogout()}>اخرج والوردية تفضل مفتوحة</button>
-            <button type="button" className="link" onClick={() => setAskLogout(false)}>رجوع</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+// One place that decides how a shift looks to the cashier (used by the follow page, the strip and the history).
+export function statusOf(s) {
+  const diff = typeof s.diff === 'number' ? s.diff : null;
+  if (s.status === 'closed' && diff !== null && diff < 0 && s.shortageState === 'review') {
+    return { key: 'shortage', label: 'عجز · محتاج ردّك', cls: 'bad', text: 'في عجز في ورديتك. راجع مصروفاتك وتسليمك: لو نسيت تسجّل مصروف أو في غلطة في الاستلام ابعتها للمحاسب، ولو مفيش عندك سبب أقرّ بالعجز وهيظهرلك الرقم.' };
+  }
+  if (s.status === 'disputed') return { key: 'disputed', label: 'طلبك عند المحاسب', cls: 'info', text: 'طلبك وصل للمحاسب وهيراجعه، وهيوصلك الرد هنا.' };
+  if (s.status === 'closed' && s.shortageState === 'acked') return { key: 'acked', label: 'اتقفلت · أقررت بالعجز', cls: 'ok', text: 'أقررت بالعجز، ونتيجة الوردية اتسجّلت في سجلك.' };
+  const b = BASE[s.status] || BASE.submitted;
+  return { key: BASE[s.status] ? s.status : 'submitted', ...b };
 }
 
-function PinModal({ onClose }) {
+const REQ_STATE = { pending: { label: 'مستني المحاسب', cls: 'warn' }, added: { label: 'اتنفّذ', cls: 'ok' }, done: { label: 'اتنفّذ', cls: 'ok' }, rejected: { label: 'اترفض', cls: 'bad' } };
+
+export default function Follow({ shift, profile, onNew, onEdit, newLabel = 'ابدأ استلام جديد', canStartNew = true }) {
   const toast = useToast();
-  const [a, setA] = useState('');
-  const [b, setB] = useState('');
+  const info = statusOf(shift);
+  const raw = shift.status;
+  const diff = typeof shift.diff === 'number' ? shift.diff : null;
+  const closed = raw === 'closed';
+  const needsReply = info.key === 'shortage';
+  const reviewer = shift.closedBy || shift.reviewer || null;
+  const requests = shift.cashierRequests || [];
+  const [form, setForm] = useState(null); // 'expense' | 'receive'
+  const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
-  const save = async () => {
-    if (!/^[0-9]{4,8}$/.test(a)) { toast('الرقم السري لازم من 4 لـ 8 أرقام', 'err'); return; }
-    if (a !== b) { toast('الرقمين مش زي بعض', 'err'); return; }
+
+  const steps = [
+    { title: 'سلّمت', done: true, on: false },
+    { title: 'المراجعة', done: closed, on: ['reviewing', 'reopened', 'disputed'].includes(raw) },
+    { title: 'التقفيل', done: closed, on: false },
+  ];
+
+  const resultStyle = diff === null ? null
+    : diff < 0 ? { background: 'var(--red-soft)', color: '#9B1C1C' }
+      : diff > 0 ? { background: 'var(--lime-soft)', color: 'var(--lime-ink)' }
+        : { background: 'var(--blue-soft)', color: '#144F86' };
+
+  const sendRequest = async () => {
+    if (form === 'expense' && num(amount) <= 0) { toast('اكتب المبلغ', 'err'); return; }
+    if (!note.trim()) { toast(form === 'expense' ? 'اكتب المصروف ده إيه' : 'اكتب إيه اللي محتاج يتعدّل', 'err'); return; }
     setBusy(true);
     try {
-      await updatePassword(auth.currentUser, cashierPassword(a));
-      setDoc(doc(db, 'cashierSecrets', auth.currentUser.uid), { pin: a, updatedAt: serverTimestamp() }).catch(() => {});
-      logAct('password', 'غيّر الرقم السري بتاعه');
-      toast('الرقم السري اتغيّر');
-      onClose();
-    } catch (e) {
-      toast(e.code === 'auth/requires-recent-login' ? 'اخرج وادخل تاني وبعدين غيّره' : 'مش قادرين نغيّره، اتأكد من النت', 'err');
-      setBusy(false);
-    }
+      const at = new Date().toISOString();
+      const req = { type: form, ...(form === 'expense' ? { amount: num(amount) } : {}), note: note.trim(), state: 'pending', at };
+      await updateDoc(doc(db, 'shifts', shift.id), {
+        status: 'disputed', shortageState: 'disputed', cashierRequests: [...requests, req],
+        staffUnread: true, cashierAttention: false,
+        lastMsg: { text: form === 'expense' ? `الكاشير بيطلب إضافة مصروف ${fmt(num(amount))} ج · ${note.trim()}` : `الكاشير بيطلب تعديل في الاستلام · ${note.trim()}`, side: 'cashier', byName: profile.name, at },
+      });
+      logAct('dispute', form === 'expense' ? `طلب إضافة مصروف ${fmt(num(amount))} ج على وردية فيها عجز` : 'طلب تعديل الاستلام على وردية فيها عجز', { shopId: shift.shopId, shiftId: shift.id });
+      toast('طلبك اتبعت للمحاسب');
+      setForm(null); setAmount(''); setNote('');
+    } catch (e) { console.error(e); toast('مش قادرين نبعت، اتأكد من النت', 'err'); }
+    setBusy(false);
   };
-  return (
-    <Modal title="غيّر الرقم السري" icon="lock" color="var(--violet)" onClose={onClose} width={420}>
-      <label className="field">الرقم الجديد (من 4 لـ 8 أرقام)<input className="input" inputMode="numeric" type="password" maxLength={8} dir="ltr" value={a} onChange={(e) => setA(e.target.value.replace(/\D/g, ''))} autoFocus /></label>
-      <label className="field">اكتبه تاني<input className="input" inputMode="numeric" type="password" maxLength={8} dir="ltr" value={b} onChange={(e) => setB(e.target.value.replace(/\D/g, ''))} /></label>
-      <button type="button" className="btn full" onClick={save} disabled={busy}>{busy ? 'لحظة…' : 'حفظ'}</button>
-    </Modal>
-  );
-}
 
-function NoShop() {
-  return (
-    <div className="wrap center">
-      <div className="card card-lg center" style={{ maxWidth: 480, textAlign: 'center' }}>
-        <h1 style={{ fontSize: 24 }}>الحساب ده مش مربوط بمحل</h1>
-        <span className="muted">كلّم دعم مدقق يربطك بالمحل.</span>
-        <button type="button" className="btn" onClick={() => doLogout()}>تسجيل خروج</button>
-      </div>
-    </div>
-  );
-}
+  const acknowledge = async () => {
+    if (!window.confirm('هتقر إن عليك عجز في الوردية دي، والنتيجة هتظهرلك وتتسجل في سجلك. متأكد؟')) return;
+    setBusy(true);
+    try {
+      await updateDoc(doc(db, 'shifts', shift.id), {
+        shortageState: 'acked', shortageAck: true, shortageAckAt: new Date().toISOString(),
+        cashierAttention: false, staffUnread: true,
+        lastMsg: { text: 'الكاشير أقرّ بالعجز', side: 'cashier', byName: profile.name, at: new Date().toISOString() },
+      });
+      try { await updateDoc(doc(db, 'ledger', shift.id), { acknowledged: true, acknowledgedAt: serverTimestamp() }); } catch (e) { console.warn('ledger ack', e.code); }
+      logAct('shortage_ack', 'أقرّ بالعجز في الوردية', { shopId: shift.shopId, shiftId: shift.id });
+      toast('اتسجّل إقرارك');
+    } catch (e) { console.error(e); toast('مش قادرين نسجّل، اتأكد من النت', 'err'); }
+    setBusy(false);
+  };
 
-function RegisterPicker({ shop, pub, regs, onPick }) {
-  const opens = allOpen(shop);
-  const list = [{ id: MAIN_REG, name: 'الكاشير الأساسي', kind: 'main' }, ...regs];
-  const kindLabel = { main: 'الدرج الأساسي', sub: 'كاشير فرعي', delivery: 'دليفري' };
   return (
-    <div className="wrap" style={{ maxWidth: 760 }}>
+    <div className="wrap" style={{ maxWidth: 820 }}>
       <div className="stack" style={{ gap: 4 }}>
-        <h1 className="title">هتشتغل على أنهي درج النهارده؟</h1>
-        <span className="sub">اختار الدرج اللي هتستلمه</span>
+        <h1 className="title">أهلًا يا {firstName(profile.name)}</h1>
+        <span className="sub">تابع حالة الوردية وكلّم المحاسب من هنا.</span>
       </div>
-      <div className="grid2">
-        {list.map((r) => {
-          const o = opens.find((x) => x.reg === r.id);
-          const who = o && (pub?.cashiers || []).find((c) => c.uid === o.cashierUid);
-          return (
-            <button key={r.id} type="button" className="card" onClick={() => onPick(r.id)} style={{ textAlign: 'right', cursor: 'pointer', border: o ? '2px solid #FFD27A' : '2px solid transparent', gap: 10 }}>
-              <span className="spread">
-                <span className="stack" style={{ gap: 0 }}><strong style={{ fontSize: 20 }}>{r.name}</strong><span className="small muted">{kindLabel[r.kind] || ''}</span></span>
-                <span className={'badge ' + (o ? 'warn' : 'ok')}>{o ? 'شغّال' : 'فاضي'}</span>
-              </span>
-              {o ? (
-                <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <Avatar name={o.cashierName} photo={pub?.photos?.[o.cashierUid] || who?.photo} color={who?.color} size={36} />
-                  <span className="small">{o.cashierName} · من {timeStr(o.openedAt)}</span>
-                </span>
-              ) : <span className="small muted">دوس علشان تستلم</span>}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
-function Blocked({ open, pub, onOther }) {
-  const owner = (pub?.cashiers || []).find((c) => c.uid === open.cashierUid);
-  return (
-    <div className="wrap center">
-      <section className="card card-lg center" style={{ maxWidth: 520, textAlign: 'center', gap: 16 }}>
-        <span style={{ width: 84, height: 84, borderRadius: 999, background: 'var(--warn-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon d="lock" size={42} stroke={2} /></span>
-        <h1 style={{ fontSize: 26, fontWeight: 700 }}>مينفعش تستلم دلوقتي</h1>
-        <span className="muted" style={{ lineHeight: 1.7 }}>الوردية اللي قبلك لسه مفتوحة ومتسلّمتش. لازم صاحبها يسلّمها الأول، وبعدها تقدر تستلم إنت.</span>
-        <div className="m-row" style={{ width: '100%', padding: 12, textAlign: 'right' }}>
-          <Avatar name={open.cashierName} photo={pub?.photos?.[open.cashierUid] || owner?.photo} color={owner?.color} size={54} />
-          <span className="stack" style={{ gap: 0, flexGrow: 1 }}><strong>{open.cashierName}</strong><span className="small muted">مفتوحة من {timeStr(open.openedAt)}</span></span>
+      <section className="card" style={{ gap: 14 }}>
+        <div className="spread" style={{ flexWrap: 'wrap', gap: 10 }}>
+          <span className="stack" style={{ gap: 2 }}>
+            <strong style={{ fontSize: 20 }}>وردية {dateStr(shift.openedAt || shift.openedAtLocal)}{shift.registerName && shift.register !== 'main' ? ` · ${shift.registerName}` : ''}</strong>
+            <span className="small muted">{timeStr(shift.openedAt || shift.openedAtLocal)} ← {shift.submittedAt ? timeStr(shift.submittedAt) : '—'} · {durationStr(shift.openedAt || shift.openedAtLocal, shift.submittedAt)}</span>
+          </span>
+          <span className={'badge ' + info.cls} style={{ fontSize: 15, padding: '8px 16px' }}>{info.label}</span>
         </div>
-        {onOther && <button type="button" className="btn full" onClick={onOther}>اختار درج تاني</button>}
-        <button type="button" className={'btn full' + (onOther ? ' soft' : '')} onClick={() => doLogout()}>خروج علشان {firstName(open.cashierName)} يدخل ويسلّم</button>
-        <span className="small muted">لو {firstName(open.cashierName)} مش موجود، كلّم دعم مدقق يقفل الوردية من عندهم.</span>
-      </section>
-    </div>
-  );
-}
 
-function Done({ info, profile, onFollow }) {
-  return (
-    <div className="wrap" style={{ maxWidth: 720 }}>
-      <section className="card card-lg center" style={{ textAlign: 'center', gap: 18, position: 'relative', overflow: 'hidden' }}>
-        <svg width="200" height="200" viewBox="0 0 200 200" aria-hidden="true" style={{ position: 'absolute', top: -70, right: -60 }}><circle cx="100" cy="100" r="80" fill="none" stroke="#B6F000" strokeWidth="22" /></svg>
-        <svg width="140" height="140" viewBox="0 0 140 140" aria-hidden="true" style={{ position: 'absolute', bottom: -50, left: -30 }}><rect x="10" y="10" width="120" height="120" rx="40" fill="#A07CFF" /></svg>
-        <span style={{ width: 104, height: 104, borderRadius: 999, background: 'var(--lime)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}><Icon d="check" size={52} stroke={3} /></span>
-        <h1 style={{ fontSize: 34, fontWeight: 800, position: 'relative' }}>تسلم إيدك يا {firstName(profile.name)}</h1>
-        <span className="muted" style={{ position: 'relative' }}>{info.offline ? 'التسليم اتحفظ وهيتبعت للمحاسب أول ما النت يرجع' : 'الوردية اتبعتت للمحاسب'}</span>
-        <div className="grid2" style={{ width: '100%', position: 'relative' }}>
-          {info.stats.map((s) => (
-            <div key={s.label} style={{ background: 'var(--chip)', borderRadius: 22, padding: 14, textAlign: 'right' }}>
-              <div className="small muted">{s.label}</div>
-              <div style={{ fontSize: 19, fontWeight: 700 }}>{s.value}</div>
-            </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {steps.map((s, i) => (
+            <span key={s.title} style={{ display: 'flex', alignItems: 'center', gap: 8, flex: i < steps.length - 1 ? '1 1 0' : '0 0 auto' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
+                <span style={{ width: 30, height: 30, borderRadius: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, background: s.done ? 'var(--lime)' : s.on ? 'var(--blue)' : 'var(--chip)', color: s.on ? '#fff' : 'var(--ink)' }}>
+                  {s.done ? <Icon d="check" size={16} stroke={3} /> : i + 1}
+                </span>
+                <span style={{ fontWeight: s.on || s.done ? 700 : 500, opacity: s.on || s.done ? 1 : 0.6 }}>{s.title}</span>
+              </span>
+              {i < steps.length - 1 && <span style={{ flex: 1, height: 3, borderRadius: 3, background: s.done ? 'var(--lime)' : 'var(--chip)' }} />}
+            </span>
           ))}
         </div>
-        <span style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center', position: 'relative' }}>
-          {onFollow && <button type="button" className="btn" onClick={onFollow}>تابع الوردية وكلّم المحاسب</button>}
-          <button type="button" className="btn soft" onClick={() => doLogout()}>تسجيل خروج</button>
-        </span>
+
+        <span style={{ lineHeight: 1.8 }}>{info.text}{raw === 'reopened' && shift.reopenNote ? <b> · {shift.reopenNote}</b> : null}</span>
+
+        {closed && resultStyle && !needsReply && (
+          <div style={{ ...resultStyle, borderRadius: 18, padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+            <span className="small" style={{ fontWeight: 600 }}>نتيجة الوردية</span>
+            <span style={{ fontSize: 26, fontWeight: 800 }}>{diffText(diff)}</span>
+          </div>
+        )}
+
+        {needsReply && (
+          <div className="stack" style={{ gap: 10, background: 'var(--red-soft)', borderRadius: 18, padding: 14 }}>
+            <strong style={{ color: '#9B1C1C' }}>اختار إيه اللي يناسبك:</strong>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <button type="button" className="btn soft sm" onClick={() => setForm('expense')}><Icon d="plus" size={16} />أضف مصروف نسيته</button>
+              <button type="button" className="btn soft sm" onClick={() => setForm('receive')}><Icon d="undo" size={16} />اطلب تعديل في الاستلام</button>
+              <button type="button" className="btn sm" style={{ background: '#E5484D' }} onClick={acknowledge} disabled={busy}>مفيش عندي سبب · أقرّ بالعجز</button>
+            </div>
+            <span className="tiny muted">الطلب بيروح للمحاسب، وهو اللي بيضيف أو يعدّل ويقفل الوردية تاني.</span>
+          </div>
+        )}
+
+        {requests.length > 0 && (
+          <div className="stack" style={{ gap: 0 }}>
+            <span className="tiny muted" style={{ fontWeight: 700, paddingBottom: 4 }}>طلباتك للمحاسب</span>
+            {requests.map((r, i) => {
+              const st = REQ_STATE[r.state] || REQ_STATE.pending;
+              return (
+                <div key={i} className="list-row" style={{ flexWrap: 'wrap', gap: 10 }}>
+                  <span className="stack" style={{ gap: 1, flex: '1 1 220px' }}>
+                    <strong>{r.type === 'expense' ? `مصروف نسيته · ${fmt(r.amount)} ج` : 'تعديل في الاستلام'}</strong>
+                    <span className="tiny muted">{r.note}</span>
+                  </span>
+                  <span className={'badge ' + st.cls}>{st.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {(reviewer || shift.reviewStartedAt || shift.closedAt) && (
+          <div className="stack" style={{ gap: 2 }}>
+            {reviewer && <span className="small muted">المحاسب: <b>{reviewer}</b></span>}
+            {shift.reviewStartedAt && <span className="small muted">بدأ المراجعة الساعة {timeStr(shift.reviewStartedAt)}</span>}
+            {shift.closedAt && <span className="small muted">اتقفلت الساعة {timeStr(shift.closedAt)}</span>}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {raw === 'reopened' && <button type="button" className="btn" onClick={onEdit}>عدّل الوردية</button>}
+          <button type="button" className={'btn' + (closed && !needsReply ? '' : ' soft')} onClick={onNew} disabled={!canStartNew} style={!canStartNew ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}>{newLabel}</button>
+          {!canStartNew && <span className="tiny muted" style={{ alignSelf: 'center' }}>اختار واحد من الاختيارات اللي فوق الأول علشان تقدر تبدأ استلام جديد.</span>}
+        </div>
       </section>
+
+      <section className="card" style={{ gap: 10 }}>
+        <h2 className="h2">💬 شات المحاسب <span className="tiny muted" style={{ fontWeight: 500 }}>· بينك وبين {shift.reviewer || 'المحاسب'}</span></h2>
+        <ShiftChat shift={shift} profile={profile} side="cashier" />
+      </section>
+
+      {form && (
+        <Modal title={form === 'expense' ? 'أضف مصروف نسيته' : 'اطلب تعديل في الاستلام'} icon="plus" color="var(--blue)" onClose={() => setForm(null)} width={460}>
+          {form === 'expense' && <label className="field">المبلغ<input className="input" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus /></label>}
+          <label className="field">{form === 'expense' ? 'المصروف ده إيه؟' : 'إيه اللي محتاج يتعدّل؟ (اكتب الرقم الصح)'}
+            <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={form === 'expense' ? 'مثلًا: مواصلات توريد' : 'مثلًا: درج الاستلام كان أقل بـ 50'} />
+          </label>
+          <button type="button" className="btn full" onClick={sendRequest} disabled={busy}>{busy ? 'لحظة…' : 'ابعت للمحاسب'}</button>
+        </Modal>
+      )}
     </div>
   );
 }
