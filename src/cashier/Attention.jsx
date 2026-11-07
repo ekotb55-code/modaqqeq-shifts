@@ -8,7 +8,8 @@ import EntryModal from './EntryModal.jsx';
 import { DeleteModal, entryTitle } from './Dash.jsx';
 import { logAct } from '../activity.js';
 
-// Shifts of this cashier that need him: a new message from the accountant, or a shift reopened for editing.
+// Shifts of this cashier that need him: a new message from the accountant, a shift reopened for editing,
+// or a shift closed with a shortage he has to answer.
 export function useAttention(uid) {
   const [list, setList] = useState([]);
   useEffect(() => {
@@ -20,20 +21,24 @@ export function useAttention(uid) {
 }
 
 export function AttentionBar({ list, onOpen, currentId }) {
-  const items = list.filter((s) => s.id !== currentId || s.status === 'reopened' || s.cashierUnread);
+  const items = list.filter((s) => s.id !== currentId || s.status === 'reopened' || s.cashierUnread || s.shortageState === 'review');
   if (!items.length) return null;
   return (
     <div className="wrap" style={{ paddingBottom: 0 }}>
-      {items.map((s) => (
-        <button key={s.id} type="button" className="attention" onClick={() => onOpen(s)} style={{ background: s.status === 'reopened' ? '#1565D8' : '#FFB020' }}>
-          <span className="ic"><Icon d={s.status === 'reopened' ? 'undo' : 'send'} size={20} /></span>
-          <span className="stack" style={{ gap: 0, flexGrow: 1, textAlign: 'right' }}>
-            <strong>{s.status === 'reopened' ? `المحاسب فتحلك وردية ${dateStr(s.openedAt || s.openedAtLocal)} تعدّلها` : `رسالة من المحاسب · وردية ${dateStr(s.openedAt || s.openedAtLocal)}`}</strong>
-            <span className="small" style={{ opacity: 0.92 }}>{s.status === 'reopened' ? (s.reopenNote || 'ضيف أو امسح العمليات اللي محتاجة تتظبط') : s.lastMsg?.text || ''}</span>
-          </span>
-          <span className="chip sm" style={{ background: '#fff', color: '#1B1B2F' }}>افتح</span>
-        </button>
-      ))}
+      {items.map((s) => {
+        const reopened = s.status === 'reopened';
+        const shortage = s.shortageState === 'review';
+        return (
+          <button key={s.id} type="button" className="attention" onClick={() => onOpen(s)} style={{ background: reopened ? '#1565D8' : shortage ? '#E5484D' : '#FFB020' }}>
+            <span className="ic"><Icon d={reopened ? 'undo' : shortage ? 'warn' : 'send'} size={20} /></span>
+            <span className="stack" style={{ gap: 0, flexGrow: 1, textAlign: 'right' }}>
+              <strong>{reopened ? `المحاسب فتحلك وردية ${dateStr(s.openedAt || s.openedAtLocal)} تعدّلها` : shortage ? `في عجز في وردية ${dateStr(s.openedAt || s.openedAtLocal)} · راجع مصروفاتك وتسليمك` : `رسالة من المحاسب · وردية ${dateStr(s.openedAt || s.openedAtLocal)}`}</strong>
+              <span className="small" style={{ opacity: 0.92 }}>{reopened ? (s.reopenNote || 'ضيف أو امسح العمليات اللي محتاجة تتظبط') : shortage ? 'ابعت للمحاسب اللي نسيته، أو أقرّ بالعجز علشان يظهرلك الرقم' : s.lastMsg?.text || ''}</span>
+            </span>
+            <span className="chip sm" style={{ background: '#fff', color: '#1B1B2F' }}>افتح</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
