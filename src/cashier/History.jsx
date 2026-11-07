@@ -2,13 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { dateStr, diffText, durationStr, fmt, num, timeStr, todayKey } from '../lib';
-
-const SHORT = {
-  submitted: { label: 'مستنية المحاسب', cls: 'warn' },
-  reviewing: { label: 'بتتراجع', cls: 'dark' },
-  reopened: { label: 'مفتوحة لك تعدّل', cls: 'info' },
-  closed: { label: 'اتقفلت', cls: 'ok' },
-};
+import { statusOf } from './Follow.jsx';
 
 function shiftMonth(m, delta) {
   const [y, mo] = m.split('-').map(Number);
@@ -51,11 +45,14 @@ export default function History({ profile, onBack, onOpen }) {
   const shortages = useMemo(() => (ledger || [])
     .filter((l) => l.kind === 'shortage')
     .sort((x, y) => String(y.day || '').localeCompare(String(x.day || ''))), [ledger]);
-  const totalShort = shortages.reduce((a, l) => a + num(l.amount), 0);
-  const waitingShort = shortages.filter((l) => !l.confirmed).reduce((a, l) => a + num(l.amount), 0);
+  // A shortage stays hidden until the cashier answers it (acknowledges or sends a request).
+  const seen = (l) => !l.ackRequired || l.acknowledged;
+  const totalShort = shortages.filter(seen).reduce((a, l) => a + num(l.amount), 0);
+  const waitingShort = shortages.filter((l) => seen(l) && !l.confirmed).reduce((a, l) => a + num(l.amount), 0);
+  const needReply = shortages.filter((l) => !seen(l)).length;
 
   const resultBadge = (s) => {
-    if (s.status !== 'closed' || typeof s.diff !== 'number') return null;
+    if (s.status !== 'closed' || typeof s.diff !== 'number' || statusOf(s).key === 'shortage') return null;
     const st = s.diff < 0 ? { background: 'var(--red-soft)', color: '#9B1C1C' } : s.diff > 0 ? { background: 'var(--lime-soft)', color: 'var(--lime-ink)' } : { background: 'var(--blue-soft)', color: '#144F86' };
     return <span style={{ ...st, borderRadius: 999, padding: '3px 12px', fontSize: 13, fontWeight: 700 }}>{diffText(s.diff)}</span>;
   };
@@ -90,7 +87,7 @@ export default function History({ profile, onBack, onOpen }) {
             {shifts === null && <div className="empty">بنحمّل…</div>}
             {shifts !== null && rows.length === 0 && !err && <div className="empty">مفيش تسليمات في الشهر ده</div>}
             {rows.map((s) => {
-              const st = SHORT[s.status] || SHORT.submitted;
+              const st = statusOf(s);
               return (
                 <button key={s.id} type="button" className="list-row" onClick={() => onOpen(s.id)} style={{ width: '100%', textAlign: 'right', cursor: 'pointer', background: 'none', border: 'none', flexWrap: 'wrap', gap: 10 }}>
                   <span className="stack" style={{ gap: 2, flex: '1 1 220px' }}>
@@ -117,6 +114,7 @@ export default function History({ profile, onBack, onOpen }) {
                 <div style={{ fontSize: 26, fontWeight: 800 }}>{fmt(waitingShort)} ج</div>
               </div>
             </div>
+            {needReply > 0 && <div className="alert warn small">عندك {needReply} عجز محتاج ردّك · دوس عليه وراجع الوردية</div>}
             {ledger === null && <div className="empty">بنحمّل…</div>}
             {ledger !== null && shortages.length === 0 && <div className="empty">مفيش عجز مسجّل عليك في الشهر ده</div>}
             {shortages.map((l) => (
@@ -125,8 +123,13 @@ export default function History({ profile, onBack, onOpen }) {
                   <strong>عجز وردية {l.day}</strong>
                   <span className="tiny muted">سجّله المحاسب {l.by || ''}</span>
                 </span>
-                <strong style={{ fontSize: 17 }}>{fmt(l.amount)} ج</strong>
-                <span className={'badge ' + (l.confirmed ? 'ok' : 'warn')}>{l.confirmed ? 'اتخصم' : 'لسه ما اتخصمش'}</span>
+                {seen(l) && <strong style={{ fontSize: 17 }}>{fmt(l.amount)} ج</strong>}
+                {!seen(l) ? <span className="badge bad">محتاج ردّك</span> : (
+                  <>
+                    {l.acknowledged && <span className="badge info">أقررت</span>}
+                    <span className={'badge ' + (l.confirmed ? 'ok' : 'warn')}>{l.confirmed ? 'اتخصم' : 'لسه ما اتخصمش'}</span>
+                  </>
+                )}
               </button>
             ))}
           </>
