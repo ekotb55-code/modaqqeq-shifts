@@ -3,7 +3,7 @@ import { collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, s
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { Avatar, Icon, Modal, useToast } from '../ui.jsx';
-import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, REG_KIND, allOpen, isAdminRole, newRegister, newExpenseType, RATE_FROM, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, num, pickImage } from '../lib';
+import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, MACHINE_PRESETS, REG_KIND, allOpen, isAdminRole, newRegister, newExpenseType, RATE_FROM, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, num, pickImage } from '../lib';
 import { logAct } from '../activity.js';
 
 export default function Setup({ profile, shops, sel, setSel }) {
@@ -104,7 +104,11 @@ function StaffList({ title, active, stopped, onChangeActive, onChangeStopped, pl
 }
 
 function MachinesEditor({ list, onChange }) {
+  const [picking, setPicking] = useState(false);
   const upd = (id, patch) => onChange(list.map((m) => (m.id === id ? { ...m, ...patch } : m)));
+  // Presets that are not already added to this shop.
+  const left = MACHINE_PRESETS.filter((p) => !list.some((m) => m.name.trim() === p.name));
+  const addPreset = (p) => { onChange([...list, { ...newMachine(), ...p }]); setPicking(false); };
   return (
     <section className="card tint-yellow" style={{ gap: 14 }}>
       <div className="spread">
@@ -112,9 +116,18 @@ function MachinesEditor({ list, onChange }) {
           <h2 className="h2">المكن</h2>
           <span className="tiny muted">ضيف المكن اللي المحل شغّال عليها بس. المكنة اللي تقفلها مش هتظهر للكاشير.</span>
         </div>
-        <button type="button" className="btn sm" onClick={() => onChange([...list, newMachine()])}><Icon d="plus" size={16} />مكنة جديدة</button>
+        <button type="button" className="btn sm" onClick={() => setPicking(!picking)}><Icon d="plus" size={16} />مكنة جديدة</button>
       </div>
-      {list.length === 0 && <div className="empty" style={{ padding: 16 }}>مفيش مكن لسه. دوس «مكنة جديدة».</div>}
+      {picking && (
+        <div className="stack" style={{ gap: 6 }}>
+          <span className="small muted">اختار مكنة:</span>
+          <div className="chips">
+            {left.map((p) => <button key={p.name} type="button" className="chip" onClick={() => addPreset(p)}>{p.name}</button>)}
+            <button type="button" className="chip sm" onClick={() => addPreset({})}>مكنة تانية…</button>
+          </div>
+        </div>
+      )}
+      {list.length === 0 && !picking && <div className="empty" style={{ padding: 16 }}>مفيش مكن لسه. دوس «مكنة جديدة».</div>}
       {list.map((m) => (
         <div key={m.id} style={{ background: '#fff', borderRadius: 24, padding: 16, display: 'flex', flexDirection: 'column', gap: 14, opacity: m.active ? 1 : 0.6 }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
@@ -151,6 +164,13 @@ function MachinesEditor({ list, onChange }) {
               <div className="chips">
                 <button type="button" className={'chip sm' + (m.inCash !== false ? ' on' : '')} onClick={() => upd(m.id, { inCash: true })}>بتأثر على درج الكاشير</button>
                 <button type="button" className={'chip sm' + (m.inCash === false ? ' on' : '')} onClick={() => upd(m.id, { inCash: false })}>مش بتأثر</button>
+              </div>
+            </div>
+            <div className="stack" style={{ flex: '1 1 240px' }}>
+              <span className="small muted">أول الوردية</span>
+              <div className="chips">
+                <button type="button" className={'chip sm' + (!m.startZero ? ' on' : '')} onClick={() => upd(m.id, { startZero: false })}>بتستلم رصيد اللي قبلها</button>
+                <button type="button" className={'chip sm' + (m.startZero ? ' on' : '')} onClick={() => upd(m.id, { startZero: true })}>بتبدأ بصفر · في التسليم بس</button>
               </div>
             </div>
             <div className="stack" style={{ flex: '1 1 240px' }}>
@@ -240,7 +260,7 @@ function ShopEditor({ shop }) {
 
   const save = async () => {
     try {
-      const machineList = f.machineList.filter((m) => m.name.trim()).map((m) => ({ ...m, name: m.name.trim(), ratePct: num(m.ratePct), liqFeePct: num(m.liqFeePct), settle: settleOf(m), accounts: m.accounts.map((a) => a.trim()).filter(Boolean) }));
+      const machineList = f.machineList.filter((m) => m.name.trim()).map((m) => ({ ...m, name: m.name.trim(), ratePct: num(m.ratePct), liqFeePct: num(m.liqFeePct), settle: settleOf(m), startZero: !!m.startZero, accounts: m.accounts.map((a) => a.trim()).filter(Boolean) }));
       const registers = f.registers.filter((r) => r.name.trim()).map((r) => ({ ...r, name: r.name.trim() }));
       await updateDoc(doc(db, 'shops', shop.id), { ...f, registers, machineList, machines: flattenMachines(machineList), name: f.name.trim() });
       await setDoc(doc(db, 'shopsPublic', shop.id), { name: f.name.trim() }, { merge: true });
