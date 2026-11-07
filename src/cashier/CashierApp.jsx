@@ -13,16 +13,9 @@ import { Topbar } from './parts.jsx';
 import Receive from './Receive.jsx';
 import Dash from './Dash.jsx';
 import Handover from './Handover.jsx';
-import Follow from './Follow.jsx';
+import Follow, { statusOf } from './Follow.jsx';
 import History from './History.jsx';
 import { logAct, logout as doLogout } from '../activity.js';
-
-const PREV_STATUS = {
-  submitted: { label: 'مستنية المحاسب', cls: 'warn' },
-  reviewing: { label: 'بتتراجع', cls: 'dark' },
-  reopened: { label: 'مفتوحة لك تعدّل', cls: 'info' },
-  closed: { label: 'اتقفلت', cls: 'ok' },
-};
 
 export default function CashierApp({ profile }) {
   const toast = useToast();
@@ -154,14 +147,14 @@ export default function CashierApp({ profile }) {
           {recent && !(showFollow && followShift?.id === recent.id) && (
             <button type="button" className="btn soft sm" style={{ position: 'relative' }} onClick={() => { setHistOpen(false); setViewId(recent.id); }}>
               الوردية اللي فاتت
-              <span className={'badge ' + (PREV_STATUS[recent.status]?.cls || 'warn')} style={{ marginInlineStart: 8 }}>{PREV_STATUS[recent.status]?.label || 'مستنية المحاسب'}</span>
+              <span className={'badge ' + statusOf(recent).cls} style={{ marginInlineStart: 8 }}>{statusOf(recent).label}</span>
               {recent.cashierUnread && <span className="dot-new" />}
             </button>
           )}
           <button type="button" className="btn soft sm" onClick={() => { setViewId(null); setHistOpen(true); }}>سجلي · التسليمات والعجز</button>
         </div>
       )}
-      {!done && <AttentionBar list={attention} currentId={shiftId} onOpen={setAttn} />}
+      {!done && <AttentionBar list={attention} currentId={shiftId} onOpen={(x) => { if (x.shortageState === 'review') { setHistOpen(false); setViewId(x.id); } else setAttn(x); }} />}
       {body}
       {attn && <AttentionModal shift={attn} shop={shop} profile={me} onClose={() => setAttn(null)} />}
       {pinOpen && <PinModal onClose={() => setPinOpen(false)} />}
