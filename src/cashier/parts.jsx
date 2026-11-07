@@ -69,6 +69,13 @@ export function Bills({ bills, setBills, orig, noSteppers }) {
   );
 }
 
+// Colour for the "take a photo" text: the header ink is white on dark cards, so use a dark colour there.
+const isWhite = (c) => /^#f{3}$|^#f{6}$/i.test(String(c || ''));
+function photoTone(look) {
+  if (!isWhite(look.ink)) return look.ink;
+  return look.latin === 'CARD' ? '#1A2B6B' : look.mark;
+}
+
 export function MachineRows({ machines, values, setValues, photos, onPhoto, prev, prevName, inline }) {
   const groups = machineGroupsOf(machines);
   const cards = groups.map((g) => {
@@ -102,7 +109,7 @@ export function MachineRows({ machines, values, setValues, photos, onPhoto, prev
             );
           })}
         </div>
-        <PhotoSlot data={photos[first]} onPick={() => onPhoto(first)} label={g.items.length > 1 ? `صورة واحدة لشاشة ${g.name} (فيها الحسابين)` : `صوّر شاشة ${g.name}`} tone={look.ink === '#fff' ? '#1A2B6B' : look.ink} />
+        <PhotoSlot data={photos[first]} onPick={() => onPhoto(first)} label={g.items.length > 1 ? `صورة واحدة لشاشة ${g.name} (فيها الحسابين)` : `صوّر شاشة ${g.name}`} tone={photoTone(look)} />
       </div>
     );
   });
