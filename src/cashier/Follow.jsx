@@ -27,7 +27,7 @@ export function statusOf(s) {
 
 const REQ_STATE = { pending: { label: 'مستني المحاسب', cls: 'warn' }, added: { label: 'اتنفّذ', cls: 'ok' }, done: { label: 'اتنفّذ', cls: 'ok' }, rejected: { label: 'اترفض', cls: 'bad' } };
 
-export default function Follow({ shift, profile, onNew, onEdit, newLabel = 'ابدأ استلام جديد' }) {
+export default function Follow({ shift, profile, onNew, onEdit, newLabel = 'ابدأ استلام جديد', canStartNew = true }) {
   const toast = useToast();
   const info = statusOf(shift);
   const raw = shift.status;
@@ -166,7 +166,8 @@ export default function Follow({ shift, profile, onNew, onEdit, newLabel = 'اب
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {raw === 'reopened' && <button type="button" className="btn" onClick={onEdit}>عدّل الوردية</button>}
-          <button type="button" className={'btn' + (closed && !needsReply ? '' : ' soft')} onClick={onNew}>{newLabel}</button>
+          <button type="button" className={'btn' + (closed && !needsReply ? '' : ' soft')} onClick={onNew} disabled={!canStartNew} style={!canStartNew ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}>{newLabel}</button>
+          {!canStartNew && <span className="tiny muted" style={{ alignSelf: 'center' }}>اختار واحد من الاختيارات اللي فوق الأول علشان تقدر تبدأ استلام جديد.</span>}
         </div>
       </section>
 
