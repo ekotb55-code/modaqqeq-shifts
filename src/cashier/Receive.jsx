@@ -6,7 +6,7 @@ import { db } from '../firebase';
 import { Icon, useToast, WalletField, clearDraft, useDraft } from '../ui.jsx';
 import { captureDocument } from '../DocCamera.jsx';
 import { clearRemoteDraft, isDesktop, saveRemoteDraft, useRemoteDraft } from '../remoteDraft';
-import { MAIN_REG, WALLETS, colsFor, machineGroupsOf, machinePhotoLabel, walletModeOf, walletModesOf, billsTotal, emptyBills, fmt, lastOf, num, openKey, regName, timeStr, todayKey } from '../lib';
+import { MAIN_REG, WALLETS, vaultsOf, colsFor, machineGroupsOf, machinePhotoLabel, walletModeOf, walletModesOf, billsTotal, emptyBills, fmt, lastOf, num, openKey, regName, timeStr, todayKey } from '../lib';
 import { Bills, MachineRows, SideBox } from './parts.jsx';
 import { logAct } from '../activity.js';
 
@@ -164,6 +164,8 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
         prevDrawerTotal: billsTotal(prevBills),
         prevSide,
         wallets: walletsOut(), prevWallets, walletModes: walletModesOf(shop),
+        // رصيد كل خزنة رئيسية وقت بداية الوردية (بيتراكم من الورديات اللي قبلها)
+        vaults: Object.fromEntries(vaultsOf(shop).map((v) => [v.id, num(shop.vaultBalances?.[v.id])])),
         diffFromPrev: changed > 0 || sideChanged || mChanged > 0 || wChanged > 0,
       };
       const b = writeBatch(db);
