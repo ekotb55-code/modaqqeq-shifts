@@ -33,8 +33,12 @@ service cloud.firestore {
     match /shops/{shopId} {
       allow read: if isAdmin() || inShop(shopId);
       allow create, delete: if isAdmin();
+      // التعديل هنا: السماح للكاشير بإضافة أسماء للقوائم (موظفين، موردين، مصروفات، إيرادات)
       allow update: if isAdmin()
-        || (inShop(shopId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['openShift', 'lastHandover', 'openShifts', 'lastHandovers']));
+        || (inShop(shopId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'openShift', 'lastHandover', 'openShifts', 'lastHandovers', 
+            'staff', 'shopExpenses', 'suppliers', 'incomeReasons'
+        ]));
     }
 
     // Cashier PINs so Modaqqeq admins can change them later (free plan has no server).
@@ -71,6 +75,9 @@ service cloud.firestore {
         || (signedIn() && resource.data.cashierUid == request.auth.uid && resource.data.status == 'reopened'
             && request.resource.data.status in ['reopened', 'submitted']
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reopenPending', 'cashierAttention', 'cashierUnread', 'staffUnread', 'lastMsg', 'reopenDoneAt', 'entryCount']))
+        // التعديل هنا: السماح للكاشير بإرسال طلب إضافة مصروف أو الإقرار بالعجز بعد إغلاق الوردية
+        || (signedIn() && resource.data.cashierUid == request.auth.uid && resource.data.status == 'closed'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['shortageAck', 'shortageAckAt', 'shortageState', 'cashierRequests', 'status', 'staffUnread', 'cashierAttention', 'reopenPending', 'lastMsg']))
         // Chat flags, any time.
         || ((staffOf(resource.data.shopId) || (signedIn() && resource.data.cashierUid == request.auth.uid))
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cashierAttention', 'cashierUnread', 'staffUnread', 'lastMsg']));
@@ -118,7 +125,7 @@ service cloud.firestore {
         || (inShop(resource.data.shopId) && resource.data.status == 'pending'
             && ((request.resource.data.status == 'accepted' && request.resource.data.toUid == request.auth.uid
                  && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'toUid', 'toName', 'toShiftId', 'acceptedAmount', 'acceptedDiff', 'acceptedAt']))
-             || (request.resource.data.status == 'cancelled' && resource.data.fromUid == request.auth.uid
+              || (request.resource.data.status == 'cancelled' && resource.data.fromUid == request.auth.uid
                  && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'cancelledAt']))));
       allow delete: if isAdmin();
     }
@@ -127,7 +134,10 @@ service cloud.firestore {
     match /ledger/{id} {
       allow read: if staffOf(resource.data.shopId) || (signedIn() && resource.data.cashierUid == request.auth.uid);
       allow create: if reviewerOf(request.resource.data.shopId);
-      allow update: if reviewerOf(resource.data.shopId);
+      // التعديل هنا: السماح للكاشير بالإقرار بالعجز في السجل
+      allow update: if reviewerOf(resource.data.shopId)
+        || (signedIn() && resource.data.cashierUid == request.auth.uid 
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acknowledged', 'acknowledgedAt']));
       allow delete: if isAdmin();
     }
 
