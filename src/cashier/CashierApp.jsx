@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { signOut, updatePassword } from 'firebase/auth';
-import { collection, deleteField, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
+import { collection, deleteField, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where, deleteDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Icon, Avatar, Modal, Spinner, useToast } from '../ui.jsx';
 import { DEFAULT_SHOP, MAIN_REG, allOpen, cashierPassword, firstName, openOf, regName, registersOf, shopForRegister, timeStr, todayKey } from '../lib';
@@ -16,6 +16,7 @@ import Handover from './Handover.jsx';
 import Follow, { statusOf } from './Follow.jsx';
 import History from './History.jsx';
 import { logAct, logout as doLogout } from '../activity.js';
+import { captureDocument } from '../DocCamera.jsx';
 
 export default function CashierApp({ profile }) {
   const toast = useToast();
@@ -35,13 +36,46 @@ export default function CashierApp({ profile }) {
   const [attn, setAttn] = useState(null);
   const [theme, setTheme] = useTheme(profile);
   const [themeOpen, setThemeOpen] = useState(false);
-  // The cashier's latest handed-in shift (today or yesterday) that isn't open anymore.
   const [recent, setRecent] = useState(null);
   const [skipFollow, setSkipFollow] = useState(false);
-  // Following a specific shift (from the "previous shift" strip or from the history page).
   const [viewId, setViewId] = useState(null);
   const [viewDoc, setViewDoc] = useState(null);
   const [histOpen, setHistOpen] = useState(false);
+
+  // ── السحر هنا: رادار استقبال طلبات التصوير من الكمبيوتر للموبايل ──
+  useEffect(() => {
+    if (!profile?.id) return;
+    const draftRef = doc(db, 'drafts', profile.id);
+    const unsub = onSnapshot(draftRef, async (snap) => {
+      const data = snap.data();
+      // لو فيه طلب تصوير ومفيش صورة لسه
+      if (data?.requestPhoto && !data?.photoData) {
+        // نتأكد إن الجهاز ده موبايل عشان الكاميرا متفتحش في الكمبيوتر كمان
+        const isMobile = /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth <= 800;
+        if (isMobile && !window.remoteCamActive) {
+          window.remoteCamActive = true; // عشان متفتحش مرتين
+          try {
+            const photo = await captureDocument({
+              maxSide: 1200,
+              quality: 0.7,
+              title: 'تصوير للكمبيوتر'
+            });
+            if (photo) {
+              // لو صوّر، نرفع الصورة في نفس المسودة
+              await setDoc(draftRef, { ...data, requestPhoto: false, photoData: photo });
+            } else {
+              // لو قفل الكاميرا، نمسح الطلب
+              await deleteDoc(draftRef);
+            }
+          } catch (err) {
+            await deleteDoc(draftRef);
+          }
+          window.remoteCamActive = false;
+        }
+      }
+    });
+    return () => unsub();
+  }, [profile?.id]);
 
   useEffect(() => {
     if (!shopId) return undefined;
