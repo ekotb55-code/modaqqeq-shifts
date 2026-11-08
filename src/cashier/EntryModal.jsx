@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { collection, doc, serverTimestamp, writeBatch, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, Modal, useToast, WALLET_LOOK, WalletMark } from '../ui.jsx';
 import { captureDocument } from '../DocCamera.jsx';
@@ -161,13 +161,15 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
       }
       b.set(eref, entry);
       
-      // حفظ الإعدادات الجديدة في المحل (تلقائياً)
-      if (shopUpdate) {
-        b.update(doc(db, 'shops', shop.id), shopUpdate);
-      }
-
+      // ننفذ حفظ المصروف الأساسي
       const p = b.commit();
       if (navigator.onLine) await p; else p.catch(() => {});
+      
+      // التعديل هنا: فصلنا حفظ الاسم عن حفظ المصروف عشان لو الصلاحية اتأخرت ميضربش إيرور
+      if (shopUpdate) {
+        updateDoc(doc(db, 'shops', shop.id), shopUpdate).catch((e) => console.log('Shop update silently failed:', e));
+      }
+
       logAct('entry', `سجّل ${META[type].title}${entry.kindLabel ? ` (${entry.kindLabel}${entry.sub ? ` · ${entry.sub}` : ''})` : ''} · ${fmt(entry.amount)} ج`, { shopId: shop.id, shiftId: shift.id });
       if (print) printReceipt({ shop, profile, entry, title: META[type].title });
       toast(navigator.onLine ? (print ? 'اتسجل والإيصال بيتطبع' : 'اتسجل') : 'اتحفظ وهيترفع لما النت يرجع');
