@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { collection, doc, serverTimestamp, writeBatch, updateDoc } from 'firebase/firestore';
+import { useEffect, useMemo, useState } from 'react';
+import { collection, doc, serverTimestamp, writeBatch, updateDoc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, Modal, useToast, WALLET_LOOK, WalletMark } from '../ui.jsx';
 import { captureDocument } from '../DocCamera.jsx';
@@ -85,11 +85,38 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
   const subValue = sub === '__new' ? custom.trim() : sub;
   const reasonValue = reason === '__new' ? custom.trim() : reason;
 
+  // ── السحر هنا: استقبال الصورة من الموبايل للكمبيوتر ──
+  useEffect(() => {
+    if (!profile?.id) return;
+    const unsub = onSnapshot(doc(db, 'drafts', profile.id), (snap) => {
+      const data = snap.data();
+      if (data?.photoData) {
+        setPhoto(data.photoData);
+        deleteDoc(doc(db, 'drafts', profile.id)).catch(() => {});
+        toast('✓ اللقطة وصلت من الموبايل بنجاح!');
+      }
+    });
+    return () => unsub();
+  }, [profile?.id]);
+
   const takePhoto = async () => {
     const data = await captureDocument(type === 'transfer'
       ? { maxSide: 1200, quality: 0.7, kind: 'phone', title: 'صوّر شاشة التحويل' }
       : { maxSide: 1200, quality: 0.7, kind: 'paper', title: kind === 'supplier' ? 'صوّر الفاتورة' : 'صوّر الإيصال' });
     if (data) setPhoto(data);
+  };
+
+  // إرسال الإشارة للموبايل عشان يفتح الكاميرا
+  const takePhotoFromPhone = async () => {
+    try {
+      await setDoc(doc(db, 'drafts', profile.id), { 
+        requestPhoto: true, 
+        kind: type === 'transfer' ? 'phone' : 'paper' 
+      });
+      toast('افتح الموبايل هتلاقي الكاميرا فتحت لوحدها!');
+    } catch(e) {
+      toast('مش قادرين نبعت للموبايل', 'err');
+    }
   };
 
   const validate = () => {
@@ -161,11 +188,9 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
       }
       b.set(eref, entry);
       
-      // ننفذ حفظ المصروف الأساسي
       const p = b.commit();
       if (navigator.onLine) await p; else p.catch(() => {});
       
-      // التعديل هنا: فصلنا حفظ الاسم عن حفظ المصروف عشان لو الصلاحية اتأخرت ميضربش إيرور
       if (shopUpdate) {
         updateDoc(doc(db, 'shops', shop.id), shopUpdate).catch((e) => console.log('Shop update silently failed:', e));
       }
@@ -331,9 +356,14 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
               </div>
             </div>
           ) : (
-            <button type="button" onClick={takePhoto} style={{ height: 80, borderRadius: 24, border: '2px dashed var(--violet)', background: '#F7F3FF', fontSize: 15, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-              <Icon d="cam" size={24} stroke={2} />{type === 'transfer' ? 'ارفع صورة التحويل (إجباري)' : kind === 'supplier' ? 'صوّر الفاتورة' : 'صوّر الإيصال (إجباري)'}
-            </button>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button type="button" onClick={takePhoto} style={{ flex: 1, height: 80, borderRadius: 24, border: '2px dashed var(--violet)', background: '#F7F3FF', fontSize: 15, fontWeight: 600, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                <Icon d="cam" size={24} stroke={2} />صوّر من هنا
+              </button>
+              <button type="button" onClick={takePhotoFromPhone} style={{ flex: 1, height: 80, borderRadius: 24, border: '2px dashed #4F8CFF', background: '#F0F6FF', color: '#4F8CFF', fontSize: 15, fontWeight: 600, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                <Icon d="phone" size={24} stroke={2} />صوّر بالموبايل
+              </button>
+            </div>
           )}
         </div>
       )}
