@@ -39,6 +39,7 @@ export default function Follow({ shift, profile, onNew, onEdit, newLabel = 'اب
   const [form, setForm] = useState(null); // 'expense' | 'receive'
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
+  const [expenseList, setExpenseList] = useState([]); // قايمة المصروفات المتعددة
   const [busy, setBusy] = useState(false);
 
   const steps = [
@@ -52,21 +53,68 @@ export default function Follow({ shift, profile, onNew, onEdit, newLabel = 'اب
       : diff > 0 ? { background: 'var(--lime-soft)', color: 'var(--lime-ink)' }
         : { background: 'var(--blue-soft)', color: '#144F86' };
 
+  // دالة لإضافة مصروف للقائمة المحلية قبل الإرسال
+  const addExpenseToList = () => {
+    if (num(amount) <= 0) { toast('اكتب المبلغ', 'err'); return; }
+    if (!note.trim()) { toast('اكتب المصروف ده إيه', 'err'); return; }
+    setExpenseList([...expenseList, { amount: num(amount), note: note.trim() }]);
+    setAmount('');
+    setNote('');
+  };
+
   const sendRequest = async () => {
-    if (form === 'expense' && num(amount) <= 0) { toast('اكتب المبلغ', 'err'); return; }
-    if (!note.trim()) { toast(form === 'expense' ? 'اكتب المصروف ده إيه' : 'اكتب إيه اللي محتاج يتعدّل', 'err'); return; }
+    let reqsToAdd = [];
+    if (form === 'expense') {
+      const currentAmount = num(amount);
+      const currentNote = note.trim();
+      const list = [...expenseList];
+
+      // لو الكاشير كتب حاجة ونسي يدوس "إضافة للقائمة"، بنضيفها تلقائي
+      if (currentAmount > 0 && currentNote) {
+        list.push({ amount: currentAmount, note: currentNote });
+      }
+
+      if (list.length === 0) {
+        toast('اكتب المبلغ وسبب المصروف الأول', 'err'); return;
+      }
+
+      const at = new Date().toISOString();
+      reqsToAdd = list.map(item => ({
+        type: 'expense',
+        amount: item.amount,
+        note: item.note,
+        state: 'pending',
+        at
+      }));
+
+    } else {
+      if (!note.trim()) { toast('اكتب إيه اللي محتاج يتعدّل', 'err'); return; }
+      reqsToAdd = [{ type: 'receive', note: note.trim(), state: 'pending', at: new Date().toISOString() }];
+    }
+
     setBusy(true);
     try {
       const at = new Date().toISOString();
-      const req = { type: form, ...(form === 'expense' ? { amount: num(amount) } : {}), note: note.trim(), state: 'pending', at };
+      const newRequests = [...requests, ...reqsToAdd];
+
+      let msgText = '';
+      if (form === 'expense') {
+        const totalAmt = reqsToAdd.reduce((sum, r) => sum + r.amount, 0);
+        msgText = reqsToAdd.length === 1 
+          ? `الكاشير بيطلب إضافة مصروف ${fmt(totalAmt)} ج · ${reqsToAdd[0].note}` 
+          : `الكاشير بيطلب إضافة ${reqsToAdd.length} مصروفات بإجمالي ${fmt(totalAmt)} ج`;
+      } else {
+        msgText = `الكاشير بيطلب تعديل في الاستلام · ${note.trim()}`;
+      }
+
       await updateDoc(doc(db, 'shifts', shift.id), {
-        status: 'disputed', shortageState: 'disputed', cashierRequests: [...requests, req],
+        status: 'disputed', shortageState: 'disputed', cashierRequests: newRequests,
         staffUnread: true, cashierAttention: false,
-        lastMsg: { text: form === 'expense' ? `الكاشير بيطلب إضافة مصروف ${fmt(num(amount))} ج · ${note.trim()}` : `الكاشير بيطلب تعديل في الاستلام · ${note.trim()}`, side: 'cashier', byName: profile.name, at },
+        lastMsg: { text: msgText, side: 'cashier', byName: profile.name, at },
       });
-      logAct('dispute', form === 'expense' ? `طلب إضافة مصروف ${fmt(num(amount))} ج على وردية فيها عجز` : 'طلب تعديل الاستلام على وردية فيها عجز', { shopId: shift.shopId, shiftId: shift.id });
-      toast('طلبك اتبعت للمحاسب');
-      setForm(null); setAmount(''); setNote('');
+      logAct('dispute', form === 'expense' ? `طلب إضافة ${reqsToAdd.length} مصروف على وردية فيها عجز` : 'طلب تعديل الاستلام على وردية فيها عجز', { shopId: shift.shopId, shiftId: shift.id });
+      toast('طلباتك اتبعتت للمحاسب');
+      setForm(null); setAmount(''); setNote(''); setExpenseList([]);
     } catch (e) { console.error(e); toast('مش قادرين نبعت، اتأكد من النت', 'err'); }
     setBusy(false);
   };
@@ -130,8 +178,8 @@ export default function Follow({ shift, profile, onNew, onEdit, newLabel = 'اب
           <div className="stack" style={{ gap: 10, background: 'var(--red-soft)', borderRadius: 18, padding: 14 }}>
             <strong style={{ color: '#9B1C1C' }}>اختار إيه اللي يناسبك:</strong>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <button type="button" className="btn soft sm" onClick={() => setForm('expense')}><Icon d="plus" size={16} />أضف مصروف نسيته</button>
-              <button type="button" className="btn soft sm" onClick={() => setForm('receive')}><Icon d="undo" size={16} />اطلب تعديل في الاستلام</button>
+              <button type="button" className="btn soft sm" onClick={() => { setForm('expense'); setExpenseList([]); setAmount(''); setNote(''); }}><Icon d="plus" size={16} />أضف مصروف نسيته</button>
+              <button type="button" className="btn soft sm" onClick={() => { setForm('receive'); setNote(''); }}><Icon d="undo" size={16} />اطلب تعديل في الاستلام</button>
               <button type="button" className="btn sm" style={{ background: '#E5484D' }} onClick={acknowledge} disabled={busy}>مفيش عندي سبب · أقرّ بالعجز</button>
             </div>
             <span className="tiny muted">الطلب بيروح للمحاسب، وهو اللي بيضيف أو يعدّل ويقفل الوردية تاني.</span>
@@ -177,12 +225,53 @@ export default function Follow({ shift, profile, onNew, onEdit, newLabel = 'اب
       </section>
 
       {form && (
-        <Modal title={form === 'expense' ? 'أضف مصروف نسيته' : 'اطلب تعديل في الاستلام'} icon="plus" color="var(--blue)" onClose={() => setForm(null)} width={460}>
-          {form === 'expense' && <label className="field">المبلغ<input className="input" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus /></label>}
-          <label className="field">{form === 'expense' ? 'المصروف ده إيه؟' : 'إيه اللي محتاج يتعدّل؟ (اكتب الرقم الصح)'}
-            <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={form === 'expense' ? 'مثلًا: مواصلات توريد' : 'مثلًا: درج الاستلام كان أقل بـ 50'} />
-          </label>
-          <button type="button" className="btn full" onClick={sendRequest} disabled={busy}>{busy ? 'لحظة…' : 'ابعت للمحاسب'}</button>
+        <Modal title={form === 'expense' ? 'أضف مصروفات نسيتها' : 'اطلب تعديل في الاستلام'} icon={form === 'expense' ? "plus" : "undo"} color="var(--blue)" onClose={() => setForm(null)} width={460}>
+          
+          {form === 'expense' && expenseList.length > 0 && (
+            <div className="stack" style={{ gap: 8, marginBottom: 12 }}>
+              <span className="small muted" style={{ fontWeight: 700 }}>المصروفات اللي هتتضاف ({expenseList.length}):</span>
+              {expenseList.map((ex, idx) => (
+                <div key={idx} className="spread" style={{ background: 'var(--bg)', padding: '10px 14px', borderRadius: 8 }}>
+                  <span style={{ fontWeight: 600 }}>{ex.note}</span>
+                  <strong style={{ color: 'var(--blue)' }}>{fmt(ex.amount)} ج</strong>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {form === 'expense' && (
+            <div className="row" style={{ gap: 10 }}>
+              <label className="field" style={{ flex: '1 1 120px' }}>
+                المبلغ
+                <input className="input" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
+              </label>
+              <label className="field" style={{ flex: '1 1 200px' }}>
+                المصروف ده إيه؟
+                <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="مثلًا: مواصلات توريد" />
+              </label>
+            </div>
+          )}
+
+          {form === 'receive' && (
+            <label className="field">إيه اللي محتاج يتعدّل؟ (اكتب الرقم الصح)
+              <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="مثلًا: درج الاستلام كان أقل بـ 50" autoFocus />
+            </label>
+          )}
+
+          {form === 'expense' ? (
+            <div className="row" style={{ gap: 8, marginTop: 12 }}>
+              <button type="button" className="btn soft" style={{ flex: 1 }} onClick={addExpenseToList}>
+                <Icon d="plus" size={16} /> ضيف مصروف كمان
+              </button>
+              <button type="button" className="btn" style={{ flex: 1 }} onClick={sendRequest} disabled={busy || (expenseList.length === 0 && (!amount || !note))}>
+                {busy ? 'لحظة…' : 'ابعت للمحاسب'}
+              </button>
+            </div>
+          ) : (
+            <button type="button" className="btn full" style={{ marginTop: 12 }} onClick={sendRequest} disabled={busy}>
+              {busy ? 'لحظة…' : 'ابعت للمحاسب'}
+            </button>
+          )}
         </Modal>
       )}
     </div>
