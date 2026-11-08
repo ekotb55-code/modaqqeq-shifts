@@ -24,7 +24,21 @@ export function entryTitle(e) {
 
 export default function Dash({ shop, shift, entries, deleted = [], incoming = [], outgoing = [], profile, onHandover, onReceive, onChat }) {
   useTour('c-dash', CASHIER_DASH, { uid: profile.id });
-  const [modal, setModal] = useState(null);
+  
+  // التعديل هنا: قراءة الرابط عشان لو جاي من اختصارات الموبايل (Shortcuts) يفتح النافذة المطلوبة فوراً
+  const [modal, setModal] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const action = params.get('action');
+      if (['expense', 'income', 'transfer', 'topup', 'move', 'liquidate', 'withdraw'].includes(action)) {
+        // مسح الـ action من الرابط عشان لو عمل Refresh متفتحش النافذة تاني لوحدها
+        window.history.replaceState(null, '', window.location.pathname);
+        return action;
+      }
+    }
+    return null;
+  });
+
   const [del, setDel] = useState(null);
   const [showDeleted, setShowDeleted] = useState(false);
   const [, tick] = useState(0);
