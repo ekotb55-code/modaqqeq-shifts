@@ -18,6 +18,7 @@ export const DEFAULT_SHOP = {
   posUrl: '',
   walletName: '',
   wallets: ['insta', 'vf'],
+  vaults: [],
 };
 
 export const RATE_FROM = { cashier: 'بتتخصم من درج الكاشير (بند مصاريف)', posting: 'بتتحسب عند الترحيل' };
@@ -260,6 +261,14 @@ export const walletModesOf = (shop) => Object.fromEntries(WALLETS.map((w) => [w.
 export const machineKey = (m) => `m:${m.machine}|${m.account}`;
 export const OWNER = 'out:owner';
 
+// خزن رئيسية: named safes of a shop (e.g. "الخزنة الرئيسية"). Money from the drawers, wallets and machines
+// can be moved into them (liquidation / transfer), and each one has its own statement for the shift.
+export const VAULT_PREFIX = 'vault:';
+export const vaultKey = (id) => VAULT_PREFIX + id;
+export const isVaultKey = (k) => String(k).startsWith(VAULT_PREFIX);
+export const newVault = (name = '') => ({ id: Math.random().toString(36).slice(2, 9), name, active: true });
+export const vaultsOf = (shop) => (shop?.vaults || []).filter((v) => v.active !== false && String(v.name || '').trim());
+
 // Machine totals for machines that have more than one account.
 // One photo per machine: Fawry's main + cash-out accounts share a single screen photo.
 export function machineGroupsOf(machines) {
@@ -295,6 +304,7 @@ export function shopSafes(shop) {
     ...(shop?.noSide ? [] : [{ key: 'side', label: 'الدرج الجانبي', kind: 'cash', color: '#B6F000' }]),
     ...WALLETS.filter((w) => wallets.includes(w.key)).map((w) => ({ ...w, kind: 'wallet', mode: walletModeOf(shop, w.key), color: w.key === 'insta' ? '#A07CFF' : '#FF4D6D' })),
     ...(shop?.machines || []).map((m) => ({ key: machineKey(m), label: `${m.machine} · ${m.account}`, kind: 'machine', color: '#FFC800', m })),
+    ...vaultsOf(shop).map((v) => ({ key: vaultKey(v.id), label: v.name, kind: 'vault', color: '#2FBF9B' })),
   ];
 }
 export function safeLabel(key, shop) {
@@ -309,6 +319,7 @@ export function safeLabel(key, shop) {
   const w = WALLETS.find((x) => x.key === key);
   if (w) return w.label;
   if (String(key).startsWith('m:')) return String(key).slice(2).replace('|', ' · ');
+  if (isVaultKey(key)) return (shop?.vaults || []).find((v) => vaultKey(v.id) === key)?.name || 'خزنة';
   const s = shopSafes(shop).find((x) => x.key === key);
   return s ? s.label : key;
 }
@@ -358,6 +369,7 @@ export function computeShift(shift, entries, shop, sales = null) {
     if (k === 'drawer') open = num(rcv.drawerTotal);
     else if (k === 'side') open = num(rcv.side);
     else if (k.startsWith('m:')) open = num(rm(rcv.machines, k)?.value);
+    else if (isVaultKey(k)) open = num(rcv.vaults?.[k.slice(VAULT_PREFIX.length)]);
     else {
       const wm = hnd?.walletModes?.[k] || rcv.walletModes?.[k];
       const fix = hnd?.walletsOpenFix?.[k];
@@ -412,6 +424,8 @@ export function computeShift(shift, entries, shop, sales = null) {
     machines.push({ ...s, machine: cfg.machine || s.label.split(' · ')[0], account: cfg.account, close, sales, rate, fee, rateFrom: cfg.rateFrom, settle: settleOf(cfg), affects, effect: r2(effect), feeEffect: r2(feeEffect), total: r2(effect + feeEffect) });
     s.expected = close;
   });
+
+  Object.values(safes).filter((x) => isVaultKey(x.key)).forEach((x) => { x.expected = r2(x.open + x.inn - x.out); x.close = x.expected; });
 
   const side = safes.side;
   side.expected = r2(side.open + side.inn - side.out);
