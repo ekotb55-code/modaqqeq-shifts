@@ -3,7 +3,7 @@ import { collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, s
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { Avatar, Icon, Modal, useToast } from '../ui.jsx';
-import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, MACHINE_PRESETS, REG_KIND, allOpen, isAdminRole, newRegister, newExpenseType, RATE_FROM, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, num, pickImage } from '../lib';
+import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, MACHINE_PRESETS, REG_KIND, allOpen, isAdminRole, newRegister, newExpenseType, RATE_FROM, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, newVault, num, pickImage } from '../lib';
 import { logAct } from '../activity.js';
 
 export default function Setup({ profile, shops, sel, setSel }) {
@@ -190,6 +190,33 @@ function MachinesEditor({ list, onChange }) {
   );
 }
 
+// خزن رئيسية: named safes for the branch. Money can be liquidated / moved into them.
+function VaultsEditor({ list, onChange, balances = {}, edits = {}, onEdit }) {
+  const upd = (id, patch) => onChange(list.map((v) => (v.id === id ? { ...v, ...patch } : v)));
+  const has = (name) => list.some((v) => v.name.trim() === name);
+  return (
+    <section className="card tint-blue" style={{ gap: 14 }}>
+      <div className="stack" style={{ gap: 2 }}>
+        <h2 className="h2">الخزن الرئيسية</h2>
+        <span className="tiny muted" style={{ lineHeight: 1.7 }}>خزنة بتسمّيها زي ما تحب (مثلًا «الخزنة الرئيسية»). فلوس درج الكاشير والجانبي والمحافظ والمكن بتتحوّل ليها بالتسييل أو التحويل. رصيدها بيتراكم من وردية للتانية، ويتضاف عليه لما المحاسب يقفل كل وردية. اكتب رصيدها الحالي لو فيها فلوس من قبل.</span>
+      </div>
+      {list.length === 0 && <div className="empty" style={{ padding: 16 }}>مفيش خزن رئيسية لسه. دوس «خزنة جديدة».</div>}
+      {list.map((v) => (
+        <div key={v.id} style={{ background: '#fff', borderRadius: 22, padding: 14, display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap', opacity: v.active === false ? 0.6 : 1 }}>
+          <label className="field" style={{ flex: '1 1 220px' }}>اسم الخزنة<input className="input" value={v.name} placeholder="مثلًا الخزنة الرئيسية" onChange={(e) => upd(v.id, { name: e.target.value })} /></label>
+          <label className="field" style={{ width: 170 }}>الرصيد الحالي (ج)<input className="input" inputMode="decimal" dir="ltr" value={edits[v.id] ?? String(num(balances[v.id]))} onChange={(e) => onEdit(v.id, e.target.value)} /></label>
+          <button type="button" className={'chip' + (v.active !== false ? ' on' : '')} aria-pressed={v.active !== false} onClick={() => upd(v.id, { active: v.active === false })}>{v.active !== false ? '✓ مفعّلة' : 'مقفولة'}</button>
+          <button type="button" className="icon-btn" aria-label={`امسح ${v.name || 'الخزنة'}`} onClick={() => window.confirm('تمسح الخزنة دي؟ العمليات القديمة هتفضل محفوظة.') && onChange(list.filter((x) => x.id !== v.id))}><Icon d="trash" size={18} /></button>
+        </div>
+      ))}
+      <div className="chips">
+        {!has('الخزنة الرئيسية') && <button type="button" className="chip sm" onClick={() => onChange([...list, newVault('الخزنة الرئيسية')])}>+ الخزنة الرئيسية</button>}
+        <button type="button" className="chip sm on" onClick={() => onChange([...list, newVault()])}><Icon d="plus" size={14} /> خزنة جديدة</button>
+      </div>
+    </section>
+  );
+}
+
 const EXPENSE_SUGGESTIONS = [
   ['سحب المالك', 'مين سحب؟'],
   ['مشتريات', 'اتشترى إيه؟'],
@@ -251,9 +278,10 @@ function ShopEditor({ shop }) {
     machineList: machineListOf(shop), wallets: shop.wallets || ['insta', 'vf'], walletModes: walletModesOf(shop), 
     suppliers: shop.suppliers || [], staff: shop.staff || [], stoppedStaff: shop.stoppedStaff || [], partners: shop.partners || [],
     shopExpenses: shop.shopExpenses || [], customExpenseTypes: shop.customExpenseTypes || [], hiddenExpenseTypes: shop.hiddenExpenseTypes || [], incomeReasons: shop.incomeReasons || [], advanceDays: shop.advanceDays || [],
-    registers: shop.registers || [],
+    registers: shop.registers || [], vaults: shop.vaults || [],
   }));
   const [dirty, setDirty] = useState(false);
+  const [vaultEdits, setVaultEdits] = useState({}); // رصيد الخزنة اللي المحاسب عدّله بإيده (id -> رقم)
   const set = (k, v) => { setF((x) => ({ ...x, [k]: v })); setDirty(true); };
 
   useEffect(() => onSnapshot(doc(db, 'shopsPublic', shop.id), (s) => setPub(s.data() || { cashiers: [] }), () => {}), [shop.id]);
@@ -262,9 +290,12 @@ function ShopEditor({ shop }) {
     try {
       const machineList = f.machineList.filter((m) => m.name.trim()).map((m) => ({ ...m, name: m.name.trim(), ratePct: num(m.ratePct), liqFeePct: num(m.liqFeePct), settle: settleOf(m), startZero: !!m.startZero, accounts: m.accounts.map((a) => a.trim()).filter(Boolean) }));
       const registers = f.registers.filter((r) => r.name.trim()).map((r) => ({ ...r, name: r.name.trim() }));
-      await updateDoc(doc(db, 'shops', shop.id), { ...f, registers, machineList, machines: flattenMachines(machineList), name: f.name.trim() });
+      const vaults = f.vaults.filter((v) => v.name.trim()).map((v) => ({ ...v, name: v.name.trim() }));
+      const vaultUpd = Object.fromEntries(Object.entries(vaultEdits).map(([id, v]) => [`vaultBalances.${id}`, num(v)]));
+      await updateDoc(doc(db, 'shops', shop.id), { ...f, registers, vaults, ...vaultUpd, machineList, machines: flattenMachines(machineList), name: f.name.trim() });
       await setDoc(doc(db, 'shopsPublic', shop.id), { name: f.name.trim() }, { merge: true });
       logAct('setup', `حفظ إعدادات محل ${f.name.trim()}`, { shopId: shop.id });
+      setVaultEdits({});
       setDirty(false);
       toast('اتحفظ');
     } catch (e) { console.error(e); toast('مش قادرين نحفظ', 'err'); }
@@ -353,6 +384,8 @@ function ShopEditor({ shop }) {
       </section>
 
       <MachinesEditor list={f.machineList} onChange={(v) => set('machineList', v)} />
+
+      <VaultsEditor list={f.vaults} onChange={(v) => set('vaults', v)} balances={shop.vaultBalances || {}} edits={vaultEdits} onEdit={(id, v) => { setVaultEdits((x) => ({ ...x, [id]: v })); setDirty(true); }} />
 
       <RegistersEditor list={f.registers} machines={f.machineList} wallets={f.wallets} openShifts={shop.openShifts || {}} onChange={(v) => set('registers', v)} />
 

@@ -1,11 +1,12 @@
 import { useTour } from '../Tour.jsx';
 import { STAFF_DETAIL, STAFF_REVIEWING } from '../tours.js';
 import { useEffect, useMemo, useState } from 'react';
-import { addDoc, collection, deleteField, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { addDoc, collection, deleteField, doc, increment, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Avatar, CopyBtn, Icon, Modal, PhotoView, ZoomImage, useToast } from '../ui.jsx';
-import { BILL_BG, ENTRY_TYPES, FACES, SRC_LABEL, WALLETS, shopForRegister, computeShift, diffText, durationStr, fmt, minutesBetween, num, safeLabel, timeStr, toDate, dateStr } from '../lib';
+import { BILL_BG, ENTRY_TYPES, FACES, SRC_LABEL, VAULT_PREFIX, WALLETS, isVaultKey, shopForRegister, computeShift, diffText, durationStr, fmt, minutesBetween, num, safeLabel, timeStr, toDate, dateStr } from '../lib';
 import Statements from './Statements.jsx';
+import ForceClose from './ForceClose.jsx';
 import ShiftChat from '../ShiftChat.jsx';
 import { DeletedList, entryTitle } from '../cashier/Dash.jsx';
 import { logAct } from '../activity.js';
@@ -110,6 +111,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
   const [sales, setSales] = useState('');
   const [view, setView] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [forceOpen, setForceOpen] = useState(false);
 
   useEffect(() => {
     const a = onSnapshot(query(collection(db, 'shifts', shift.id, 'entries'), orderBy('createdAt', 'asc')), (q) => setEntries(q.docs.map((d) => ({ id: d.id, ...d.data() }))), () => {});
@@ -201,7 +203,18 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
         : hadDispute
           ? { ...reset, shortageState: 'cleared', cashierAttention: true, cashierUnread: true, lastMsg: { text: sum.diff === 0 ? 'الوردية اتراجعت واتظبطت · مفيش عجز' : 'الوردية اتراجعت', side: 'staff', byName: profile.name, at: nowIso } }
           : {};
-      b.update(doc(db, 'shifts', shift.id), { status: 'closed', closedAt: serverTimestamp(), closedBy: profile.name, diff: sum.diff, ...alertCashier });
+      // الخزن الرئيسية: اللي دخل وخرج منها في الوردية دي بيتضاف على رصيدها المتراكم (لو الوردية اتقفلت تاني بيتحسب الفرق بس)
+      const vApplied = { ...(shift.vaultApplied || {}) };
+      const vInc = {};
+      Object.values(sum.safes).filter((x) => isVaultKey(x.key)).forEach((x) => {
+        const id = x.key.slice(VAULT_PREFIX.length);
+        const d = Math.round((x.inn - x.out) * 100) / 100;
+        const step = Math.round((d - num(vApplied[id])) * 100) / 100;
+        if (step) vInc[`vaultBalances.${id}`] = increment(step);
+        vApplied[id] = d;
+      });
+      if (Object.keys(vInc).length) b.update(doc(db, 'shops', shift.shopId), vInc);
+      b.update(doc(db, 'shifts', shift.id), { status: 'closed', closedAt: serverTimestamp(), closedBy: profile.name, diff: sum.diff, ...(Object.keys(vApplied).length ? { vaultApplied: vApplied } : {}), ...alertCashier });
       if (sum.diff !== 0) {
         b.set(doc(db, 'ledger', shift.id), {
           shopId: shift.shopId, shiftId: shift.id, cashierUid: shift.cashierUid, cashierName: shift.cashierName, day: shift.day, month: shift.month,
@@ -217,17 +230,8 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
     setBusy(false);
   };
 
-  const forceSubmit = async () => {
-    if (!window.confirm('هتقفل الوردية بالنيابة عن الكاشير من غير تسليم. متأكد؟')) return;
-    try {
-      const b = writeBatch(db);
-      b.update(doc(db, 'shifts', shift.id), { status: 'submitted', submittedAt: serverTimestamp(), forced: true, forcedBy: profile.name, handover: shift.handover || null });
-      if (shop?.openShift?.id === shift.id) b.update(doc(db, 'shops', shift.shopId), { openShift: null });
-      await b.commit();
-      logAct('force', `قفل وردية ${shift.cashierName} بالنيابة عن الكاشير`, { shopId: shift.shopId, shiftId: shift.id });
-      toast('الوردية اتقفلت ووصلت للمراجعة');
-    } catch (e) { console.error(e); toast('حصلت مشكلة', 'err'); }
-  };
+  // "قفل بالنيابة" opens a window with every safe and the number it should hold (see ForceClose.jsx).
+  const forceSubmit = () => setForceOpen(true);
 
   // Cashier sent a request after the shift was closed with a shortage: take it back for review.
   const startAgain = async () => {
@@ -552,6 +556,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
       </section>
       {addOpen && <AddCorrection shift={shift} shop={shop} profile={profile} initial={addInit} onSaved={() => { if (addInit) markRequest(addInit.index, 'added'); }} onClose={() => { setAddOpen(false); setAddInit(null); }} />}
       {reopenOpen && <ReopenModal shift={shift} profile={profile} onClose={() => setReopenOpen(false)} />}
+      {forceOpen && <ForceClose shift={shift} fullShop={fullShop} shop={shop} entries={entries} profile={profile} onClose={() => setForceOpen(false)} />}
 
       <div className="row" style={{ gap: 16 }}>
         <section className="card" style={{ flex: '1 1 320px', gap: 4 }}>
