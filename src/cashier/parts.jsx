@@ -109,7 +109,7 @@ export function MachineRows({ machines, values, setValues, photos, onPhoto, prev
             );
           })}
         </div>
-        <PhotoSlot data={photos[first]} onPick={() => onPhoto(first)} label={g.items.length > 1 ? `صورة واحدة لشاشة ${g.name} (فيها الحسابين)` : `صوّر شاشة ${g.name}`} tone={photoTone(look)} />
+        <PhotoSlot data={photos[first]} onPick={(src) => onPhoto(first, src)} label={g.items.length > 1 ? `صورة واحدة لشاشة ${g.name} (فيها الحسابين)` : `صوّر شاشة ${g.name}`} tone={photoTone(look)} />
       </div>
     );
   });

@@ -341,14 +341,27 @@ export function MachineMark({ name, size = 40 }) {
 }
 
 // Photo box under an amount: dashed "take a photo" box, or the preview with change / view.
+// onPick('here') = this device's camera; onPick('phone') = ask the phone (computer only).
 export function PhotoSlot({ data, onPick, label = 'صوّر الشاشة', tone = '#6B6F8A', light }) {
   const [view, setView] = useState(false);
+  const desk = isDesktopScreen();
   if (!data) {
+    if (!desk) {
+      return (
+        <button type="button" className={'photo-slot ps-empty' + (light ? ' light' : '')} onClick={() => onPick('here')} style={{ color: tone }}>
+          <Icon d="cam" size={22} />
+          <span>{label}</span>
+        </button>
+      );
+    }
     return (
-      <button type="button" className={'photo-slot ps-empty' + (light ? ' light' : '')} onClick={onPick} style={{ color: tone }}>
-        <Icon d="cam" size={22} />
-        <span>{label}</span>
-      </button>
+      <div className={'photo-slot ps-empty ps-two' + (light ? ' light' : '')} style={{ color: tone }}>
+        <span className="ps-label">{label}</span>
+        <span className="ps-btns">
+          <button type="button" onClick={() => onPick('here')}><Icon d="cam" size={20} />صوّر أو ارفع من هنا</button>
+          <button type="button" className="ph" onClick={() => onPick('phone')}><Icon d="phone" size={20} />صوّر بالموبايل</button>
+        </span>
+      </div>
     );
   }
   return (
@@ -356,12 +369,15 @@ export function PhotoSlot({ data, onPick, label = 'صوّر الشاشة', tone 
       <span className="ps-frame"><img src={data} alt="الصورة اللي اترفعت" onClick={() => setView(true)} /><span className="ps-ok">✓ اترفعت</span></span>
       <span className="ps-actions">
         <button type="button" onClick={() => setView(true)}><Icon d="eye" size={15} />شوفها كبيرة</button>
-        <button type="button" onClick={onPick}><Icon d="cam" size={15} />غيّرها</button>
+        <button type="button" onClick={() => onPick('here')}><Icon d="cam" size={15} />غيّرها</button>
+        {desk && <button type="button" onClick={() => onPick('phone')}><Icon d="phone" size={15} />من الموبايل</button>}
       </span>
       {view && <PhotoView src={data} onClose={() => setView(false)} />}
     </div>
   );
 }
+
+const isDesktopScreen = () => { try { return !window.matchMedia('(pointer: coarse)').matches && window.innerWidth > 700; } catch { return true; } };
 
 // Drafts: if the phone reloads the page while the camera is open (common on Android),
 // the numbers and photos typed so far come back instead of disappearing.

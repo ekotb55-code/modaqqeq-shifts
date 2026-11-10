@@ -4,12 +4,12 @@ import { useState } from 'react';
 import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, useToast, WalletField, WalletMark, clearDraft, useDraft } from '../ui.jsx';
-import { captureDocument } from '../DocCamera.jsx';
 import { clearRemoteDraft, isDesktop, saveRemoteDraft, useRemoteDraft } from '../remoteDraft';
 import { MAIN_REG, WALLETS, colsFor, machineGroupsOf, machinePhotoLabel, walletModeOf, walletModesOf, billsTotal, computeShift, durationStr, emptyBills, fmt, lastKey, num, openKey, timeStr } from '../lib';
 import { newTransfer } from './Transfers.jsx';
 import { Bills, MachineRows, SideBox } from './parts.jsx';
 import { logAct } from '../activity.js';
+import { takePhoto } from '../phoneShot.jsx';
 
 const WHERE = { stay: 'يفضل في الدرج', shop: 'يتسلّم للمحل', main: 'يتسلّم للأساسي' };
 function Split({ title, mark, color, amount, value, set, options = ['stay', 'shop'] }) {
@@ -87,12 +87,12 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
     } catch (e) { console.error(e); toast('مش قادرين نحفظ، اتأكد من النت', 'err'); }
   };
   
-  const addWalletPhoto = async (k) => {
-    const data = await captureDocument({ maxSide: 1100, quality: 0.7, kind: 'phone', title: 'صوّر شاشة المحفظة' });
+  const addWalletPhoto = async (k, src) => {
+    const data = await takePhoto(src, { maxSide: 1100, quality: 0.7, kind: 'phone', title: 'صوّر شاشة المحفظة' });
     if (data) { setWphotos((p) => ({ ...p, [k]: data })); toast('الصورة اترفعت · كمّل عادي'); }
   };
-  const addPhoto = async (i) => {
-    const data = await captureDocument({ maxSide: 1100, quality: 0.7, kind: 'machine', title: 'صوّر شاشة المكنة' });
+  const addPhoto = async (i, src) => {
+    const data = await takePhoto(src, { maxSide: 1100, quality: 0.7, kind: 'machine', title: `صوّر شاشة ${machines[i]?.name || 'المكنة'}` });
     if (data) { setPhotos((p) => ({ ...p, [i]: data })); toast('الصورة اترفعت · كمّل عادي'); }
   };
 
@@ -249,16 +249,11 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
             <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />المحافظ والمكن دلوقتي</h2>
             <span className="tiny muted">اكتب رصيد كل واحدة وصوّر شاشتها. المحاسب هيراجع الصور.</span>
           </div>
-          {isDesktop() && (
-            <button type="button" className={'phone-pill' + (sentToPhone ? ' done' : '')} onClick={sendToPhone} data-tour="to-phone-top">
-              📲 {sentToPhone ? 'اتحفظ · كمّل التصوير من الموبايل' : 'التقط الصور من الموبايل'}
-            </button>
-          )}
           </div>
           <div className="assets-grid" style={{ '--cols': colsFor(shopWallets.length + shopWallets.filter((w) => needsOpen(w.key)).length + machineGroupsOf(machines).length) }}>
             {shopWallets.map((w) => [
               needsOpen(w.key) && <WalletField key={w.key + ':o'} k={w.key} label={`${w.label} · أول الوردية`} hint="كان فيها كام لما استلمت؟" value={wopen[w.key] ?? ''} onChange={(v) => setWopen({ ...wopen, [w.key]: v })} ariaLabel={`رصيد ${w.label} أول الوردية`} />,
-              <WalletField key={w.key} k={w.key} label={w.label} hint={needsOpen(w.key) ? 'الرصيد اللي فيها دلوقتي' : `استلمت ${fmt(calc.safes[w.key].open)} · اكتب اللي فيها دلوقتي`} value={wtyped[w.key] ?? ''} onChange={(v) => setWtyped({ ...wtyped, [w.key]: v })} ariaLabel={`رصيد ${w.label} دلوقتي`} onPhoto={() => addWalletPhoto(w.key)} photo={wphotos[w.key]} />,
+              <WalletField key={w.key} k={w.key} label={w.label} hint={needsOpen(w.key) ? 'الرصيد اللي فيها دلوقتي' : `استلمت ${fmt(calc.safes[w.key].open)} · اكتب اللي فيها دلوقتي`} value={wtyped[w.key] ?? ''} onChange={(v) => setWtyped({ ...wtyped, [w.key]: v })} ariaLabel={`رصيد ${w.label} دلوقتي`} onPhoto={(src) => addWalletPhoto(w.key, src)} photo={wphotos[w.key]} />,
             ])}
             <MachineRows inline machines={machines} values={mvals} setValues={setMvals} photos={photos} onPhoto={addPhoto} />
           </div>

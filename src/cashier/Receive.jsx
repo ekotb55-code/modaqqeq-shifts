@@ -4,11 +4,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, onSnapshot, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, useToast, WalletField, clearDraft, useDraft } from '../ui.jsx';
-import { captureDocument } from '../DocCamera.jsx';
 import { clearRemoteDraft, isDesktop, saveRemoteDraft, useRemoteDraft } from '../remoteDraft';
 import { MAIN_REG, WALLETS, vaultsOf, colsFor, machineGroupsOf, machinePhotoLabel, walletModeOf, walletModesOf, billsTotal, emptyBills, fmt, lastOf, num, openKey, regName, timeStr, todayKey } from '../lib';
 import { Bills, MachineRows, SideBox } from './parts.jsx';
 import { logAct } from '../activity.js';
+import { takePhoto } from '../phoneShot.jsx';
 
 export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, editShift, onCancel }) {
   useTour('c-receive', CASHIER_RECEIVE, { uid: profile.id, enabled: !editShift });
@@ -103,16 +103,16 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
     } catch (e) { console.error(e); toast('مش قادرين نحفظ، اتأكد من النت', 'err'); }
   };
 
-  const addWalletPhoto = async (k) => {
-    const data = await captureDocument({ maxSide: 1100, quality: 0.7, kind: 'phone', title: `صوّر شاشة ${walletKeys.find((x) => x.key === k)?.label || 'المحفظة'}` });
+  const addWalletPhoto = async (k, src) => {
+    const data = await takePhoto(src, { maxSide: 1100, quality: 0.7, kind: 'phone', title: `صوّر شاشة ${walletKeys.find((x) => x.key === k)?.label || 'المحفظة'}` });
     if (data) { setWphotos((p) => ({ ...p, [k]: data })); toast('الصورة اترفعت · كمّل عادي'); }
   };
   const walletPhotoDocs = (pb, shiftId) => Object.entries(wphotos).forEach(([k, data]) => {
     const w = walletKeys.find((x) => x.key === k);
     pb.set(doc(collection(db, 'shifts', shiftId, 'photos')), { kind: 'wallet', stage: 'receive', wallet: k, label: w?.label || k, amount: num(wallets[k]), data, check: 'pending', createdAt: serverTimestamp() });
   });
-  const addPhoto = async (i) => {
-    const data = await captureDocument({ maxSide: 1100, quality: 0.7, kind: 'machine', title: 'صوّر شاشة المكنة' });
+  const addPhoto = async (i, src) => {
+    const data = await takePhoto(src, { maxSide: 1100, quality: 0.7, kind: 'machine', title: `صوّر شاشة ${machines[i]?.name || 'المكنة'}` });
     if (data) { setPhotos((p) => ({ ...p, [i]: data })); toast('الصورة اترفعت · كمّل عادي'); }
   };
 
@@ -225,20 +225,15 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
             <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />المحافظ والمكن</h2>
             <span className="tiny muted">اكتب رصيد كل واحدة بإيدك وصوّر شاشتها. المحاسب هيراجع الصور.</span>
           </div>
-          {isDesktop() && (
-            <button type="button" className={'phone-pill' + (sentToPhone ? ' done' : '')} onClick={sendToPhone} data-tour="to-phone-top">
-              📲 {sentToPhone ? 'اتحفظ · كمّل التصوير من الموبايل' : 'التقط الصور من الموبايل'}
-            </button>
-          )}
           </div>
           <div className="assets-grid" style={{ '--cols': colsFor(shownCards) }}>
             {walletKeys.map((w) => (
               <WalletField key={w.key} k={w.key} label={w.label} value={wallets[w.key]} onChange={(v) => setWallets({ ...wallets, [w.key]: v })}
                 hint={last ? `${last.cashierName} سلّم ${fmt(prevWallets[w.key])}` : 'الرصيد اللي في المحفظة دلوقتي'} warn={last && String(wallets[w.key] ?? '').trim() !== '' && num(wallets[w.key]) !== prevWallets[w.key] ? `مختلف عن اللي اتسلّم (${fmt(prevWallets[w.key])})` : null}
-                onPhoto={() => addWalletPhoto(w.key)} photo={shownWPhotos[w.key]} />
+                onPhoto={(src) => addWalletPhoto(w.key, src)} photo={shownWPhotos[w.key]} />
             ))}
             <MachineRows inline machines={vMachines} values={vis.map((i) => mvals[i])} setValues={setVisValues}
-              photos={Object.fromEntries(vis.map((i, j) => [j, shownPhotos[i]]))} onPhoto={(j) => addPhoto(vis[j])}
+              photos={Object.fromEntries(vis.map((i, j) => [j, shownPhotos[i]]))} onPhoto={(j, src) => addPhoto(vis[j], src)}
               prev={last ? vis.map((i) => prevMachines[i]) : null} prevName={last?.cashierName} />
           </div>
         </section>

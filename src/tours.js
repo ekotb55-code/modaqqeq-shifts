@@ -1,6 +1,6 @@
 // Texts of the guided tour, per screen. `at` = the data-tour mark on the screen (skipped when it's not there).
 
-const PHONE = { at: 'to-phone-top', title: 'شغّال من الكمبيوتر؟', text: 'اكتب الأرقام هنا ودوس الزرار ده، وكمّل تصوير الشاشات من الموبايل بنفس الحساب. هتلاقي الأرقام متكتبة مستنياك.' };
+const PHONE = { at: 'to-phone', title: 'شغّال من الكمبيوتر؟', text: 'اكتب الأرقام هنا ودوس الزرار ده، وكمّل تصوير الشاشات من الموبايل بنفس الحساب. هتلاقي الأرقام متكتبة مستنياك.' };
 const HELP = { at: 'help', title: 'نسيت حاجة؟', text: 'دوس على علامة ؟ دي في أي وقت، وهنشرحلك الصفحة اللي انت فيها تاني من الأول.' };
 
 export const CASHIER_RECEIVE = [

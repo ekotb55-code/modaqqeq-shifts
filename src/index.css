@@ -661,3 +661,27 @@ body.net-bad .topbar { background: #FFF4E0; }
 .phone-pill { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 18px; border: 2px solid var(--blue); border-radius: 999px; background: var(--blue-soft); color: var(--blue); font: inherit; font-size: 14px; font-weight: 800; cursor: pointer; }
 .phone-pill:hover { background: var(--blue); color: #fff; }
 .phone-pill.done { border-color: #22B07D; background: #E3F8EF; color: #0E7A52; }
+
+/* ───── photo box: here / phone ───── */
+.photo-slot.ps-two { display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 8px; padding: 10px; cursor: default; }
+.ps-two .ps-label { font-size: 13px; font-weight: 700; text-align: center; opacity: .9; }
+.ps-two .ps-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
+.ps-two .ps-btns button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 64px; padding: 8px 6px; border-radius: 16px; border: 0; background: rgba(255,255,255,.75); color: #2A2D45; font: inherit; font-size: 12.5px; font-weight: 800; line-height: 1.35; cursor: pointer; }
+.ps-two .ps-btns button.ph { background: #E8F0FF; color: #1565D8; }
+.ps-two .ps-btns button:hover { filter: brightness(.96); }
+.ps-two.light .ps-btns button { background: rgba(255,255,255,.22); color: #fff; }
+.ps-two.light .ps-btns button.ph { background: #fff; color: #5B2BB5; }
+/* waiting for / answering the phone */
+.pshot-back { position: fixed; inset: 0; z-index: 390; background: rgba(15,14,30,.6); display: grid; place-items: center; padding: 16px; }
+.pshot-card { width: min(400px, 100%); background: var(--card); color: var(--ink); border-radius: 28px; padding: 24px 22px 18px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; box-shadow: 0 24px 70px rgba(0,0,0,.35); }
+.pshot-phone { font-size: 46px; line-height: 1; }
+.pshot-phone.on { animation: pshotBuzz 1.2s ease-in-out infinite; }
+@keyframes pshotBuzz { 0%, 100% { transform: rotate(0); } 10%, 30% { transform: rotate(-12deg); } 20%, 40% { transform: rotate(12deg); } 50% { transform: rotate(0); } }
+.pshot-title { font-size: 20px; }
+.pshot-what { font-size: 14px; font-weight: 700; color: var(--blue); background: var(--blue-soft); border-radius: 999px; padding: 4px 14px; }
+.pshot-steps { margin: 4px 0; padding-inline-start: 22px; text-align: right; font-size: 14px; line-height: 1.9; align-self: stretch; }
+.pshot-text { font-size: 14px; }
+.pshot-wait { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.pshot-wait i { width: 6px; height: 6px; border-radius: 999px; background: var(--blue); animation: pshotDot 1s infinite; }
+.pshot-wait i:nth-child(2) { animation-delay: .15s; } .pshot-wait i:nth-child(3) { animation-delay: .3s; }
+@keyframes pshotDot { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }

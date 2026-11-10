@@ -5,6 +5,7 @@ import { Icon, Modal, useToast, WALLET_LOOK, WalletMark } from '../ui.jsx';
 import { captureDocument } from '../DocCamera.jsx';
 import { ENTRY_TYPES, OWNER, SRC_LABEL, WALLETS, WEEKDAYS, walletModeOf, fmt, num, safeLabel, shopSafes } from '../lib';
 import { logAct } from '../activity.js';
+import { requestFromPhone } from '../phoneShot.jsx';
 
 const META = {
   expense: { title: 'مصروف جديد', icon: 'up' },
@@ -85,19 +86,6 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
   const subValue = sub === '__new' ? custom.trim() : sub;
   const reasonValue = reason === '__new' ? custom.trim() : reason;
 
-  // ── السحر هنا: استقبال الصورة من الموبايل للكمبيوتر ──
-  useEffect(() => {
-    if (!profile?.id) return;
-    const unsub = onSnapshot(doc(db, 'drafts', profile.id), (snap) => {
-      const data = snap.data();
-      if (data?.photoData) {
-        setPhoto(data.photoData);
-        deleteDoc(doc(db, 'drafts', profile.id)).catch(() => {});
-        toast('✓ اللقطة وصلت من الموبايل بنجاح!');
-      }
-    });
-    return () => unsub();
-  }, [profile?.id]);
 
   const takePhoto = async () => {
     const data = await captureDocument(type === 'transfer'
@@ -106,17 +94,12 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
     if (data) setPhoto(data);
   };
 
-  // إرسال الإشارة للموبايل عشان يفتح الكاميرا
+  // The phone (same account, app open) takes the picture and it comes back here.
   const takePhotoFromPhone = async () => {
-    try {
-      await setDoc(doc(db, 'drafts', profile.id), { 
-        requestPhoto: true, 
-        kind: type === 'transfer' ? 'phone' : 'paper' 
-      });
-      toast('افتح الموبايل هتلاقي الكاميرا فتحت لوحدها!');
-    } catch(e) {
-      toast('مش قادرين نبعت للموبايل', 'err');
-    }
+    const data = await requestFromPhone(type === 'transfer'
+      ? { maxSide: 1200, quality: 0.7, kind: 'phone', title: 'صوّر شاشة التحويل' }
+      : { maxSide: 1200, quality: 0.7, kind: 'paper', title: kind === 'supplier' ? 'صوّر الفاتورة' : 'صوّر الإيصال' });
+    if (data) setPhoto(data);
   };
 
   const validate = () => {

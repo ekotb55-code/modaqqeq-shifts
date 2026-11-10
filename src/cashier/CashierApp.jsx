@@ -17,6 +17,7 @@ import Follow, { statusOf } from './Follow.jsx';
 import History from './History.jsx';
 import { logAct, logout as doLogout } from '../activity.js';
 import { captureDocument } from '../DocCamera.jsx';
+import { PhoneShotListener } from '../phoneShot.jsx';
 
 export default function CashierApp({ profile }) {
   const toast = useToast();
@@ -41,41 +42,6 @@ export default function CashierApp({ profile }) {
   const [viewId, setViewId] = useState(null);
   const [viewDoc, setViewDoc] = useState(null);
   const [histOpen, setHistOpen] = useState(false);
-
-  // ── السحر هنا: رادار استقبال طلبات التصوير من الكمبيوتر للموبايل ──
-  useEffect(() => {
-    if (!profile?.id) return;
-    const draftRef = doc(db, 'drafts', profile.id);
-    const unsub = onSnapshot(draftRef, async (snap) => {
-      const data = snap.data();
-      // لو فيه طلب تصوير ومفيش صورة لسه
-      if (data?.requestPhoto && !data?.photoData) {
-        // نتأكد إن الجهاز ده موبايل عشان الكاميرا متفتحش في الكمبيوتر كمان
-        const isMobile = /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth <= 800;
-        if (isMobile && !window.remoteCamActive) {
-          window.remoteCamActive = true; // عشان متفتحش مرتين
-          try {
-            const photo = await captureDocument({
-              maxSide: 1200,
-              quality: 0.7,
-              title: 'تصوير للكمبيوتر'
-            });
-            if (photo) {
-              // لو صوّر، نرفع الصورة في نفس المسودة
-              await setDoc(draftRef, { ...data, requestPhoto: false, photoData: photo });
-            } else {
-              // لو قفل الكاميرا، نمسح الطلب
-              await deleteDoc(draftRef);
-            }
-          } catch (err) {
-            await deleteDoc(draftRef);
-          }
-          window.remoteCamActive = false;
-        }
-      }
-    });
-    return () => unsub();
-  }, [profile?.id]);
 
   useEffect(() => {
     if (!shopId) return undefined;
@@ -167,6 +133,7 @@ export default function CashierApp({ profile }) {
     <div>
       <NetStrip />
       <TourHost />
+      <PhoneShotListener uid={profile.id} />
       {photoOpen && (
         <MyPhoto profile={me} photo={me.photo} onClose={() => setPhotoOpen(false)}
           onSave={async (data) => {
