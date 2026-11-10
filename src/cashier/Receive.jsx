@@ -220,9 +220,16 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
       {!shop.noSide && <SideBox value={side} setValue={setSide} hint={sideChanged && last ? `اتعدّل · كان ${fmt(prevSide)} ج` : 'المبلغ كله · من غير فئات'} />}
       {(walletKeys.length > 0 || vMachines.length > 0) && (
         <section className="card" style={{ gap: 12 }} data-tour="assets">
+          <div className="spread" style={{ gap: 10, alignItems: 'flex-start' }}>
           <div className="stack" style={{ gap: 2 }}>
             <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />المحافظ والمكن</h2>
             <span className="tiny muted">اكتب رصيد كل واحدة بإيدك وصوّر شاشتها. المحاسب هيراجع الصور.</span>
+          </div>
+          {isDesktop() && (
+            <button type="button" className={'phone-pill' + (sentToPhone ? ' done' : '')} onClick={sendToPhone} data-tour="to-phone-top">
+              📲 {sentToPhone ? 'اتحفظ · كمّل التصوير من الموبايل' : 'التقط الصور من الموبايل'}
+            </button>
+          )}
           </div>
           <div className="assets-grid" style={{ '--cols': colsFor(shownCards) }}>
             {walletKeys.map((w) => (
@@ -238,7 +245,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
       )}
       <div className="recv-done">
         {remote && remote.device && !sentToPhone && missingPhotos.length > 0 && !isDesktop() && <span className="badge info" style={{ whiteSpace: 'normal', textAlign: 'center' }}>📲 الأرقام جت من الكمبيوتر · فاضل الصور بس</span>}
-        {isDesktop() && missingNums.length === 0 && missingPhotos.length > 0 && (
+        {isDesktop() && (vMachines.length > 0 || walletKeys.length > 0) && (
           sentToPhone ? (
             <div className="phone-hand">
               <span className="ph-ic">📲</span>

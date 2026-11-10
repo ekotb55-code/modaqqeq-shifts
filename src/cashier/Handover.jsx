@@ -244,9 +244,16 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
       </div>
       {(shopWallets.length > 0 || machines.length > 0) && (
         <section className="card" style={{ gap: 12 }} data-tour="assets">
+          <div className="spread" style={{ gap: 10, alignItems: 'flex-start' }}>
           <div className="stack" style={{ gap: 2 }}>
             <h2 className="h2"><span className="dot" style={{ background: 'var(--violet)' }} />المحافظ والمكن دلوقتي</h2>
             <span className="tiny muted">اكتب رصيد كل واحدة وصوّر شاشتها. المحاسب هيراجع الصور.</span>
+          </div>
+          {isDesktop() && (
+            <button type="button" className={'phone-pill' + (sentToPhone ? ' done' : '')} onClick={sendToPhone} data-tour="to-phone-top">
+              📲 {sentToPhone ? 'اتحفظ · كمّل التصوير من الموبايل' : 'التقط الصور من الموبايل'}
+            </button>
+          )}
           </div>
           <div className="assets-grid" style={{ '--cols': colsFor(shopWallets.length + shopWallets.filter((w) => needsOpen(w.key)).length + machineGroupsOf(machines).length) }}>
             {shopWallets.map((w) => [
