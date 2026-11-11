@@ -1,11 +1,68 @@
-import { useState } from 'react';
-import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
+import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Icon, Modal, useToast } from '../ui.jsx';
+import { Icon, Img, Modal, PhotoView, useToast } from '../ui.jsx';
 import ShiftChat from '../ShiftChat.jsx';
 import { dateStr, diffText, durationStr, firstName, fmt, num, timeStr } from '../lib';
 import { logAct } from '../activity.js';
-import { pushEvent } from '../cloud.js';
+import { photoSrc, pushEvent } from '../cloud.js';
+import { ENTRY_TYPES, SRC_LABEL } from '../lib';
+import { entryTitle } from './Dash.jsx';
+
+// Everything the cashier recorded in this shift, expenses first, with totals and photos — to find a forgotten one.
+function ShiftOps({ shift, onClose }) {
+  const [entries, setEntries] = useState(null);
+  const [photos, setPhotos] = useState({});
+  const [view, setView] = useState(null);
+  useEffect(() => onSnapshot(query(collection(db, 'shifts', shift.id, 'entries'), orderBy('createdAt', 'asc')),
+    (q) => setEntries(q.docs.map((d) => ({ id: d.id, ...d.data() }))), () => setEntries([])), [shift.id]);
+  useEffect(() => onSnapshot(collection(db, 'shifts', shift.id, 'photos'), (q) => {
+    const m = {};
+    q.docs.forEach((d) => { const p = { id: d.id, ...d.data() }; const src = photoSrc(shift.id, p); if (p.entryId && src) m[d.id] = src; });
+    setPhotos(m);
+  }, () => {}), [shift.id]);
+  const live = (entries || []).filter((e) => !e.deleted);
+  const deleted = (entries || []).filter((e) => e.deleted);
+  const groups = [
+    { id: 'out', title: 'المصروفات واللي طلع من الدرج', color: 'var(--orange)', list: live.filter((e) => (ENTRY_TYPES[e.type]?.sign || 0) < 0) },
+    { id: 'in', title: 'الإيرادات والتحويلات اللي دخلت', color: '#22B07D', list: live.filter((e) => (ENTRY_TYPES[e.type]?.sign || 0) > 0) },
+    { id: 'mv', title: 'نقل وتسييل', color: 'var(--sky)', list: live.filter((e) => !(ENTRY_TYPES[e.type]?.sign)) },
+  ].filter((g) => g.list.length);
+  const total = (l) => l.reduce((a, e) => a + num(e.amount), 0);
+  const Row = ({ e, struck }) => (
+    <div className="list-row" style={{ gap: 10, opacity: struck ? 0.6 : 1 }}>
+      <span className="stack" style={{ gap: 1, minWidth: 0, flex: 1 }}>
+        <strong style={{ fontSize: 14, textDecoration: struck ? 'line-through' : 'none' }}>{entryTitle(e)}</strong>
+        <span className="tiny muted">{timeStr(e.createdAt || e.createdAtLocal)}{e.src ? ` · من ${SRC_LABEL[e.src] || e.src}` : ''}{struck && e.deleteReason ? ` · اتمسح: ${e.deleteReason}` : ''}{e.byAccountant ? ' · من المحاسب' : ''}</span>
+      </span>
+      {e.photoId && photos[e.photoId] && <Img className="thumb" style={{ width: 42, height: 42 }} src={photos[e.photoId]} alt="صورة" onClick={() => setView(photos[e.photoId])} />}
+      <strong style={{ whiteSpace: 'nowrap' }}>{fmt(e.amount)} ج</strong>
+    </div>
+  );
+  return (
+    <Modal title={`عمليات ورديتك · ${dateStr(shift.openedAt || shift.openedAtLocal)}`} icon="eye" color="var(--blue)" onClose={onClose} width={620}>
+      <span className="small muted">راجع كل اللي سجّلته في الوردية. لو في مصروف ناقص أو مبلغ غلط، ارجع ودوس «أضف مصروف نسيته».</span>
+      {entries === null && <span className="muted">بنحمّل…</span>}
+      {entries && live.length === 0 && <div className="empty">مسجّلتش أي عمليات في الوردية دي</div>}
+      {groups.map((g) => (
+        <div key={g.id} className="stack" style={{ gap: 0 }}>
+          <div className="spread" style={{ padding: '6px 0', borderBottom: `3px solid ${g.color}` }}>
+            <strong>{g.title} <span className="tiny muted">({g.list.length})</span></strong>
+            <strong>{fmt(total(g.list))} ج</strong>
+          </div>
+          {g.list.map((e) => <Row key={e.id} e={e} />)}
+        </div>
+      ))}
+      {deleted.length > 0 && (
+        <details>
+          <summary className="small muted" style={{ cursor: 'pointer', padding: '6px 0' }}>عمليات اتمسحت ({deleted.length})</summary>
+          {deleted.map((e) => <Row key={e.id} e={e} struck />)}
+        </details>
+      )}
+      {view && <PhotoView src={view} onClose={() => setView(null)} />}
+    </Modal>
+  );
+}
 
 const BASE = {
   submitted: { label: 'اتسلّمت · مستنية المحاسب', cls: 'warn', text: 'الوردية وصلت للمحاسب وهيراجعها في أقرب وقت. لو في حاجة تقولها له، اكتبها في الشات تحت.' },
@@ -38,6 +95,7 @@ export default function Follow({ shift, profile, onNew, onEdit, newLabel = 'اب
   const reviewer = shift.closedBy || shift.reviewer || null;
   const requests = shift.cashierRequests || [];
   const [form, setForm] = useState(null); // 'expense' | 'receive'
+  const [opsOpen, setOpsOpen] = useState(false);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [expenseList, setExpenseList] = useState([]); // قايمة المصروفات المتعددة
@@ -181,6 +239,7 @@ export default function Follow({ shift, profile, onNew, onEdit, newLabel = 'اب
           <div className="stack" style={{ gap: 10, background: 'var(--red-soft)', borderRadius: 18, padding: 14 }}>
             <strong style={{ color: '#9B1C1C' }}>اختار إيه اللي يناسبك:</strong>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <button type="button" className="btn sm" onClick={() => setOpsOpen(true)}><Icon d="eye" size={16} />راجع ورديتك</button>
               <button type="button" className="btn soft sm" onClick={() => { setForm('expense'); setExpenseList([]); setAmount(''); setNote(''); }}><Icon d="plus" size={16} />أضف مصروف نسيته</button>
               <button type="button" className="btn soft sm" onClick={() => { setForm('receive'); setNote(''); }}><Icon d="undo" size={16} />اطلب تعديل في الاستلام</button>
               <button type="button" className="btn sm" style={{ background: '#E5484D' }} onClick={acknowledge} disabled={busy}>مفيش عندي سبب · أقرّ بالعجز</button>
@@ -227,6 +286,7 @@ export default function Follow({ shift, profile, onNew, onEdit, newLabel = 'اب
         <ShiftChat shift={shift} profile={profile} side="cashier" />
       </section>
 
+      {opsOpen && <ShiftOps shift={shift} onClose={() => setOpsOpen(false)} />}
       {form && (
         <Modal title={form === 'expense' ? 'أضف مصروفات نسيتها' : 'اطلب تعديل في الاستلام'} icon={form === 'expense' ? "plus" : "undo"} color="var(--blue)" onClose={() => setForm(null)} width={460}>
           
