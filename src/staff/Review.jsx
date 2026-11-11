@@ -232,6 +232,13 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
       await b.commit();
       logAct('close', `قفل وردية ${shift.cashierName} · ${diffText(sum.diff)} · مبيعات ${fmt(num(sales))} ج`, { shopId: shift.shopId, shiftId: shift.id });
       pushEvent({ type: 'close', shopId: shift.shopId, shiftId: shift.id, to: 'cashier', toUid: shift.cashierUid, title: 'المحاسب قفل ورديتك', body: sum.diff < 0 ? 'فيه عجز في ورديتك · افتح التطبيق وراجعه' : `وردية ${dateStr(shift.openedAt || shift.openedAtLocal)} اتراجعت واتقفلت` });
+      {
+        const d = sum.diff;
+        const res = d < 0 ? `عجز ${fmt(-d)} ج` : d > 0 ? `زيادة ${fmt(d)} ج` : 'مظبوطة ✓';
+        pushEvent({ type: 'close_report', shopId: shift.shopId, shiftId: shift.id, to: 'staff',
+          title: `تقرير وردية ${shift.cashierName} · ${fullShop?.name || ''}`,
+          body: `المبيعات ${fmt(num(sales))} ج · ${res} · المصروفات ${fmt(sum.outCash)} ج · الكاش المتسلّم ${fmt(sum.handCash)} ج · قفلها ${profile.name}` });
+      }
       toast('الوردية اتقفلت والتقرير اتبعت');
     } catch (e) { console.error(e); toast('مش قادرين نقفل الوردية', 'err'); }
     setBusy(false);

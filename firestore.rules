@@ -57,9 +57,9 @@ service cloud.firestore {
       allow create, update: if isTopAdmin()
         || (isAdmin() && request.resource.data.role != 'admin' && (resource == null || resource.data.role != 'admin'));
       allow delete: if isTopAdmin();
-      // Anyone may change only his own app colours and picture.
+      // Anyone may change only his own app colours, picture and notification choices.
       allow update: if signedIn() && request.auth.uid == uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['theme', 'photo']);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['theme', 'photo', 'notifyPrefs']);
     }
 
     match /shifts/{shiftId} {

@@ -734,3 +734,7 @@ body.net-bad .topbar { background: #FFF4E0; }
 .bell-toggle { display: flex; gap: 8px; align-items: flex-start; margin: 0 4px 8px; padding: 10px 12px; border-radius: 14px; background: #FFF1F1; font-size: 13px; font-weight: 700; line-height: 1.6; cursor: pointer; }
 .bell-toggle input { margin-top: 4px; width: 18px; height: 18px; accent-color: #E5484D; }
 @media (prefers-reduced-motion: reduce) { .alarm-back, .alarm-bell { animation: none; } }
+
+.bell-prefs { display: flex; flex-direction: column; gap: 6px; margin: 0 4px 10px; padding: 10px 12px; border-radius: 14px; background: var(--bg); font-size: 13px; line-height: 1.6; }
+.bell-prefs label { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
+.bell-prefs input { margin-top: 4px; width: 17px; height: 17px; flex: none; accent-color: var(--blue); }

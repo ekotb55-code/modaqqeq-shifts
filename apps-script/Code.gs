@@ -14,7 +14,21 @@
 const PROJECT = 'modaqqeq-shifts';
 const FS = 'https://firestore.googleapis.com/v1/projects/' + PROJECT + '/databases/(default)/documents';
 const KEEP_DAYS = 60; // الصور بتتمسح بعد كده
-const STAFF_ROLES = ['accountant', 'reviewer'];
+// مين يوصله إيه — كل واحد يقدر يغيّر اختياره من الجرس جوّه التطبيق (نفس الجدول في src/notifyPrefs.js)
+const PREF_OF = { handover: 'handover', reopen_done: 'handover', dispute: 'request', ack: 'request', msg: 'msg', close_report: 'close' };
+const DEFAULTS = {
+  accountant: { handover: true, request: true, msg: true, close: false },
+  reviewer: { handover: true, request: true, msg: true, close: false },
+  owner: { close: true },
+  manager: { close: true },
+  admin: {},
+  support: {},
+};
+function wants_(u, key) {
+  const p = u.notifyPrefs || {};
+  if (key in p) return !!p[key];
+  return !!(DEFAULTS[u.role] || {})[key];
+}
 
 // ───────── التجهيز (مرة واحدة) ─────────
 function setup() {
@@ -58,6 +72,7 @@ function sendNotifications_() {
   if (!docs.length) return;
   console.log('outbox: ' + docs.length);
   const staffCache = {};
+  adminsCache_ = null;
   const messages = [];
   const owners = []; // token doc name for each message (to delete dead ones)
   docs.forEach(function (d) {
@@ -66,7 +81,8 @@ function sendNotifications_() {
     if (ev.to === 'cashier' && ev.toUid) uids = [ev.toUid];
     else if (ev.to === 'staff' && ev.shopId) {
       if (!staffCache[ev.shopId]) staffCache[ev.shopId] = staffOf_(ev.shopId);
-      uids = staffCache[ev.shopId];
+      const key = PREF_OF[ev.type] || 'handover';
+      uids = staffCache[ev.shopId].filter(function (u) { return wants_(u, key); }).map(function (u) { return u.id; });
     }
     uids = uids.filter(function (u) { return u && u !== ev.byUid; });
     console.log('event ' + ev.type + ' → ' + ev.to + ' · ' + uids.length + ' people');
@@ -75,7 +91,7 @@ function sendNotifications_() {
       messages.push({
         message: {
           token: t.token,
-          data: { title: String(ev.title || 'مدقق'), body: String(ev.body || ''), tag: (ev.shiftId || '') + ':' + (ev.type || '') + ':' + (ev.atMs || ''), shiftId: String(ev.shiftId || ''), shopId: String(ev.shopId || ''), go: go, alarm: ['handover', 'reopen_done', 'dispute'].indexOf(ev.type) >= 0 ? '1' : '0' },
+          data: { title: String(ev.title || 'مدقق'), body: String(ev.body || ''), tag: (ev.shiftId || '') + ':' + (ev.type || '') + ':' + (ev.atMs || ''), shiftId: String(ev.shiftId || ''), shopId: String(ev.shopId || ''), type: String(ev.type || ''), go: go, alarm: ['handover', 'reopen_done', 'dispute'].indexOf(ev.type) >= 0 ? '1' : '0' },
           webpush: { headers: { Urgency: 'high', TTL: '86400' } },
         },
       });
@@ -102,14 +118,23 @@ function sendNotifications_() {
   docs.forEach(function (d) { req_('delete', 'https://firestore.googleapis.com/v1/' + d.name); });
 }
 
+// كل الموظفين المسؤولين عن الفرع + الإدارة والدعم اللي اختاروا «كل الفروع»
+let adminsCache_ = null;
 function staffOf_(shopId) {
-  const r = req_('post', FS + ':runQuery', { structuredQuery: {
-    from: [{ collectionId: 'users' }],
-    where: { fieldFilter: { field: { fieldPath: 'shopIds' }, op: 'ARRAY_CONTAINS', value: { stringValue: shopId } } },
-  } });
+  const users = runUsers_({ fieldFilter: { field: { fieldPath: 'shopIds' }, op: 'ARRAY_CONTAINS', value: { stringValue: shopId } } });
+  if (!adminsCache_) adminsCache_ = runUsers_({ fieldFilter: { field: { fieldPath: 'role' }, op: 'IN', value: { arrayValue: { values: [{ stringValue: 'admin' }, { stringValue: 'support' }] } } } })
+    .filter(function (u) { return u.notifyPrefs && u.notifyPrefs.scope === 'all'; });
+  const seen = {};
+  return users.concat(adminsCache_).filter(function (u) {
+    if (seen[u.id] || u.disabled || u.role === 'cashier') return false;
+    seen[u.id] = true; return true;
+  });
+}
+function runUsers_(where) {
+  const r = req_('post', FS + ':runQuery', { structuredQuery: { from: [{ collectionId: 'users' }], where: where } });
   return (r.json || []).filter(function (x) { return x.document; }).map(function (x) {
     const u = fields_(x.document); u.id = x.document.name.split('/').pop(); return u;
-  }).filter(function (u) { return STAFF_ROLES.indexOf(u.role) >= 0 && !u.disabled; }).map(function (u) { return u.id; });
+  });
 }
 
 function tokensOf_(uids) {

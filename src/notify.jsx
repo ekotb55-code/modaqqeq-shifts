@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Icon } from './ui.jsx';
 import { timeStr } from './lib';
 import { pushOn, registerPush } from './cloud.js';
+import { NOTE_TYPES, wants } from './notifyPrefs.js';
 
 // ───────── Notifications ─────────
 // No server on the free plan, so every device watches its own shifts while the app is open
@@ -143,7 +144,8 @@ function useNotes(uid) {
 }
 
 // Bell + list + banner. onOpen(note) takes the person to the shift / chat.
-export function NotifyBell({ uid, onOpen, alarmable = false }) {
+export function NotifyBell({ uid, onOpen, alarmable = false, settings = null }) {
+  const [setOpen2, setSetOpen2] = useState(false);
   const [loudOn, setLoudOn] = useState(alarmEnabled);
   const list = useNotes(uid);
   const [open, setOpen] = useState(false);
@@ -159,7 +161,15 @@ export function NotifyBell({ uid, onOpen, alarmable = false }) {
   }, [open]);
   // a click on a system notification comes back through the service worker
   useEffect(() => {
-    const h = (e) => { if (e.data?.type === 'mdq-note' && e.data.note) openNote(e.data.note); };
+    const h = (e) => {
+      if (e.data?.type === 'mdq-note' && e.data.note) openNote(e.data.note);
+      if (e.data?.type === 'mdq-push' && e.data.data) {
+        const d = e.data.data;
+        if (cur.list.some((n) => n.key === d.tag)) return;
+        cur.list = [{ key: d.tag, id: `${d.tag}-${Date.now()}`, title: d.title, body: d.body, emoji: '📊', color: '#0E9F6E', shiftId: d.shiftId, shopId: d.shopId, atMs: Date.now(), read: false }, ...cur.list].slice(0, 60);
+        save();
+      }
+    };
     navigator.serviceWorker?.addEventListener('message', h);
     return () => navigator.serviceWorker?.removeEventListener('message', h);
   }, []);
@@ -206,6 +216,28 @@ export function NotifyBell({ uid, onOpen, alarmable = false }) {
             <button type="button" className="bell-allow" onClick={allow}>🔔 فعّل الإشعارات على الجهاز ده<span className="tiny">علشان يوصلك تنبيه حتى لو التطبيق في الخلفية</span></button>
           )}
           {perm === 'denied' && <span className="tiny muted bell-hint">إشعارات الجهاز مقفولة من المتصفح. تقدر تفتحها من إعدادات الموقع (علامة القفل جنب العنوان).</span>}
+          {settings && (
+            <>
+              <button type="button" className="link" style={{ alignSelf: 'flex-start', padding: '0 6px 8px' }} onClick={() => setSetOpen2(!setOpen2)}>⚙️ اختار الإشعارات اللي توصلك</button>
+              {setOpen2 && (
+                <div className="bell-prefs">
+                  {NOTE_TYPES.map((t) => (
+                    <label key={t.key}>
+                      <input type="checkbox" checked={wants(settings.profile, t.key)} onChange={(e) => settings.onSave({ ...(settings.profile.notifyPrefs || {}), [t.key]: e.target.checked })} />
+                      <span>{t.label}</span>
+                    </label>
+                  ))}
+                  {settings.canAll && (
+                    <label>
+                      <input type="checkbox" checked={settings.profile.notifyPrefs?.scope === 'all'} onChange={(e) => settings.onSave({ ...(settings.profile.notifyPrefs || {}), scope: e.target.checked ? 'all' : 'mine' })} />
+                      <span>من <b>كل الفروع</b> (مش بس الفروع المتسجّلة على حسابي)</span>
+                    </label>
+                  )}
+                  <span className="tiny muted">بيتحفظ على حسابك، ويشتغل على كل أجهزتك.</span>
+                </div>
+              )}
+            </>
+          )}
           {alarmable && (
             <label className="bell-toggle">
               <input type="checkbox" checked={loudOn} onChange={(e) => { setLoudOn(e.target.checked); try { localStorage.setItem(ALARM_KEY, e.target.checked ? '1' : '0'); } catch { /* ignore */ } }} />

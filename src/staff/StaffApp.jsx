@@ -17,6 +17,7 @@ import { HelpButton, TourHost, useTour } from '../Tour.jsx';
 import { STAFF_PAGE, staffShell } from '../tours.js';
 import { logAct, logout } from '../activity.js';
 import { NotifyBell, feed } from '../notify.jsx';
+import { wants } from '../notifyPrefs.js';
 import { useShopShifts } from './Review.jsx';
 
 export default function StaffApp({ profile }) {
@@ -52,7 +53,12 @@ export default function StaffApp({ profile }) {
   const viewShops = effSel && effSel !== 'all' ? shops.filter((x) => x.id === effSel) : shops;
 
   // Notifications for accountants: a shift handed over (or fixed after reopening), a cashier's request, a message.
-  const live = useShopShifts(canReview ? shops : [], ['open', 'submitted', 'reviewing', 'reopened', 'disputed']);
+  // Each person picks which notifications he gets (saved on his account, the script reads the same choice).
+  const [prefs, setPrefs] = useState(profile.notifyPrefs || {});
+  const me = { ...profile, notifyPrefs: prefs };
+  const savePrefs = (v) => { setPrefs(v); updateDoc(doc(db, 'users', profile.id), { notifyPrefs: v }).catch(() => toast('مش قادرين نحفظ الاختيار، اتأكد من النت', 'err')); };
+  const watchShops = !canReview ? [] : isAdmin && prefs.scope !== 'all' ? shops.filter((x) => (profile.shopIds || []).includes(x.id)) : shops;
+  const live = useShopShifts(watchShops, ['open', 'submitted', 'reviewing', 'reopened', 'disputed']);
   useEffect(() => {
     if (!canReview) return undefined;
     const t = setTimeout(() => {
@@ -69,7 +75,8 @@ export default function StaffApp({ profile }) {
         if (s.status === 'disputed') items.push({ key: `${s.id}:disp:${(s.cashierRequests || []).length}`, emoji: '✋', color: '#E5484D', alarm: true, title: `${s.cashierName} عنده طلب على الوردية`, body: `${name(s.shopId)} · وردية ${day}`, shiftId: s.id, shopId: s.shopId });
         if (s.staffUnread && s.lastMsg?.side === 'cashier') items.push({ key: `${s.id}:msg:${s.lastMsg.at}`, emoji: '💬', color: '#4CC3FF', title: `رسالة من ${s.cashierName}`, body: s.lastMsg.text, shiftId: s.id, shopId: s.shopId });
       });
-      feed(profile.id, 'staff', items);
+      const keyOf = (it) => (it.key.includes(':msg:') ? 'msg' : it.key.includes(':disp:') ? 'request' : 'handover');
+      feed(profile.id, 'staff', items.filter((it) => wants(me, keyOf(it))));
     }, 2500);
     return () => clearTimeout(t);
   }, [live]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -77,7 +84,7 @@ export default function StaffApp({ profile }) {
     if (!n.shiftId) return;
     if (effSel && effSel !== 'all' && effSel !== n.shopId) setShopSel(n.shopId);
     try { sessionStorage.setItem('mdq-open-shift', n.shiftId); } catch { /* ignore */ }
-    setTab('review');
+    setTab(canReview ? 'review' : 'reports');
     setTimeout(() => window.dispatchEvent(new CustomEvent('mdq-open-shift', { detail: n.shiftId })), 50);
   };
   const setupShop = effSel && effSel !== 'all' ? effSel : null;
@@ -143,7 +150,7 @@ export default function StaffApp({ profile }) {
             </span>
             <button type="button" className="icon-btn" aria-label="غيّر الباسورد بتاعي" title="غيّر الباسورد بتاعي" onClick={() => setPwOpen(true)}><Icon d="lock" /></button>
             <button type="button" className="icon-btn" aria-label="غيّر شكل التطبيق" title="غيّر شكل التطبيق" onClick={() => setThemeOpen(true)}><Icon d="palette" /></button>
-            <NotifyBell uid={profile.id} onOpen={openNote} alarmable={canReview} />
+            <NotifyBell uid={profile.id} onOpen={openNote} alarmable={canReview && wants(me, 'handover')} settings={{ profile: me, onSave: savePrefs, canAll: isAdmin }} />
             <HelpButton />
             <button type="button" className="icon-btn" aria-label="تسجيل خروج" title="تسجيل خروج" onClick={logout}><Icon d="logout" /></button>
           </div>
