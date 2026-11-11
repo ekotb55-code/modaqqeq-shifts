@@ -63,7 +63,7 @@ export function WalletInCard({ sms, shop, shift, profile }) {
           <WalletMark k={s.wallet} size={38} />
           <span className="lbl" style={{ flex: '1 1 160px', minWidth: 0 }}>
             <span className="small" style={{ fontWeight: 700, overflowWrap: 'anywhere' }}>{s.fromName || 'عميل'}</span>
-            <span className="tiny muted">{SRC_LABEL[s.wallet] || ''} · الساعة {when(s)}</span>
+            <span className="tiny muted">{SRC_LABEL[s.wallet] || ''} · الساعة {when(s)}{s.fromPhone ? ` · ${s.fromPhone}` : ''}</span>
           </span>
           <strong style={{ fontSize: 20 }}>{fmt(s.amount)} ج</strong>
           <span style={{ display: 'flex', gap: 6 }}>
@@ -85,7 +85,7 @@ export function WalletInPick({ list, onPick }) {
       <span className="small" style={{ fontWeight: 700 }}>💰 وصل لصاحب المحل · لو التحويل ده منهم دوس عليه (مش محتاج صورة)</span>
       {list.slice(0, 6).map((s) => (
         <button key={s.id} type="button" className="m-row" onClick={() => onPick(s)} style={{ padding: '8px 12px', background: '#fff', border: 0, cursor: 'pointer', textAlign: 'start', width: '100%' }}>
-          <span className="lbl"><span className="small" style={{ fontWeight: 600 }}>{s.fromName || 'عميل'}</span><span className="tiny muted">{SRC_LABEL[s.wallet] || ''} · {when(s)}</span></span>
+          <span className="lbl"><span className="small" style={{ fontWeight: 600 }}>{s.fromName || 'عميل'}</span><span className="tiny muted">{SRC_LABEL[s.wallet] || ''} · {when(s)}{s.fromPhone ? ` · ${s.fromPhone}` : ''}</span></span>
           <strong>{fmt(s.amount)} ج</strong>
         </button>
       ))}
@@ -104,7 +104,7 @@ export function ClaimModal({ s, shop, shift, profile, onClose }) {
     const eref = doc(collection(db, 'shifts', shift.id, 'entries'));
     b.set(eref, {
       type: 'transfer', wallet: s.wallet, src: s.wallet, amount: Number(s.amount) || 0, by: profile.id, byName: profile.name,
-      smsId: s.id, smsName: s.fromName || '', smsRef: s.ref || '', smsTime: s.smsTime || '',
+      smsId: s.id, smsName: s.fromName || '', smsPhone: s.fromPhone || '', smsRef: s.ref || '', smsTime: s.smsTime || '',
       createdAt: serverTimestamp(), createdAtLocal: new Date().toISOString(), posted: false,
     });
     // If another cashier already took it, this fails and nothing is saved.
@@ -128,6 +128,7 @@ export function ClaimModal({ s, shop, shift, profile, onClose }) {
         <span className="small" style={{ opacity: 0.9 }}>{SRC_LABEL[s.wallet] || ''} · رسالة البنك على موبايل صاحب المحل</span>
         <strong style={{ fontSize: 34, lineHeight: 1.1 }}>{fmt(s.amount)} ج</strong>
         <span style={{ fontWeight: 600, overflowWrap: 'anywhere' }}>من {s.fromName || 'عميل'}</span>
+        {s.fromPhone && <span className="small" dir="ltr" style={{ textAlign: 'end' }}>📱 {s.fromPhone}</span>}
         <span className="tiny" style={{ opacity: 0.9 }}>{[s.smsDate, s.smsTime && `الساعة ${s.smsTime}`, s.ref && `رقم العملية ${s.ref}`].filter(Boolean).join(' · ')}</span>
       </div>
       <span className="small muted" style={{ lineHeight: 1.7 }}>اتأكد إن العميل اللي قدامك هو اللي حوّل المبلغ ده. هيتسجل «تحويل محفظة» في ورديتك ومش محتاج صورة.</span>

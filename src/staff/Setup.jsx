@@ -981,7 +981,7 @@ function SmsForward({ shop, wallets }) {
                 <ol className="small" style={{ lineHeight: 2, paddingInlineStart: 20, margin: 0 }}>
                   <li>على موبايل صاحب المحل نزّل <b>MacroDroid</b> من Play Store وافتحه.</li>
                   <li>دوس <b>Add Macro</b> وسمّيه «مدقق».</li>
-                  <li>في <b>Triggers</b> اختار <b>Call/SMS</b> ← <b>SMS Received</b>، وفي الرسالة اختار <b>Contains</b> واكتب <code>استقبلت</code>. (لو مش موجود: <b>Applications</b> ← <b>Notification</b> واختار تطبيق الرسايل.)</li>
+                  <li>في <b>Triggers</b> اختار <b>Call/SMS</b> ← <b>SMS Received</b>، وفي الرسالة اختار <b>Contains</b> واكتب <code>استقبلت</code>. لو صاحب المحل عنده حساب في البنك الأهلي كمان، دوس + في «المحفزات» واعمل محفّز تاني بنفس الطريقة بكلمة <code>ستلام</code>. (لو مش موجود: <b>Applications</b> ← <b>Notification</b> واختار تطبيق الرسايل.)</li>
                   <li>في <b>Actions</b> اختار <b>Connectivity</b> ← <b>HTTP Request</b>: النوع <b>POST</b>، والـ URL هو الرابط اللي فوق.</li>
                   <li>في الـ Body دوس على <b>...</b> واختار <b>SMS Message</b> (أو <b>Notification Text</b>).</li>
                   <li>احفظ ✓ ووافق على الصلاحيات اللي يطلبها.</li>

@@ -251,16 +251,17 @@ function smsText_(e) {
 function parseSms_(text) {
   let t = String(text || '').replace(/\s+/g, ' ').trim();
   t = t.replace(/[٠-٩]/g, function (d) { return String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)); }).replace(/٫/g, '.').replace(/٬/g, ',');
-  if (!/استقبلت|استلمت|received/i.test(t)) return null; // رسايل التحويل اللي طالع مش بتاعتنا
+  if (!/استقبلت|استلمت|[اإأ]ستلام|received/i.test(t)) return null; // رسايل التحويل اللي طالع مش بتاعتنا
   const am = t.match(/مبلغ\s*:?\s*([\d,]+(?:\.\d+)?)/) || t.match(/([\d,]+(?:\.\d+)?)\s*(?:جم|جنيه|ج\.م|EGP|LE)/i);
   if (!am) return null;
   const amount = Number(am[1].replace(/,/g, ''));
   if (!(amount > 0)) return null;
-  const nm = t.match(/(?:^|\s)من\s+(.+?)\s+(?:يوم|في|بتاريخ|رقم|بتاريخ)(?:\s|$)/);
+  const nm = t.match(/(?:^|\s)من\s+(.+?)\s*(?:\s(?:يوم|في|بتاريخ|رقم|برقم)(?:\s|$)|[،,])/);
+  const ph = t.match(/برقم\s*(\+?\d{10,13})/);
   const dt = t.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
   const tm = t.match(/(\d{1,2}:\d{2})/);
   const rf = t.match(/(?:رقم المعاملة|رقم العملية|الرقم المرجعي|المرجع|Ref(?:erence)?(?: No)?\.?)\s*:?\s*([A-Za-z0-9]{4,})/i);
-  return { amount: amount, fromName: nm ? nm[1].trim().slice(0, 80) : '', smsDate: dt ? dt[1] : '', smsTime: tm ? tm[1] : '', ref: rf ? rf[1] : '', text: t.slice(0, 400) };
+  return { amount: amount, fromName: nm ? nm[1].trim().slice(0, 80) : '', fromPhone: ph ? ph[1] : '', smsDate: dt ? dt[1] : '', smsTime: tm ? tm[1] : '', ref: rf ? rf[1] : '', text: t.slice(0, 400) };
 }
 function sms_(key, text) {
   if (!/^[a-z0-9]{10,40}$/.test(String(key))) return { ok: false, error: 'bad key' };
@@ -273,7 +274,7 @@ function sms_(key, text) {
   if (!p) return { ok: true, skipped: true };
   const id = k.shopId + '_' + (p.ref || Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, p.text).map(function (b) { return ((b + 256) % 256).toString(16); }).join('').slice(0, 16));
   const now = new Date();
-  const doc = { shopId: k.shopId, wallet: k.wallet || 'insta', amount: p.amount, fromName: p.fromName, ref: p.ref, smsDate: p.smsDate, smsTime: p.smsTime, text: p.text,
+  const doc = { shopId: k.shopId, wallet: k.wallet || 'insta', amount: p.amount, fromName: p.fromName, fromPhone: p.fromPhone, ref: p.ref, smsDate: p.smsDate, smsTime: p.smsTime, text: p.text,
     atMs: now.getTime(), day: Utilities.formatDate(now, 'Africa/Cairo', 'yyyy-MM-dd'), status: 'new' };
   const r = req_('post', FS + '/walletIn?documentId=' + encodeURIComponent(id), { fields: toFields_(doc) });
   if (r.code === 409) return { ok: true, dup: true }; // نفس الرسالة وصلت مرتين
