@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, Img, Modal, PhotoView, useToast } from '../ui.jsx';
 import ShiftChat from '../ShiftChat.jsx';
@@ -66,7 +66,7 @@ function ShiftOpsList({ shift }) {
 // What the cashier counted when he took the shift and when he handed it over: drawers, wallets, machines.
 // Only his own numbers — no expected amounts or results.
 const KEEP = { stay: 'فضل في الدرج', shop: 'اتسلّم للمحل', main: 'اتسلّم للكاشير الأساسي' };
-function ShiftCounts({ shift }) {
+function countRows(shift) {
   const r = shift.receive || {};
   const h = shift.handover || null;
   const has = (v) => v !== undefined && v !== null && v !== '';
@@ -88,6 +88,11 @@ function ShiftCounts({ shift }) {
     a: (r.machines || []).find((x) => machineKey(x) === k)?.value,
     b: (h?.machines || []).find((x) => machineKey(x) === k)?.value,
   }));
+  return { r, h, rows, mrows, has };
+}
+
+function ShiftCounts({ shift }) {
+  const { r, h, rows, mrows, has } = countRows(shift);
   const cell = (v) => (has(v) ? `${fmt(v)} ج` : '—');
   const Table = ({ title, list }) => (
     <div className="stack" style={{ gap: 0 }}>
@@ -136,6 +141,43 @@ function ShiftCounts({ shift }) {
       {r.prevCashier && <span className="tiny muted">استلمت من: {r.prevCashier}</span>}
     </>
   );
+}
+
+// The whole shift as text, to send on WhatsApp or anywhere.
+async function shareShift(shift, toast) {
+  let entries = [];
+  try {
+    const q = await getDocs(query(collection(db, 'shifts', shift.id, 'entries'), orderBy('createdAt', 'asc')));
+    entries = q.docs.map((d) => d.data()).filter((e) => !e.deleted);
+  } catch { /* share what we have */ }
+  let shopName = '';
+  try { shopName = JSON.parse(localStorage.getItem('mdq-device-shop') || '{}').name || ''; } catch { /* ignore */ }
+  const { h, rows, mrows, has } = countRows(shift);
+  const c = (v) => (has(v) ? `${fmt(v)} ج` : '—');
+  const L = [];
+  L.push(`📋 وردية ${dateStr(shift.openedAt || shift.openedAtLocal)}${shopName ? ` · ${shopName}` : ''}${shift.registerName && shift.register !== 'main' ? ` · ${shift.registerName}` : ''}`);
+  L.push(`الكاشير: ${shift.cashierName || ''} · ${timeStr(shift.openedAt || shift.openedAtLocal)} ← ${shift.submittedAt ? timeStr(shift.submittedAt) : '—'}`);
+  const st = statusOf(shift);
+  L.push(`الحالة: ${st.label}${shift.status === 'closed' && typeof shift.diff === 'number' ? ` · النتيجة: ${diffText(shift.diff)}` : ''}`);
+  L.push('', '💵 الفلوس والخزن (استلمت ← سلّمت)');
+  rows.forEach((x) => L.push(`• ${x.label}: ${c(x.a)} ← ${h ? c(x.b) : 'لسه'}${x.note ? ` (${x.note})` : ''}`));
+  if (mrows.length) { L.push('', '🏧 المكن (استلمت ← سلّمت)'); mrows.forEach((x) => L.push(`• ${x.label}: ${c(x.a)} ← ${h ? c(x.b) : 'لسه'}`)); }
+  const groups = [
+    ['📤 المصروفات واللي طلع من الدرج', entries.filter((e) => (ENTRY_TYPES[e.type]?.sign || 0) < 0)],
+    ['📥 الإيرادات والتحويلات', entries.filter((e) => (ENTRY_TYPES[e.type]?.sign || 0) > 0)],
+    ['🔁 نقل وتسييل', entries.filter((e) => !(ENTRY_TYPES[e.type]?.sign))],
+  ].filter(([, l]) => l.length);
+  groups.forEach(([t, l]) => {
+    L.push('', `${t} · ${fmt(l.reduce((a, e) => a + num(e.amount), 0))} ج`);
+    l.forEach((e) => L.push(`- ${entryTitle(e)}: ${fmt(e.amount)} ج`));
+  });
+  if (!entries.length) L.push('', 'مفيش عمليات متسجلة');
+  L.push('', '— من تطبيق مدقق للورديات');
+  const text = L.join('\n');
+  try {
+    if (navigator.share) { await navigator.share({ title: 'تفاصيل الوردية', text }); return; }
+  } catch (e) { if (e?.name === 'AbortError') return; }
+  try { await navigator.clipboard.writeText(text); toast('اتنسخت التفاصيل · الصقها في واتساب'); } catch { window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener'); }
 }
 
 function ShiftOps({ shift, onClose }) {
@@ -365,7 +407,10 @@ export default function Follow({ shift, profile, onNew, onEdit, newLabel = 'اب
       </section>
 
       <section className="card" style={{ gap: 10 }} data-tour="follow-ops">
-        <h2 className="h2">📋 تفاصيل الوردية <span className="tiny muted" style={{ fontWeight: 500 }}>· استلمت إيه وسلّمت إيه وكل اللي سجّلته</span></h2>
+        <div className="spread" style={{ gap: 10, flexWrap: 'wrap' }}>
+          <h2 className="h2" style={{ flex: '1 1 200px' }}>📋 تفاصيل الوردية <span className="tiny muted" style={{ fontWeight: 500 }}>· استلمت إيه وسلّمت إيه وكل اللي سجّلته</span></h2>
+          <button type="button" className="btn sm soft" style={{ height: 44 }} onClick={() => shareShift(shift, toast)}><Icon d="share" size={16} />شارك</button>
+        </div>
         <ShiftCounts shift={shift} />
         <ShiftOpsList shift={shift} />
       </section>

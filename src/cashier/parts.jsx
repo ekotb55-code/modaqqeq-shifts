@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { Avatar, Icon, MachineMark, PhotoSlot, machineLook } from '../ui.jsx';
 import { HelpButton } from '../Tour.jsx';
 import { UpdateButton } from '../update.jsx';
@@ -36,15 +37,58 @@ export function Topbar({ shopPub, profile, steps, onLogout, posUrl, onPin, onPho
             ) : <Avatar name={profile.name} photo={profile.photo} color={profile.color} size={50} />}
             <span className="stack" style={{ gap: 0 }}><strong style={{ fontSize: 15 }}>{profile.name}</strong><span className="tiny muted">{regLabel || 'كاشير'}</span></span>
           </span>
-          {onTheme && <button type="button" className="icon-btn" aria-label="غيّر شكل التطبيق" title="غيّر شكل التطبيق" onClick={onTheme}><Icon d="palette" /></button>}
-          {onPin && <button type="button" className="icon-btn" aria-label="غيّر الرقم السري" title="غيّر الرقم السري" onClick={onPin}><Icon d="lock" /></button>}
+          <span className="tb-wide">
+            {onTheme && <button type="button" className="icon-btn" aria-label="غيّر شكل التطبيق" title="غيّر شكل التطبيق" onClick={onTheme}><Icon d="palette" /></button>}
+            {onPin && <button type="button" className="icon-btn" aria-label="غيّر الرقم السري" title="غيّر الرقم السري" onClick={onPin}><Icon d="lock" /></button>}
+          </span>
           {bell}
-          <UpdateButton />
+          <span className="tb-upd"><UpdateButton /></span>
           <HelpButton />
-          <button type="button" className="icon-btn" aria-label="تسجيل خروج" title="تسجيل خروج" onClick={onLogout}><Icon d="logout" /></button>
+          <span className="tb-wide"><button type="button" className="icon-btn" aria-label="تسجيل خروج" title="تسجيل خروج" onClick={onLogout}><Icon d="logout" /></button></span>
+          <MoreMenu items={[
+            onTheme && { label: 'غيّر شكل التطبيق', el: <button type="button" className="icon-btn" aria-label="غيّر شكل التطبيق" onClick={onTheme}><Icon d="palette" /></button> },
+            onPin && { label: 'غيّر الرقم السري', el: <button type="button" className="icon-btn" aria-label="غيّر الرقم السري" onClick={onPin}><Icon d="lock" /></button> },
+            { label: 'حدّث التطبيق', el: <UpdateButton noBanner /> },
+            { label: 'تسجيل خروج', el: <button type="button" className="icon-btn" aria-label="تسجيل خروج" onClick={onLogout}><Icon d="logout" /></button> },
+          ].filter(Boolean)} />
         </div>
       </div>
     </header>
+  );
+}
+
+// On phones the less-used buttons go behind ☰. The list closes by itself: after choosing, tapping outside, or 8 seconds.
+function MoreMenu({ items }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const out = (e) => { if (box.current && !box.current.contains(e.target)) setOpen(false); };
+    const t = setTimeout(() => setOpen(false), 8000);
+    document.addEventListener('pointerdown', out);
+    return () => { clearTimeout(t); document.removeEventListener('pointerdown', out); };
+  }, [open]);
+  // A tap anywhere on the row presses its button.
+  const press = (e) => {
+    const btn = e.currentTarget.querySelector('button');
+    if (btn && !btn.contains(e.target)) btn.click();
+    setTimeout(() => setOpen(false), 150);
+  };
+  return (
+    <span className="tb-more" ref={box}>
+      <button type="button" className={'icon-btn' + (open ? ' on' : '')} aria-label="باقي الاختيارات" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">{open ? <path d="M6 6l12 12M18 6L6 18" /> : <path d="M4 7h16M4 12h16M4 17h16" />}</svg>
+      </button>
+      {open && (
+        <div className="tb-menu" role="menu">
+          {items.map((it) => (
+            <div key={it.label} className="tb-item" role="menuitem" onClick={press}>
+              {it.el}<span>{it.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </span>
   );
 }
 

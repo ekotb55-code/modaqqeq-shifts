@@ -43,7 +43,7 @@ function useFresh() {
   return fresh;
 }
 
-export function UpdateButton() {
+export function UpdateButton({ noBanner = false }) {
   const toast = useToast();
   const isNew = useFresh();
   const [busy, setBusy] = useState(false);
@@ -63,7 +63,7 @@ export function UpdateButton() {
         <Icon d="refresh" />
         {isNew && <span className="upd-dot" />}
       </button>
-      {isNew && hide !== isNew && (
+      {!noBanner && isNew && hide !== isNew && (
         <div className="upd-banner" role="status">
           <span>✨ فيه نسخة جديدة من التطبيق</span>
           <button type="button" className="btn sm" onClick={go} disabled={busy}>{busy ? 'لحظة…' : 'حدّث دلوقتي'}</button>
