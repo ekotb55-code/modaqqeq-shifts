@@ -297,6 +297,7 @@ export function InstallButton() {
 // Wallet look: brand-like colors so each wallet is recognisable at a glance.
 export const WALLET_LOOK = {
   insta: { bg: 'linear-gradient(135deg, #4A1F7A 0%, #7B2FBE 48%, #F0653A 100%)', soft: '#F3E8FF', ink: '#4A1F7A', latin: 'InstaPay' },
+  insta2: { bg: 'linear-gradient(135deg, #2B1650 0%, #5B2A9E 55%, #C2549A 100%)', soft: '#EDE4FF', ink: '#2B1650', latin: 'InstaPay' },
   vf: { bg: 'linear-gradient(135deg, #B30000 0%, #E60000 60%, #FF4D4D 100%)', soft: '#FFE5E5', ink: '#9B0000', latin: 'Vodafone Cash' },
 };
 

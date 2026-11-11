@@ -114,7 +114,7 @@ export const ENTRY_TYPES = {
   xfer_in: { label: 'فلوس من كاشير تاني', color: 'var(--lime)', sign: 1 },
 };
 
-export const SRC_LABEL = { drawer: 'درج الكاشير', side: 'الدرج الجانبي', insta: 'انستاباي', vf: 'فودافون كاش', 'out:owner': 'صاحب المحل' };
+export const SRC_LABEL = { drawer: 'درج الكاشير', side: 'الدرج الجانبي', insta: 'انستاباي', insta2: 'انستاباي شخصي', vf: 'فودافون كاش', 'out:owner': 'صاحب المحل' };
 
 export const ROLE_LABEL = { admin: 'إدارة مدقق', support: 'دعم مدقق', reviewer: 'محاسب', accountant: 'محاسب', manager: 'مدير فرع', owner: 'أونر', cashier: 'كاشير' };
 
@@ -251,6 +251,7 @@ export function pickImage(maxSide, quality, type) {
 
 export const WALLETS = [
   { key: 'insta', label: 'انستاباي' },
+  { key: 'insta2', label: 'انستاباي شخصي' },
   { key: 'vf', label: 'فودافون كاش' },
 ];
 // A wallet either belongs to the owner (every transfer is recorded with a photo, no balance is
@@ -302,7 +303,7 @@ export function shopSafes(shop) {
   return [
     { key: 'drawer', label: 'درج الكاشير', kind: 'cash', color: '#FF7A1A' },
     ...(shop?.noSide ? [] : [{ key: 'side', label: 'الدرج الجانبي', kind: 'cash', color: '#B6F000' }]),
-    ...WALLETS.filter((w) => wallets.includes(w.key)).map((w) => ({ ...w, kind: 'wallet', mode: walletModeOf(shop, w.key), color: w.key === 'insta' ? '#A07CFF' : '#FF4D6D' })),
+    ...WALLETS.filter((w) => wallets.includes(w.key)).map((w) => ({ ...w, kind: 'wallet', mode: walletModeOf(shop, w.key), color: w.key === 'vf' ? '#FF4D6D' : w.key === 'insta2' ? '#7C5CE0' : '#A07CFF' })),
     ...(shop?.machines || []).map((m) => ({ key: machineKey(m), label: `${m.machine} · ${m.account}`, kind: 'machine', color: '#FFC800', m })),
     ...vaultsOf(shop).map((v) => ({ key: vaultKey(v.id), label: v.name, kind: 'vault', color: '#2FBF9B' })),
   ];
@@ -388,7 +389,7 @@ export function computeShift(shift, entries, shop, sales = null) {
     const a = num(e.amount);
     if (e.type === 'expense') expenses += a;
     if (e.type === 'income') income += a;
-    if (e.type === 'transfer') { transfers += a; if (e.wallet === 'insta') insta += a; if (e.wallet === 'vf') vf += a; }
+    if (e.type === 'transfer') { transfers += a; if (e.wallet === 'insta' || e.wallet === 'insta2') insta += a; if (e.wallet === 'vf') vf += a; }
     if (e.type === 'topup') topups += a;
     if (e.type === 'withdraw' || (e.type === 'liquidate' && e.to === OWNER)) withdraws += a;
     if (e.type === 'liquidate') { liquidations += a; liqFees += num(e.fee); }

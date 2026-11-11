@@ -70,8 +70,7 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
   const counters = [
     { label: 'طالع من الدرج', value: out('drawer'), dot: '#fff', cls: 'c-orange' },
     !shop.noSide && { label: 'طالع من الجانبي', value: out('side'), dot: '#fff', cls: 'c-yellow' },
-    wallets.includes('insta') && { label: 'انستاباي', value: sum((e) => e.type === 'transfer' && e.wallet === 'insta'), dot: '#fff', cls: 'c-violet', w: 'insta' },
-    wallets.includes('vf') && { label: 'فودافون كاش', value: sum((e) => e.type === 'transfer' && e.wallet === 'vf'), dot: '#fff', cls: 'c-pink', w: 'vf' },
+    ...WALLETS.filter((w) => wallets.includes(w.key)).map((w) => ({ label: w.label, value: sum((e) => e.type === 'transfer' && e.wallet === w.key), dot: '#fff', cls: w.key === 'vf' ? 'c-pink' : 'c-violet', w: w.key })),
   ].filter(Boolean);
   const tiles = [
     ops && { t: 'expense', label: 'مصروف', icon: 'up' },

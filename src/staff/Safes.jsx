@@ -53,7 +53,7 @@ function RegBalances({ shop: fullShop, reg, title }) {
   const tiles = [
     ...(reg !== MAIN_REG && !openShift ? [{ key: 'drawer', label: 'الدرج', cls: 'c-orange' }] : []),
     ...(shop.noSide ? [] : [{ key: 'side', label: 'الدرج الجانبي', cls: 'c-lime' }]),
-    ...wallets.map((w) => ({ key: w.key, label: `${w.label} · ${walletModeOf(shop, w.key) === 'owner' ? 'تحويلات' : 'رصيد'}`, cls: w.key === 'insta' ? 'c-violet' : 'c-pink' })),
+    ...wallets.map((w) => ({ key: w.key, label: `${w.label} · ${walletModeOf(shop, w.key) === 'owner' ? 'تحويلات' : 'رصيد'}`, cls: w.key === 'vf' ? 'c-pink' : 'c-violet' })),
     ...(shop.machines || []).flatMap((m) => {
       const t = machineTotals(shop, balances.b).find((g) => g.after === machineKey(m));
       const tile = { key: machineKey(m), label: `${m.machine} · ${m.account}`, cls: 'c-yellow' };
