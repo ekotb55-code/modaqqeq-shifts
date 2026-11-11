@@ -10,7 +10,7 @@ import { ENTRY_TYPES, SRC_LABEL } from '../lib';
 import { entryTitle } from './Dash.jsx';
 
 // Everything the cashier recorded in this shift, expenses first, with totals and photos — to find a forgotten one.
-function ShiftOps({ shift, onClose }) {
+function ShiftOpsList({ shift }) {
   const [entries, setEntries] = useState(null);
   const [photos, setPhotos] = useState({});
   const [view, setView] = useState(null);
@@ -40,8 +40,7 @@ function ShiftOps({ shift, onClose }) {
     </div>
   );
   return (
-    <Modal title={`عمليات ورديتك · ${dateStr(shift.openedAt || shift.openedAtLocal)}`} icon="eye" color="var(--blue)" onClose={onClose} width={620}>
-      <span className="small muted">راجع كل اللي سجّلته في الوردية. لو في مصروف ناقص أو مبلغ غلط، ارجع ودوس «أضف مصروف نسيته».</span>
+    <>
       {entries === null && <span className="muted">بنحمّل…</span>}
       {entries && live.length === 0 && <div className="empty">مسجّلتش أي عمليات في الوردية دي</div>}
       {groups.map((g) => (
@@ -60,6 +59,15 @@ function ShiftOps({ shift, onClose }) {
         </details>
       )}
       {view && <PhotoView src={view} onClose={() => setView(null)} />}
+    </>
+  );
+}
+
+function ShiftOps({ shift, onClose }) {
+  return (
+    <Modal title={`عمليات ورديتك · ${dateStr(shift.openedAt || shift.openedAtLocal)}`} icon="eye" color="var(--blue)" onClose={onClose} width={620}>
+      <span className="small muted">راجع كل اللي سجّلته في الوردية. لو في مصروف ناقص أو مبلغ غلط، ارجع ودوس «أضف مصروف نسيته».</span>
+      <ShiftOpsList shift={shift} />
     </Modal>
   );
 }
@@ -279,6 +287,11 @@ export default function Follow({ shift, profile, onNew, onEdit, newLabel = 'اب
           <button type="button" className={'btn' + (closed && !needsReply ? '' : ' soft')} onClick={onNew} disabled={!canStartNew} style={!canStartNew ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}>{newLabel}</button>
           {!canStartNew && <span className="tiny muted" style={{ alignSelf: 'center' }}>اختار واحد من الاختيارات اللي فوق الأول علشان تقدر تبدأ استلام جديد.</span>}
         </div>
+      </section>
+
+      <section className="card" style={{ gap: 10 }} data-tour="follow-ops">
+        <h2 className="h2">📋 تفاصيل الوردية <span className="tiny muted" style={{ fontWeight: 500 }}>· كل اللي سجّلته فيها</span></h2>
+        <ShiftOpsList shift={shift} />
       </section>
 
       <section className="card" style={{ gap: 10 }}>
