@@ -8,7 +8,7 @@ import { app, auth, db } from './firebase';
 //    Firebase Cloud Messaging to the phones/computers that turned notifications on.
 // Both values below are public (not secrets). Empty = the script isn't set up yet → everything stays as before.
 export const CLOUD = {
-  url: '',
+  url: 'https://script.google.com/macros/s/AKfycbyR23Yqm3vSyiGTD-d4Nn3CQ2NBM-N7xNxKlBIYqfsyVlI7bWVf9NvSAFrr2GxEiCCs/exec',
   vapid: 'BLjJGVLg7Xai6GfNce7TgSfgIpE4KGrXvdCKwfJXf6dTstN-jnYS9IGayqTTJstr8tYgP6JWFwZQ5DUPM3iVanA',
 };
 export const cloudReady = () => !!CLOUD.url;
