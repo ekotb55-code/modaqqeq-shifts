@@ -6,7 +6,7 @@ import ShiftChat from '../ShiftChat.jsx';
 import { dateStr, diffText, durationStr, firstName, fmt, num, timeStr } from '../lib';
 import { logAct } from '../activity.js';
 import { photoSrc, pushEvent } from '../cloud.js';
-import { ENTRY_TYPES, SRC_LABEL } from '../lib';
+import { ENTRY_TYPES, SRC_LABEL, WALLETS, machineKey } from '../lib';
 import { entryTitle } from './Dash.jsx';
 
 // Everything the cashier recorded in this shift, expenses first, with totals and photos — to find a forgotten one.
@@ -59,6 +59,81 @@ function ShiftOpsList({ shift }) {
         </details>
       )}
       {view && <PhotoView src={view} onClose={() => setView(null)} />}
+    </>
+  );
+}
+
+// What the cashier counted when he took the shift and when he handed it over: drawers, wallets, machines.
+// Only his own numbers — no expected amounts or results.
+const KEEP = { stay: 'فضل في الدرج', shop: 'اتسلّم للمحل', main: 'اتسلّم للكاشير الأساسي' };
+function ShiftCounts({ shift }) {
+  const r = shift.receive || {};
+  const h = shift.handover || null;
+  const has = (v) => v !== undefined && v !== null && v !== '';
+  const rows = [];
+  rows.push({ label: 'درج الكاشير', a: r.drawerTotal, b: h?.drawerTotal, note: h?.keepDrawer ? KEEP[h.keepDrawer] : '' });
+  if (has(r.side) || has(h?.side)) rows.push({ label: 'الدرج الجانبي', a: r.side, b: h?.side, note: h?.keepSide ? KEEP[h.keepSide] : '' });
+  const modes = h?.walletModes || r.walletModes || {};
+  WALLETS.forEach((w) => {
+    const a = r.wallets?.[w.key];
+    const b = h?.walletsTyped?.[w.key];
+    if ((modes[w.key] || 'owner') === 'owner') return; // goes to the owner: no balance to count
+    if (!has(a) && !has(b)) return;
+    rows.push({ label: w.label, a, b });
+  });
+  const mkeys = [];
+  [...(r.machines || []), ...(h?.machines || [])].forEach((m) => { const k = machineKey(m); if (!mkeys.some((x) => x.k === k)) mkeys.push({ k, m }); });
+  const mrows = mkeys.map(({ k, m }) => ({
+    label: `${m.machine}${m.account && m.account !== 'الرصيد' ? ` · ${m.account}` : ''}`,
+    a: (r.machines || []).find((x) => machineKey(x) === k)?.value,
+    b: (h?.machines || []).find((x) => machineKey(x) === k)?.value,
+  }));
+  const cell = (v) => (has(v) ? `${fmt(v)} ج` : '—');
+  const Table = ({ title, list }) => (
+    <div className="stack" style={{ gap: 0 }}>
+      <div className="spread" style={{ padding: '6px 0', borderBottom: '3px solid var(--blue)', gap: 10 }}>
+        <strong style={{ flex: 1 }}>{title}</strong>
+        <strong className="small" style={{ width: 96, textAlign: 'end' }}>استلمت</strong>
+        <strong className="small" style={{ width: 96, textAlign: 'end' }}>سلّمت</strong>
+      </div>
+      {list.map((x) => (
+        <div key={x.label} className="list-row" style={{ gap: 10 }}>
+          <span className="stack" style={{ gap: 1, flex: 1, minWidth: 0 }}>
+            <strong style={{ fontSize: 14 }}>{x.label}</strong>
+            {x.note && <span className="tiny muted">{x.note}</span>}
+          </span>
+          <strong style={{ width: 96, textAlign: 'end', whiteSpace: 'nowrap' }}>{cell(x.a)}</strong>
+          <strong style={{ width: 96, textAlign: 'end', whiteSpace: 'nowrap' }}>{h ? cell(x.b) : 'لسه'}</strong>
+        </div>
+      ))}
+    </div>
+  );
+  const Bills = ({ title, bills }) => {
+    const l = Object.entries(bills || {}).filter(([, n]) => num(n) > 0).sort((x, y) => Number(y[0]) - Number(x[0]));
+    if (!l.length) return null;
+    return (
+      <div className="stack" style={{ gap: 4 }}>
+        <span className="tiny muted" style={{ fontWeight: 700 }}>{title}</span>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {l.map(([v, n]) => <span key={v} className="chip sm" style={{ cursor: 'default' }}>{v} × {num(n)}</span>)}
+        </div>
+      </div>
+    );
+  };
+  return (
+    <>
+      <Table title="الفلوس والخزن" list={rows} />
+      {mrows.length > 0 && <Table title="المكن" list={mrows} />}
+      {(Object.keys(r.bills || {}).length > 0 || Object.keys(h?.bills || {}).length > 0) && (
+        <details>
+          <summary className="small muted" style={{ cursor: 'pointer', padding: '6px 0' }}>فئات الفلوس في الدرج</summary>
+          <div className="stack" style={{ gap: 10, paddingTop: 6 }}>
+            <Bills title="وقت الاستلام" bills={r.bills} />
+            <Bills title="وقت التسليم" bills={h?.bills} />
+          </div>
+        </details>
+      )}
+      {r.prevCashier && <span className="tiny muted">استلمت من: {r.prevCashier}</span>}
     </>
   );
 }
@@ -290,7 +365,8 @@ export default function Follow({ shift, profile, onNew, onEdit, newLabel = 'اب
       </section>
 
       <section className="card" style={{ gap: 10 }} data-tour="follow-ops">
-        <h2 className="h2">📋 تفاصيل الوردية <span className="tiny muted" style={{ fontWeight: 500 }}>· كل اللي سجّلته فيها</span></h2>
+        <h2 className="h2">📋 تفاصيل الوردية <span className="tiny muted" style={{ fontWeight: 500 }}>· استلمت إيه وسلّمت إيه وكل اللي سجّلته</span></h2>
+        <ShiftCounts shift={shift} />
         <ShiftOpsList shift={shift} />
       </section>
 
