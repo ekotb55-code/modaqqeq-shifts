@@ -56,6 +56,7 @@ function sendNotifications_() {
   const list = req_('get', FS + '/outbox?pageSize=40');
   const docs = (list.json && list.json.documents) || [];
   if (!docs.length) return;
+  console.log('outbox: ' + docs.length);
   const staffCache = {};
   const messages = [];
   const owners = []; // token doc name for each message (to delete dead ones)
@@ -68,6 +69,7 @@ function sendNotifications_() {
       uids = staffCache[ev.shopId];
     }
     uids = uids.filter(function (u) { return u && u !== ev.byUid; });
+    console.log('event ' + ev.type + ' → ' + ev.to + ' · ' + uids.length + ' people');
     const go = ev.type === 'close' ? 'view' : ev.type === 'reopen' || (ev.type === 'msg' && ev.to === 'cashier') ? 'attn' : '';
     tokensOf_(uids).forEach(function (t) {
       messages.push({
@@ -80,6 +82,7 @@ function sendNotifications_() {
       owners.push(t.name);
     });
   });
+  console.log('devices: ' + messages.length);
   // نبعت كله مرة واحدة
   const url = 'https://fcm.googleapis.com/v1/projects/' + PROJECT + '/messages:send';
   const auth = headers_();
@@ -90,6 +93,7 @@ function sendNotifications_() {
     }));
     res.forEach(function (r, k) {
       const code = r.getResponseCode();
+      console.log('send → ' + code + ' ' + r.getContentText().slice(0, 300));
       if (code === 404 || /UNREGISTERED|not a valid FCM registration token/.test(r.getContentText())) {
         req_('delete', 'https://firestore.googleapis.com/v1/' + owners[i + k]); // الجهاز ده لغى الإشعارات
       }
@@ -120,6 +124,20 @@ function tokensOf_(uids) {
     (r.json || []).forEach(function (x) { if (x.document) { const t = fields_(x.document); if (t.token) out.push({ token: t.token, name: x.document.name }); } });
   }
   return out;
+}
+
+// تجربة يدوية: بتبعت إشعار تجربة لكل الأجهزة اللي فعّلت الإشعارات
+function testPush() {
+  const r = req_('get', FS + '/pushTokens?pageSize=50');
+  const docs = (r.json && r.json.documents) || [];
+  console.log('devices: ' + docs.length);
+  docs.forEach(function (d) {
+    const t = fields_(d);
+    const res = req_('post', 'https://fcm.googleapis.com/v1/projects/' + PROJECT + '/messages:send', { message: {
+      token: t.token, data: { title: 'تجربة إشعار من مدقق 🔔', body: 'لو شايف الرسالة دي يبقى الإشعارات شغالة', tag: 'test-' + Date.now() },
+      webpush: { headers: { Urgency: 'high', TTL: '600' } } } });
+    console.log((t.device || '') + ' ' + (t.uid || '') + ' → ' + res.code + ' ' + res.text.slice(0, 300));
+  });
 }
 
 // ───────── الصور → Google Drive ─────────
