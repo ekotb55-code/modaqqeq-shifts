@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Icon } from './ui.jsx';
 import { timeStr } from './lib';
+import { pushOn, registerPush } from './cloud.js';
 
 // ───────── Notifications ─────────
 // No server on the free plan, so every device watches its own shifts while the app is open
@@ -42,6 +43,8 @@ function beep() {
 
 async function systemNotify(note) {
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  // with push on, the script already sends a system notification for this: don't show it twice
+  if (pushOn()) return;
   const opts = { body: note.body, icon: './icon-192.png', badge: './icon-192.png', tag: note.key, data: { note }, dir: 'rtl', lang: 'ar' };
   try {
     const reg = await navigator.serviceWorker?.getRegistration();
@@ -104,7 +107,11 @@ export function NotifyBell({ uid, onOpen }) {
     navigator.serviceWorker?.addEventListener('message', h);
     return () => navigator.serviceWorker?.removeEventListener('message', h);
   }, []);
-  const allow = async () => { try { setPerm(await Notification.requestPermission()); } catch { /* ignore */ } };
+  const allow = async () => {
+    try { const p = await Notification.requestPermission(); setPerm(p); if (p === 'granted') registerPush(uid); } catch { /* ignore */ }
+  };
+  // keep this device's notification address fresh (it can change)
+  useEffect(() => { if (perm === 'granted') registerPush(uid); }, [uid, perm]);
   const readAll = () => { cur.list = cur.list.map((n) => ({ ...n, read: true })); save(); };
 
   return (

@@ -3,11 +3,12 @@ import { CASHIER_DASH } from '../tours.js';
 import { useEffect, useState } from 'react';
 import { collection, doc, onSnapshot, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Avatar, Icon, Modal, NetMeter, PhotoView, WALLET_LOOK, WalletMark, useToast } from '../ui.jsx';
+import { Avatar, Icon, Img, Modal, NetMeter, PhotoView, WALLET_LOOK, WalletMark, useToast } from '../ui.jsx';
 import { ENTRY_TYPES, SRC_LABEL, WALLETS, durationStr, firstName, fmt, liveBalances, machineTotals, num, walletModeOf, registersOf, safeLabel, shopSafes, timeStr } from '../lib';
 import { Incoming, SendModal } from './Transfers.jsx';
 import EntryModal from './EntryModal.jsx';
 import { logAct } from '../activity.js';
+import { photoSrc } from '../cloud.js';
 
 export function entryTitle(e) {
   if (e.type === 'expense') return [e.kindLabel || 'مصروف', e.sub, e.kind === 'supplier' ? (e.invoice === 'invoice' ? '(فاتورة)' : '(توريد بدون فاتورة)') : '', e.note].filter(Boolean).join(' · ');
@@ -51,7 +52,7 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
     collection(db, 'shifts', shift.id, 'photos'),
     (q) => {
       const m = {};
-      q.docs.forEach((d) => { const p = d.data(); if (p.entryId && p.data) m[d.id] = p.data; });
+      q.docs.forEach((d) => { const p = { id: d.id, ...d.data() }; const src = photoSrc(shift.id, p); if (p.entryId && src) m[d.id] = src; });
       setPhotoMap(m);
     },
     (err) => console.warn('dash photos', err.code),
@@ -159,7 +160,7 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
                   </span>
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {ph && <img className="thumb" style={{ width: 44, height: 44 }} src={ph} alt="صورة العملية" title="افتح الصورة" onClick={() => setViewPhoto(ph)} />}
+                  {ph && <Img className="thumb" style={{ width: 44, height: 44 }} src={ph} alt="صورة العملية" title="افتح الصورة" onClick={() => setViewPhoto(ph)} />}
                   <span style={{ fontSize: 17, fontWeight: 700, whiteSpace: 'nowrap' }}>{ENTRY_TYPES[e.type]?.sign < 0 ? '−' : ENTRY_TYPES[e.type]?.sign > 0 ? '+' : ''}{fmt(e.amount)}</span>
                   {shift.status === 'open' && e.type !== 'xfer_in' && (e.type !== 'xfer_out' || pendingIds.has(e.transferId)) && <button type="button" className="icon-btn del-btn" aria-label={`امسح ${entryTitle(e)}`} title="امسح العملية" onClick={() => setDel(e)}><Icon d="trash" size={17} /></button>}
                 </span>

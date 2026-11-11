@@ -1,5 +1,5 @@
 // Keeps the app shell on the device so it opens fast and works when the internet drops.
-const CACHE = 'mdq-shifts-v3';
+const CACHE = 'mdq-shifts-v4';
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['./', './index.html', './modaqqeq-logo.png', './icon-192.png'])).then(() => self.skipWaiting()));
 });
@@ -29,5 +29,17 @@ self.addEventListener('notificationclick', (e) => {
     const c = list[0];
     if (c) { c.postMessage({ type: 'mdq-note', note }); return c.focus(); }
     return self.clients.openWindow('./');
+  }));
+});
+
+// Notification sent by the Modaqqeq script while the app is closed (Firebase Cloud Messaging).
+self.addEventListener('push', (e) => {
+  let p = {};
+  try { p = e.data ? e.data.json() : {}; } catch { p = { data: { title: 'مدقق', body: e.data ? e.data.text() : '' } }; }
+  const d = p.data || p.notification || p;
+  const title = d.title || 'مدقق';
+  e.waitUntil(self.registration.showNotification(title, {
+    body: d.body || '', icon: './icon-192.png', badge: './icon-192.png', tag: d.tag || undefined, dir: 'rtl', lang: 'ar',
+    data: { note: { id: d.tag || String(Date.now()), key: d.tag || '', title, body: d.body || '', shiftId: d.shiftId || null, shopId: d.shopId || null, go: d.go || null } },
   }));
 });

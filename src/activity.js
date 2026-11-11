@@ -1,6 +1,7 @@
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { auth, db } from './firebase';
+import { unregisterPush } from './cloud.js';
 import { todayKey } from './lib';
 
 // Activity log: every login and every important step, for Modaqqeq management and support only.
@@ -51,7 +52,7 @@ export function logSessionStart(profile) {
 export const markLogin = () => { try { sessionStorage.setItem('mdq-login-mark', '1'); } catch { /* ignore */ } };
 
 export async function logout() {
-  await Promise.race([logAct('logout', 'خرج من التطبيق'), new Promise((r) => setTimeout(r, 1500))]);
+  await Promise.race([Promise.all([logAct('logout', 'خرج من التطبيق'), unregisterPush(auth.currentUser?.uid)]), new Promise((r) => setTimeout(r, 2000))]);
   try { sessionStorage.removeItem('mdq-act-open'); } catch { /* ignore */ }
   setActor(null);
   return signOut(auth);

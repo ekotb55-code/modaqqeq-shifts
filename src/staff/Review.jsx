@@ -3,13 +3,14 @@ import { STAFF_DETAIL, STAFF_REVIEWING } from '../tours.js';
 import { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, deleteField, doc, increment, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Avatar, CopyBtn, Icon, Modal, PhotoView, ZoomImage, useToast } from '../ui.jsx';
+import { Avatar, CopyBtn, Icon, Img, Modal, PhotoView, ZoomImage, useToast } from '../ui.jsx';
 import { BILL_BG, ENTRY_TYPES, FACES, SRC_LABEL, VAULT_PREFIX, WALLETS, isVaultKey, shopForRegister, computeShift, diffText, durationStr, fmt, minutesBetween, num, safeLabel, timeStr, toDate, dateStr } from '../lib';
 import Statements from './Statements.jsx';
 import ForceClose from './ForceClose.jsx';
 import ShiftChat from '../ShiftChat.jsx';
 import { DeletedList, entryTitle } from '../cashier/Dash.jsx';
 import { logAct } from '../activity.js';
+import { photoSrc, pushEvent } from '../cloud.js';
 
 const STATUS = {
   open: { label: 'شغالة', cls: 'info' },
@@ -230,6 +231,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
       }
       await b.commit();
       logAct('close', `قفل وردية ${shift.cashierName} · ${diffText(sum.diff)} · مبيعات ${fmt(num(sales))} ج`, { shopId: shift.shopId, shiftId: shift.id });
+      pushEvent({ type: 'close', shopId: shift.shopId, shiftId: shift.id, to: 'cashier', toUid: shift.cashierUid, title: 'المحاسب قفل ورديتك', body: sum.diff < 0 ? 'فيه عجز في ورديتك · افتح التطبيق وراجعه' : `وردية ${dateStr(shift.openedAt || shift.openedAtLocal)} اتراجعت واتقفلت` });
       toast('الوردية اتقفلت والتقرير اتبعت');
     } catch (e) { console.error(e); toast('مش قادرين نقفل الوردية', 'err'); }
     setBusy(false);
@@ -306,7 +308,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
   const togglePosted = (e) => updateDoc(doc(db, 'shifts', shift.id, 'entries', e.id), { posted: !e.posted, postedBy: profile.name })
     .then(() => logAct('post', `${e.posted ? 'شال العلامة من' : 'علّم ✓ على'} «${entryTitle(e)}» ${fmt(e.amount)} ج · وردية ${shift.cashierName}`, { shopId: shift.shopId, shiftId: shift.id }))
     .catch(() => toast('مش قادرين نحفظ', 'err'));
-  const photoOf = (id) => photos.find((p) => p.id === id);
+  const photoOf = (id) => { const p = photos.find((x) => x.id === id); return p ? { ...p, src: photoSrc(shift.id, p) } : null; };
   const checkPhoto = (p, check) => updateDoc(doc(db, 'shifts', shift.id, 'photos', p.id), { check, checkedBy: profile.name, checkedAt: serverTimestamp() })
     .then(() => logAct('photo', `${check === 'ok' ? 'علّم صورة «' + p.label + '» مطابقة' : check === 'bad' ? 'علّم صورة «' + p.label + '» مش مطابقة' : 'شال العلامة من صورة «' + p.label + '»'} · وردية ${shift.cashierName}`, { shopId: shift.shopId, shiftId: shift.id })).catch(() => toast('مش قادرين نحفظ', 'err'));
   const photoTyped = (p) => {
@@ -352,7 +354,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
             {dir && <span style={{ alignSelf: 'flex-start', marginTop: 3, padding: '2px 10px', borderRadius: 999, fontSize: 12, fontWeight: 800, ...DIR_STYLE[dir.kind] }}>{dir.text}</span>}
           </span>
         </label>
-        {ph && <img className="thumb" style={{ width: 44, height: 44 }} src={ph.data} alt="صورة" onClick={() => setView(ph.data)} />}
+        {ph && <Img className="thumb" style={{ width: 44, height: 44 }} src={ph.src} alt="صورة" onClick={() => setView(ph.src)} />}
         {name && <span className="small" style={{ display: 'flex', alignItems: 'center' }}>{name}<CopyBtn value={name} label="نسخ الاسم" /></span>}
         <span style={{ display: 'flex', alignItems: 'center', fontWeight: 700, fontSize: 16, minWidth: 90, justifyContent: 'flex-end', gap: 4 }}>
           {e.originalAmount !== undefined && <span className="tiny muted" style={{ textDecoration: 'line-through' }}>{fmt(e.originalAmount)}</span>}
@@ -536,8 +538,8 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
               const typed = photoTyped(p);
               return (
                 <div key={p.id} style={{ background: 'var(--bg)', borderRadius: 20, padding: 10, display: 'flex', flexDirection: 'column', gap: 8, border: `2px solid ${ok ? 'var(--lime)' : bad ? 'var(--red)' : 'transparent'}` }}>
-                  <ZoomImage src={p.data} alt={p.label} height={340} />
-                  <button type="button" className="link" style={{ alignSelf: 'flex-start', fontSize: 13 }} onClick={() => setView(p.data)}>افتحها كبيرة</button>
+                  <ZoomImage src={photoSrc(shift.id, p)} alt={p.label} height={340} />
+                  <button type="button" className="link" style={{ alignSelf: 'flex-start', fontSize: 13 }} onClick={() => setView(photoSrc(shift.id, p))}>افتحها كبيرة</button>
                   <span className="small"><b>{{ transfer: 'تحويل', invoice: 'فاتورة', machine: p.stage === 'receive' ? 'مكنة · استلام' : 'مكنة · تسليم', wallet: p.stage === 'receive' ? 'محفظة · استلام' : 'محفظة · تسليم' }[p.kind]}</b> · {p.label}</span>
                   {typed !== null && <span className="small">الكاشير كتب: <b>{fmt(typed)}</b></span>}
                   {p.kind === 'transfer' && shop?.walletName && <span className="tiny muted">لازم يكون المستلم: {shop.walletName}</span>}
@@ -608,7 +610,7 @@ function MoveRow({ m, on, onToggle, canReview, photoOf, onView }) {
       </label>
       {m.parts && (
         <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-          {m.parts.map((e) => { const ph = e.photoId && photoOf(e.photoId); return ph ? <img key={e.id} className="thumb" style={{ width: 38, height: 38 }} src={ph.data} alt={`صورة تحويل ${fmt(e.amount)}`} title={fmt(e.amount)} onClick={() => onView(ph.data)} /> : null; })}
+          {m.parts.map((e) => { const ph = e.photoId && photoOf(e.photoId); return ph ? <Img key={e.id} className="thumb" style={{ width: 38, height: 38 }} src={ph.src} alt={`صورة تحويل ${fmt(e.amount)}`} title={fmt(e.amount)} onClick={() => onView(ph.src)} /> : null; })}
         </span>
       )}
       <span style={{ display: 'flex', alignItems: 'center', fontWeight: 700, fontSize: 16, minWidth: 90, justifyContent: 'flex-end' }}>{fmt(m.amount)}<CopyBtn value={fmt(m.amount)} label="نسخ المبلغ" /></span>
@@ -714,6 +716,7 @@ function ReopenModal({ shift, profile, onClose }) {
     try {
       await updateDoc(doc(db, 'shifts', shift.id), { status: 'reopened', reopenPending: true, cashierAttention: true, reopenNote: note.trim(), reopenedBy: profile.name, reopenedAt: serverTimestamp(), reopenCount: (shift.reopenCount || 0) + 1 });
       logAct('reopen', `فتح وردية ${shift.cashierName} للكاشير يعدّلها${note.trim() ? ` · ${note.trim()}` : ''}`, { shopId: shift.shopId, shiftId: shift.id });
+      pushEvent({ type: 'reopen', shopId: shift.shopId, shiftId: shift.id, to: 'cashier', toUid: shift.cashierUid, title: 'المحاسب فتحلك وردية تعدّلها', body: note.trim() || 'افتح التطبيق وشوف المطلوب' });
       toast(`الوردية اتفتحت لـ ${shift.cashierName} يعدّلها`); onClose();
     } catch (e) { console.error(e); toast('مش قادرين نفتحها', 'err'); }
   };

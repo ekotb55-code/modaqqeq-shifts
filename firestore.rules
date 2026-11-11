@@ -141,6 +141,31 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ── Free Apps Script helper (it works with the project owner's own access, rules don't apply to it) ──
+    // A request for a notification. Only from someone in that shop; nobody reads it but the script.
+    match /outbox/{id} {
+      allow create: if signedIn() && request.resource.data.byUid == request.auth.uid
+        && (isAdmin() || inShop(request.resource.data.shopId))
+        && request.resource.data.keys().hasOnly(['type', 'shopId', 'shiftId', 'to', 'toUid', 'title', 'body', 'byUid', 'atMs'])
+        && request.resource.data.title is string && request.resource.data.title.size() <= 120
+        && request.resource.data.body is string && request.resource.data.body.size() <= 240;
+      allow read, update, delete: if false;
+    }
+    // A ticket asking the script to move one photo to Google Drive.
+    match /photoQueue/{id} {
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['path', 'uid', 'atMs'])
+        && request.resource.data.path is string && request.resource.data.path.size() < 200;
+      allow read, update, delete: if false;
+    }
+    // This device's notification address. Each person sees and changes only his own.
+    match /pushTokens/{id} {
+      allow read, delete: if signedIn() && resource.data.uid == request.auth.uid;
+      allow create, update: if signedIn() && request.resource.data.uid == request.auth.uid
+        && id.matches(request.auth.uid + '_.*')
+        && request.resource.data.keys().hasOnly(['uid', 'token', 'device', 'atMs']);
+    }
+
     // Login & activity log. Everyone writes only lines about himself; nobody edits or deletes.
     // Only Modaqqeq's owner and support can read it.
     match /activity/{id} {

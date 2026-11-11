@@ -6,6 +6,7 @@ import { captureDocument } from '../DocCamera.jsx';
 import { ENTRY_TYPES, OWNER, SRC_LABEL, WALLETS, WEEKDAYS, walletModeOf, fmt, num, safeLabel, shopSafes } from '../lib';
 import { logAct } from '../activity.js';
 import { requestFromPhone } from '../phoneShot.jsx';
+import { setPhoto } from '../cloud.js';
 
 const META = {
   expense: { title: 'مصروف جديد', icon: 'up' },
@@ -165,9 +166,8 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
       const b = writeBatch(db);
       const eref = doc(collection(db, 'shifts', shift.id, 'entries'));
       if (photo) {
-        const pref = doc(collection(db, 'shifts', shift.id, 'photos'));
+        const pref = setPhoto(b, shift.id, { kind: type === 'transfer' ? 'transfer' : 'invoice', entryId: eref.id, label: type === 'transfer' ? SRC_LABEL[wallet] : subValue, amount: num(amount), data: photo, check: 'pending', createdAt: serverTimestamp() });
         entry.photoId = pref.id;
-        b.set(pref, { kind: type === 'transfer' ? 'transfer' : 'invoice', entryId: eref.id, label: type === 'transfer' ? SRC_LABEL[wallet] : subValue, amount: num(amount), data: photo, check: 'pending', createdAt: serverTimestamp() });
       }
       b.set(eref, entry);
       

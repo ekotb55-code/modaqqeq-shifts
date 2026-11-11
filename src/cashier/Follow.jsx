@@ -5,6 +5,7 @@ import { Icon, Modal, useToast } from '../ui.jsx';
 import ShiftChat from '../ShiftChat.jsx';
 import { dateStr, diffText, durationStr, firstName, fmt, num, timeStr } from '../lib';
 import { logAct } from '../activity.js';
+import { pushEvent } from '../cloud.js';
 
 const BASE = {
   submitted: { label: 'اتسلّمت · مستنية المحاسب', cls: 'warn', text: 'الوردية وصلت للمحاسب وهيراجعها في أقرب وقت. لو في حاجة تقولها له، اكتبها في الشات تحت.' },
@@ -113,6 +114,7 @@ export default function Follow({ shift, profile, onNew, onEdit, newLabel = 'اب
         lastMsg: { text: msgText, side: 'cashier', byName: profile.name, at },
       });
       logAct('dispute', form === 'expense' ? `طلب إضافة ${reqsToAdd.length} مصروف على وردية فيها عجز` : 'طلب تعديل الاستلام على وردية فيها عجز', { shopId: shift.shopId, shiftId: shift.id });
+      pushEvent({ type: 'dispute', shopId: shift.shopId, shiftId: shift.id, to: 'staff', title: `${profile.name} عنده طلب على الوردية`, body: msgText });
       toast('طلباتك اتبعتت للمحاسب');
       setForm(null); setAmount(''); setNote(''); setExpenseList([]);
     } catch (e) { console.error(e); toast('مش قادرين نبعت، اتأكد من النت', 'err'); }
@@ -130,6 +132,7 @@ export default function Follow({ shift, profile, onNew, onEdit, newLabel = 'اب
       });
       try { await updateDoc(doc(db, 'ledger', shift.id), { acknowledged: true, acknowledgedAt: serverTimestamp() }); } catch (e) { console.warn('ledger ack', e.code); }
       logAct('shortage_ack', 'أقرّ بالعجز في الوردية', { shopId: shift.shopId, shiftId: shift.id });
+      pushEvent({ type: 'ack', shopId: shift.shopId, shiftId: shift.id, to: 'staff', title: `${profile.name} أقرّ بالعجز`, body: 'في الوردية اللي اتقفلت' });
       toast('اتسجّل إقرارك');
     } catch (e) { console.error(e); toast('مش قادرين نسجّل، اتأكد من النت', 'err'); }
     setBusy(false);

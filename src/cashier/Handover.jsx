@@ -10,6 +10,8 @@ import { newTransfer } from './Transfers.jsx';
 import { Bills, MachineRows, SideBox } from './parts.jsx';
 import { logAct } from '../activity.js';
 import { takePhoto } from '../phoneShot.jsx';
+import { setPhoto } from '../cloud.js';
+import { pushEvent } from '../cloud.js';
 
 const WHERE = { stay: 'يفضل في الدرج', shop: 'يتسلّم للمحل', main: 'يتسلّم للأساسي' };
 function Split({ title, mark, color, amount, value, set, options = ['stay', 'shop'] }) {
@@ -148,11 +150,11 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
     try {
       const b = writeBatch(db);
       Object.entries(photos).forEach(([i, data]) => {
-        b.set(doc(collection(db, 'shifts', shift.id, 'photos')), { kind: 'machine', stage: 'handover', label: machinePhotoLabel(machines, i), data, check: 'pending', createdAt: serverTimestamp() });
+        setPhoto(b, shift.id, { kind: 'machine', stage: 'handover', label: machinePhotoLabel(machines, i), data, check: 'pending', createdAt: serverTimestamp() });
       });
       Object.entries(wphotos).forEach(([k, data]) => {
         const w = shopWallets.find((x) => x.key === k);
-        b.set(doc(collection(db, 'shifts', shift.id, 'photos')), { kind: 'wallet', stage: 'handover', wallet: k, label: w?.label || k, amount: num(wtyped[k]), data, check: 'pending', createdAt: serverTimestamp() });
+        setPhoto(b, shift.id, { kind: 'wallet', stage: 'handover', wallet: k, label: w?.label || k, amount: num(wtyped[k]), data, check: 'pending', createdAt: serverTimestamp() });
       });
       b.update(doc(db, 'shifts', shift.id), { status: 'submitted', submittedAt: serverTimestamp(), submittedAtLocal: now.toISOString(), handover, entryCount: entries.length });
       b.update(doc(db, 'shops', shop.id), {
@@ -163,6 +165,7 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
       if (isSub && toMain > 0) b.set(doc(collection(db, 'transfers')), newTransfer({ shop, shift, profile, toReg: MAIN_REG, amount: toMain, kind: 'handover' }));
       const p = b.commit();
       logAct('handover', `سلّم الوردية · الدرج ${fmt(drawerTotal)} ج · ${entries.length} عملية`, { shopId: shop.id, shiftId: shift.id });
+      pushEvent({ type: 'handover', shopId: shop.id, shiftId: shift.id, to: 'staff', title: `${profile.name} سلّم الوردية`, body: `${shop.name || ''} · مستنية مراجعتك` });
       const offline = !navigator.onLine;
       if (offline) p.catch(() => {}); else await p;
       clearDraft(dkey);

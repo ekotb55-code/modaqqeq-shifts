@@ -9,6 +9,7 @@ import { MAIN_REG, WALLETS, vaultsOf, colsFor, machineGroupsOf, machinePhotoLabe
 import { Bills, MachineRows, SideBox } from './parts.jsx';
 import { logAct } from '../activity.js';
 import { takePhoto } from '../phoneShot.jsx';
+import { photoSrc, setPhoto } from '../cloud.js';
 
 export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, editShift, onCancel }) {
   useTour('c-receive', CASHIER_RECEIVE, { uid: profile.id, enabled: !editShift });
@@ -46,7 +47,8 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
   useEffect(() => {
     if (!editShift) return undefined;
     return onSnapshot(collection(db, 'shifts', editShift.id, 'photos'), (q) => {
-      const list = q.docs.map((d) => d.data())
+      const list = q.docs.map((d) => ({ id: d.id, ...d.data() }))
+        .map((p) => ({ ...p, data: photoSrc(editShift.id, p) }))
         .filter((p) => p.stage === 'receive' && p.data)
         .sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
       const m = {};
@@ -109,7 +111,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
   };
   const walletPhotoDocs = (pb, shiftId) => Object.entries(wphotos).forEach(([k, data]) => {
     const w = walletKeys.find((x) => x.key === k);
-    pb.set(doc(collection(db, 'shifts', shiftId, 'photos')), { kind: 'wallet', stage: 'receive', wallet: k, label: w?.label || k, amount: num(wallets[k]), data, check: 'pending', createdAt: serverTimestamp() });
+    setPhoto(pb, shiftId, { kind: 'wallet', stage: 'receive', wallet: k, label: w?.label || k, amount: num(wallets[k]), data, check: 'pending', createdAt: serverTimestamp() });
   });
   const addPhoto = async (i, src) => {
     const data = await takePhoto(src, { maxSide: 1100, quality: 0.7, kind: 'machine', title: `صوّر شاشة ${machines[i]?.name || 'المكنة'}` });
@@ -134,7 +136,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
       const p = updateDoc(doc(db, 'shifts', editShift.id), { receive, receiveEdits: (editShift.receiveEdits || 0) + 1 });
       p.then(() => Promise.all([...Object.entries(photos).map(([i, data]) => {
         const pb = writeBatch(db);
-        pb.set(doc(collection(db, 'shifts', editShift.id, 'photos')), { kind: 'machine', stage: 'receive', label: machinePhotoLabel(machines, i), data, check: 'pending', createdAt: serverTimestamp() });
+        setPhoto(pb, editShift.id, { kind: 'machine', stage: 'receive', label: machinePhotoLabel(machines, i), data, check: 'pending', createdAt: serverTimestamp() });
         return pb.commit();
       }), (() => { const pb = writeBatch(db); walletPhotoDocs(pb, editShift.id); return pb.commit(); })()])).catch(() => {});
       if (navigator.onLine) await p; else p.catch(() => {});
@@ -179,7 +181,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
       // Photos go after the shift so the security rules can see who owns it.
       p.then(() => Promise.all([...Object.entries(photos).map(([i, data]) => {
         const pb = writeBatch(db);
-        pb.set(doc(collection(db, 'shifts', shiftRef.id, 'photos')), { kind: 'machine', stage: 'receive', label: machinePhotoLabel(machines, i), data, check: 'pending', createdAt: serverTimestamp() });
+        setPhoto(pb, shiftRef.id, { kind: 'machine', stage: 'receive', label: machinePhotoLabel(machines, i), data, check: 'pending', createdAt: serverTimestamp() });
         return pb.commit();
       }), (() => { const pb = writeBatch(db); walletPhotoDocs(pb, shiftRef.id); return pb.commit(); })()])).catch(() => {});
       logAct('receive', `استلم الوردية${last ? ` من ${last.cashierName}` : ''} · الدرج ${fmt(billsTotal(bills))} ج${changed || sideChanged || mChanged || wChanged ? ' · عدّل في الأرقام' : ''}`, { shopId: shop.id, shiftId: shiftRef.id });

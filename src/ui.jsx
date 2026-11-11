@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { fetchPhoto } from './cloud.js';
 
 export const IC = {
   up: 'M7 17 17 7M8 7h9v9',
@@ -195,8 +196,28 @@ export function Modal({ title, color, icon, onClose, children, width }) {
   );
 }
 
+// A photo may be the picture itself or a pointer to Google Drive ("fs:…"); this loads either.
+export function useImg(src) {
+  const [state, setState] = useState(() => ({ src: src && !src.startsWith('fs:') ? src : null, err: false }));
+  useEffect(() => {
+    if (!src) { setState({ src: null, err: false }); return undefined; }
+    if (!src.startsWith('fs:')) { setState({ src, err: false }); return undefined; }
+    let alive = true;
+    setState({ src: null, err: false });
+    fetchPhoto(src).then((d) => alive && setState({ src: d, err: false })).catch(() => alive && setState({ src: null, err: true }));
+    return () => { alive = false; };
+  }, [src]);
+  return state;
+}
+export function Img({ src, alt = '', ...rest }) {
+  const { src: real, err } = useImg(src);
+  if (real) return <img src={real} alt={alt} {...rest} />;
+  return <span className={'img-wait ' + (rest.className || '')} style={rest.style} title={err ? 'الصورة مش متاحة' : 'بنحمّل الصورة…'} onClick={rest.onClick}>{err ? '⚠' : ''}</span>;
+}
+
 // Zoomable photo: buttons, mouse wheel, double-click and drag to move around.
-export function ZoomImage({ src, alt = 'صورة', height = 320, big = false }) {
+export function ZoomImage({ src: rawSrc, alt = 'صورة', height = 320, big = false }) {
+  const { src, err } = useImg(rawSrc);
   const [z, setZ] = useState(1);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const drag = useRef(null);
@@ -215,7 +236,8 @@ export function ZoomImage({ src, alt = 'صورة', height = 320, big = false }) 
   return (
     <div className={'zoom-frame' + (big ? ' big' : '')} style={{ height }}>
       <div ref={boxRef} className="zoom-box" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onDoubleClick={() => set(z > 1 ? 1 : 2.5)} style={{ cursor: z > 1 ? 'grab' : 'zoom-in' }}>
-        <img src={src} alt={alt} draggable={false} style={{ transform: `translate(${pos.x}px, ${pos.y}px) scale(${z})` }} />
+        {src ? <img src={src} alt={alt} draggable={false} style={{ transform: `translate(${pos.x}px, ${pos.y}px) scale(${z})` }} />
+          : <span className="zoom-wait">{err ? 'الصورة دي مش متاحة (ممكن تكون اتمسحت بعد شهرين، أو مفيش نت)' : 'بنحمّل الصورة…'}</span>}
       </div>
       <div className="zoom-ctl" onClick={(e) => e.stopPropagation()}>
         <button type="button" aria-label="تكبير" onClick={() => set(z * 1.4)}>+</button>
@@ -367,7 +389,7 @@ export function PhotoSlot({ data, onPick, label = 'صوّر الشاشة', tone 
   }
   return (
     <div className="photo-slot has">
-      <span className="ps-frame"><img src={data} alt="الصورة اللي اترفعت" onClick={() => setView(true)} /><span className="ps-ok">✓ اترفعت</span></span>
+      <span className="ps-frame"><Img src={data} alt="الصورة اللي اترفعت" onClick={() => setView(true)} /><span className="ps-ok">✓ اترفعت</span></span>
       <span className="ps-actions">
         <button type="button" onClick={() => setView(true)}><Icon d="eye" size={15} />شوفها كبيرة</button>
         <button type="button" onClick={() => onPick('here')}><Icon d="cam" size={15} />غيّرها</button>

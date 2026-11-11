@@ -7,6 +7,7 @@ import ShiftChat from '../ShiftChat.jsx';
 import EntryModal from './EntryModal.jsx';
 import { DeleteModal, entryTitle } from './Dash.jsx';
 import { logAct } from '../activity.js';
+import { pushEvent } from '../cloud.js';
 
 // Shifts of this cashier that need him: a new message from the accountant, a shift reopened for editing,
 // or a shift closed with a shortage he has to answer.
@@ -63,6 +64,7 @@ export function AttentionModal({ shift: initial, shop: fullShop, profile, onClos
     try {
       await updateDoc(doc(db, 'shifts', shift.id), { status: 'submitted', reopenPending: false, cashierAttention: false, staffUnread: true, reopenDoneAt: serverTimestamp(), entryCount: entries.length, lastMsg: { text: 'الكاشير خلّص التعديل', side: 'cashier', byName: profile.name, at: new Date().toISOString() } });
       logAct('reopen_done', `خلّص تعديل الوردية المفتوحة وبعتها للمحاسب`, { shopId: shift.shopId, shiftId: shift.id });
+      pushEvent({ type: 'reopen_done', shopId: shift.shopId, shiftId: shift.id, to: 'staff', title: `${profile.name} خلّص تعديل الوردية`, body: 'مستنية مراجعتك تاني' });
       toast('التعديل اتبعت للمحاسب'); onClose();
     } catch (e) { console.error(e); toast('مش قادرين نبعت، اتأكد من النت', 'err'); }
   };
