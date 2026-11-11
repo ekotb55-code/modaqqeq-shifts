@@ -6,6 +6,7 @@ import { Avatar, Icon, Modal, useToast } from '../ui.jsx';
 import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, MACHINE_PRESETS, REG_KIND, allOpen, isAdminRole, newRegister, newExpenseType, RATE_FROM, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, newVault, num, pickImage } from '../lib';
 import { logAct } from '../activity.js';
 import { CLOUD } from '../cloud.js';
+import { applyFormat, buildFormat, firstWords, parseSms } from '../smsFormat.js';
 
 export default function Setup({ profile, shops, sel, setSel }) {
   const [view, setView] = useState('shops');
@@ -939,6 +940,7 @@ function SmsForward({ shop, wallets }) {
   const toast = useToast();
   const [keys, setKeys] = useState([]);
   const [show, setShow] = useState(null);
+  const [teach, setTeach] = useState(null); // sample text, or '' for a blank form
   useEffect(() => onSnapshot(query(collection(db, 'smsKeys'), where('shopId', '==', shop.id)),
     (q) => setKeys(q.docs.map((d) => ({ id: d.id, ...d.data() }))), (e) => console.warn('smsKeys', e.code)), [shop.id]);
   if (!wallets.length || !CLOUD.url) return null;
@@ -972,6 +974,7 @@ function SmsForward({ shop, wallets }) {
             </div>
             {k && <>
               {k.lastText && <span className="tiny" style={{ background: 'var(--chip)', borderRadius: 12, padding: '6px 10px', lineHeight: 1.7 }}>{k.lastOk ? '✓ ' : '✗ مفهمناش الرسالة دي: '}{k.lastText}</span>}
+              {k.lastText && !k.lastOk && <button type="button" className="btn sm" style={{ alignSelf: 'flex-start' }} onClick={() => setTeach(k.lastText)}>🎓 علّم السيستم الرسالة دي</button>}
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button type="button" className="btn sm" onClick={() => copy(linkOf(k))}>انسخ الرابط</button>
                 <button type="button" className="btn sm soft" style={{ height: 44 }} onClick={() => setShow(show === k.id ? null : k.id)}>{show === k.id ? 'اقفل الخطوات' : 'خطوات تجهيز الموبايل'}</button>
@@ -992,6 +995,81 @@ function SmsForward({ shop, wallets }) {
           </div>
         );
       })}
+      <SmsFormats onTeach={() => setTeach('')} />
+      {teach !== null && <TeachSms sample={teach} onClose={() => setTeach(null)} />}
     </section>
+  );
+}
+
+// Bank messages the system learned (for every shop): the admin pastes one sample and says where the amount, name… are.
+function SmsFormats({ onTeach }) {
+  const [list, setList] = useState([]);
+  useEffect(() => onSnapshot(collection(db, 'smsFormats'), (q) => setList(q.docs.map((d) => ({ id: d.id, ...d.data() }))), () => {}), []);
+  const remove = (f) => { if (window.confirm(`تمسح صيغة «${f.bank || f.key}»؟`)) deleteDoc(doc(db, 'smsFormats', f.id)).catch(() => {}); };
+  return (
+    <div className="stack" style={{ background: '#fff', borderRadius: 20, padding: '12px 14px', gap: 8 }}>
+      <div className="spread">
+        <strong>رسايل البنوك اللي السيستم بيفهمها</strong>
+        <button type="button" className="btn sm" onClick={onTeach}>🎓 علّم السيستم رسالة جديدة</button>
+      </div>
+      <span className="tiny muted" style={{ lineHeight: 1.7 }}>السيستم بيفهم لوحده رسايل بنك الإسكندرية والبنك الأهلي. لو عندك بنك أو محفظة تانية، الصق رسالة منها هنا وعرّفه فين المبلغ والاسم. الصيغة بتشتغل لكل المحلات.</span>
+      {list.map((f) => (
+        <div key={f.id} className="m-row" style={{ padding: '8px 12px' }}>
+          <span className="lbl"><span className="small" style={{ fontWeight: 700 }}>{f.bank || 'بنك'}</span><span className="tiny muted">بتبدأ بـ «{f.key}»</span></span>
+          <button type="button" className="icon-btn" aria-label="امسح الصيغة" onClick={() => remove(f)}><Icon d="trash" size={16} /></button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TeachSms({ sample: first, onClose }) {
+  const toast = useToast();
+  const [sample, setSample] = useState(first || '');
+  const guess = parseSms(first || '') || {};
+  const [v, setV] = useState({ bank: '', key: firstWords(first || ''), amount: guess.amount ? String(first.match(/[\d,]+(?:\.\d+)?/g)?.find((x) => Number(x.replace(/,/g, '')) === guess.amount) || guess.amount) : '', name: guess.fromName || '', phone: guess.fromPhone || '', ref: guess.ref || '' });
+  const set = (k, x) => setV((o) => ({ ...o, [k]: x }));
+  const onSample = (x) => { setSample(x); if (!v.key || v.key === firstWords(sample)) set('key', firstWords(x)); };
+  const { format, missing } = buildFormat(sample, v);
+  const got = sample && v.key && v.amount ? applyFormat(format, sample) : null;
+  const LBL = { amount: 'المبلغ', name: 'الاسم', phone: 'الموبايل', ref: 'رقم المعاملة' };
+  const ok = got && !missing.length && v.bank.trim();
+  const save = async () => {
+    try {
+      await setDoc(doc(collection(db, 'smsFormats')), { bank: v.bank.trim(), key: format.key, amount: format.amount, name: format.name, phone: format.phone, ref: format.ref, sample: sample.slice(0, 400), on: true, atMs: Date.now() });
+      logAct('setup', `علّم السيستم رسالة ${v.bank.trim()}`);
+      toast('اتحفظ ✓ الرسايل الجاية بالشكل ده هتوصل للكاشير');
+      onClose();
+    } catch (e) { console.error(e); toast('مش قادرين نحفظ، جرّب تاني', 'err'); }
+  };
+  return (
+    <Modal title="علّم السيستم رسالة بنك" icon="phone" color="#A07CFF" onClose={onClose} width={560}>
+      <label className="field">١. الصق رسالة البنك هنا (رسالة تحويل وارد)
+        <textarea className="input" rows={4} style={{ height: 'auto', paddingBlock: 10, lineHeight: 1.7 }} value={sample} onChange={(e) => onSample(e.target.value)} placeholder="مثلًا: تم إستلام عملية تحويل أموال بمبلغ 315.00 جنيه من …" />
+      </label>
+      <span className="small muted" style={{ lineHeight: 1.7 }}>٢. انسخ من الرسالة نفسها كل معلومة واكتبها في خانتها، بالظبط زي ما هي مكتوبة في الرسالة:</span>
+      <div className="row" style={{ gap: 10 }}>
+        <label className="field" style={{ flex: '1 1 140px' }}>المبلغ<input className="input" dir="ltr" value={v.amount} onChange={(e) => set('amount', e.target.value)} placeholder="315.00" /></label>
+        <label className="field" style={{ flex: '2 1 220px' }}>اسم اللي حوّل<input className="input" value={v.name} onChange={(e) => set('name', e.target.value)} /></label>
+      </div>
+      <div className="row" style={{ gap: 10 }}>
+        <label className="field" style={{ flex: '1 1 160px' }}>رقم الموبايل (لو موجود)<input className="input" dir="ltr" value={v.phone} onChange={(e) => set('phone', e.target.value)} /></label>
+        <label className="field" style={{ flex: '1 1 160px' }}>رقم المعاملة (لو موجود)<input className="input" dir="ltr" value={v.ref} onChange={(e) => set('ref', e.target.value)} /></label>
+      </div>
+      <div className="row" style={{ gap: 10 }}>
+        <label className="field" style={{ flex: '1 1 160px' }}>اسم البنك<input className="input" value={v.bank} onChange={(e) => set('bank', e.target.value)} placeholder="مثلًا بنك مصر" /></label>
+        <label className="field" style={{ flex: '2 1 220px' }}>الرسالة بتبدأ بـ (كلام ثابت في كل رسالة)<input className="input" value={v.key} onChange={(e) => set('key', e.target.value)} /></label>
+      </div>
+      {missing.length > 0 && <span className="badge bad">مش لاقيين في الرسالة: {missing.map((k) => LBL[k]).join('، ')} · انسخها من الرسالة بالظبط</span>}
+      {sample && v.amount && !missing.length && (
+        <div className="stack" style={{ background: got ? '#EAFBC2' : '#FFE4E4', borderRadius: 16, padding: '10px 14px', gap: 4 }}>
+          <strong className="small">{got ? '✓ السيستم هيقرا الرسالة كده:' : '✗ السيستم مش قادر يقرا الرسالة بالشكل ده'}</strong>
+          {got && <span className="small" style={{ lineHeight: 1.8 }}>المبلغ <b>{fmt(got.amount)} ج</b> · الاسم <b>{got.fromName || '—'}</b>{got.fromPhone ? <> · الموبايل <b>{got.fromPhone}</b></> : ''}{got.ref ? <> · رقم المعاملة <b>{got.ref}</b></> : ''}</span>}
+          {!got && <span className="tiny">اتأكد إن «الرسالة بتبدأ بـ» كلام موجود فعلًا في أول الرسالة.</span>}
+        </div>
+      )}
+      {got && <span className="tiny muted" style={{ lineHeight: 1.7 }}>📱 متنساش: في MacroDroid على موبايل صاحب المحل، ضيف محفّز رسالة SMS تاني بكلمة من «{format.key}».</span>}
+      <button type="button" className="btn full" disabled={!ok} onClick={save}>{!v.bank.trim() && got ? 'اكتب اسم البنك' : 'احفظ الصيغة'}</button>
+    </Modal>
   );
 }

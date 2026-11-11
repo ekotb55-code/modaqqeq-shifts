@@ -171,6 +171,10 @@ service cloud.firestore {
     match /smsKeys/{key} {
       allow read, write: if isAdmin();
     }
+    // Bank message formats taught from the app (used for every shop).
+    match /smsFormats/{id} {
+      allow read, write: if isAdmin();
+    }
     // One incoming transfer. The shop's people see it; a cashier takes it ("my customer") or gives back his own.
     match /walletIn/{id} {
       allow read: if inShop(resource.data.shopId) || staffOf(resource.data.shopId);

@@ -248,9 +248,14 @@ function smsText_(e) {
   try { const j = JSON.parse(raw); if (j && typeof j === 'object') return String(j.text || j.message || j.sms || j.body || ''); } catch (err) { /* نص عادي */ }
   return String(raw);
 }
+// نفس الطريقة اللي في src/smsFormat.js بالظبط — لو اتغيرت هنا تتغير هناك
+function normSms_(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim()
+    .replace(/[٠-٩]/g, function (d) { return String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)); }).replace(/٫/g, '.').replace(/٬/g, ',');
+}
+function esc_(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 function parseSms_(text) {
-  let t = String(text || '').replace(/\s+/g, ' ').trim();
-  t = t.replace(/[٠-٩]/g, function (d) { return String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)); }).replace(/٫/g, '.').replace(/٬/g, ',');
+  const t = normSms_(text);
   if (!/استقبلت|استلمت|[اإأ]ستلام|received/i.test(t)) return null; // رسايل التحويل اللي طالع مش بتاعتنا
   const am = t.match(/مبلغ\s*:?\s*([\d,]+(?:\.\d+)?)/) || t.match(/([\d,]+(?:\.\d+)?)\s*(?:جم|جنيه|ج\.م|EGP|LE)/i);
   if (!am) return null;
@@ -263,12 +268,50 @@ function parseSms_(text) {
   const rf = t.match(/(?:رقم المعاملة|رقم العملية|الرقم المرجعي|المرجع|Ref(?:erence)?(?: No)?\.?)\s*:?\s*([A-Za-z0-9]{4,})/i);
   return { amount: amount, fromName: nm ? nm[1].trim().slice(0, 80) : '', fromPhone: ph ? ph[1] : '', smsDate: dt ? dt[1] : '', smsTime: tm ? tm[1] : '', ref: rf ? rf[1] : '', text: t.slice(0, 400) };
 }
+// صيغة اتعلّمت من التطبيق (الإعداد ← رسايل البنك ← علّم السيستم رسالة جديدة)
+function applyFormat_(f, text) {
+  const t = normSms_(text);
+  if (!f || !f.key || t.indexOf(normSms_(f.key)) < 0) return null;
+  const rest = function (fd) {
+    if (!fd || !fd.before) return null;
+    const m = t.match(new RegExp('(?:^|\\s)' + esc_(fd.before) + '\\s*:?\\s*'));
+    return m ? t.slice(m.index + m[0].length) : null;
+  };
+  const num = function (fd, re) { const r = rest(fd); const m = r !== null ? r.match(re) : null; return m ? m[1] : ''; };
+  const words = function (fd) {
+    const r = rest(fd);
+    if (r === null) return '';
+    let end = fd.after ? r.indexOf(fd.after) : -1;
+    if (end < 0) end = Math.min(r.length, 50);
+    return r.slice(0, end).trim().replace(/[،,.:]+$/, '').slice(0, 80);
+  };
+  const amount = Number(num(f.amount, /^([\d,]+(?:\.\d+)?)/).replace(/,/g, ''));
+  if (!(amount > 0)) return null;
+  const tm = t.match(/(\d{1,2}:\d{2})/);
+  const dt = t.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
+  return { amount: amount, fromName: words(f.name), fromPhone: num(f.phone, /^(\+?\d{8,13})/), ref: num(f.ref, /^([A-Za-z0-9]{3,})/), smsDate: dt ? dt[1] : '', smsTime: tm ? tm[1] : '', text: t.slice(0, 400) };
+}
+function smsFormats_() {
+  const cache = CacheService.getScriptCache();
+  const c = cache.get('smsFormats');
+  if (c) return JSON.parse(c);
+  const r = req_('get', FS + '/smsFormats?pageSize=100');
+  const list = ((r.json && r.json.documents) || []).map(function (d) { return fields_(d); }).filter(function (f) { return f.key && f.on !== false; });
+  cache.put('smsFormats', JSON.stringify(list), 120); // دقيقتين
+  return list;
+}
+function parseAny_(text) {
+  const fm = smsFormats_();
+  for (let i = 0; i < fm.length; i++) { const r = applyFormat_(fm[i], text); if (r) return r; }
+  return parseSms_(text);
+}
+
 function sms_(key, text) {
   if (!/^[a-z0-9]{10,40}$/.test(String(key))) return { ok: false, error: 'bad key' };
   const kr = req_('get', FS + '/smsKeys/' + key);
   if (kr.code !== 200) return { ok: false, error: 'bad key' };
   const k = fields_(kr.json);
-  const p = parseSms_(text);
+  const p = parseAny_(text);
   req_('patch', FS + '/smsKeys/' + key + '?updateMask.fieldPaths=lastAtMs&updateMask.fieldPaths=lastText&updateMask.fieldPaths=lastOk',
     { fields: toFields_({ lastAtMs: Date.now(), lastText: String(text || '').replace(/\s+/g, ' ').slice(0, 200), lastOk: !!p }) });
   if (!p) return { ok: true, skipped: true };
