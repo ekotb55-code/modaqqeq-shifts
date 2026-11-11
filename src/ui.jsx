@@ -70,6 +70,7 @@ export function ToastProvider({ children }) {
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setT(null), 2800);
   }, []);
+  useEffect(() => { const f = (e) => show(e.detail); window.addEventListener('mdq-toast', f); return () => window.removeEventListener('mdq-toast', f); }, [show]);
   return (
     <ToastCtx.Provider value={show}>
       {children}

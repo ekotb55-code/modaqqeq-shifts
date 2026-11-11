@@ -44,17 +44,28 @@ export function Topbar({ shopPub, profile, steps, onLogout, posUrl, onPin, onPho
           {bell}
           <span className="tb-upd"><UpdateButton /></span>
           <HelpButton />
+          <span className="tb-wide"><button type="button" className="icon-btn" aria-label="شارك التطبيق" title="شارك التطبيق" onClick={shareApp}><Icon d="share" /></button></span>
           <span className="tb-wide"><button type="button" className="icon-btn" aria-label="تسجيل خروج" title="تسجيل خروج" onClick={onLogout}><Icon d="logout" /></button></span>
           <MoreMenu items={[
             onTheme && { label: 'غيّر شكل التطبيق', el: <button type="button" className="icon-btn" aria-label="غيّر شكل التطبيق" onClick={onTheme}><Icon d="palette" /></button> },
             onPin && { label: 'غيّر الرقم السري', el: <button type="button" className="icon-btn" aria-label="غيّر الرقم السري" onClick={onPin}><Icon d="lock" /></button> },
             { label: 'حدّث التطبيق', el: <UpdateButton noBanner /> },
+            { label: 'شارك التطبيق', el: <button type="button" className="icon-btn" aria-label="شارك التطبيق" onClick={shareApp}><Icon d="share" /></button> },
             { label: 'تسجيل خروج', el: <button type="button" className="icon-btn" aria-label="تسجيل خروج" onClick={onLogout}><Icon d="logout" /></button> },
           ].filter(Boolean)} />
         </div>
       </div>
     </header>
   );
+}
+
+// Sends the app link (WhatsApp or anything else). On a computer it copies the link.
+export async function shareApp() {
+  const url = location.origin + location.pathname;
+  const text = 'تطبيق مدقق لاستلام وتسليم الورديات · افتح الرابط ومن قايمة المتصفح اختار «إضافة إلى الشاشة الرئيسية» علشان يتثبت زي أي تطبيق';
+  try { if (navigator.share) { await navigator.share({ title: 'مدقق · الورديات', text, url }); return; } } catch (e) { if (e?.name === 'AbortError') return; }
+  try { await navigator.clipboard.writeText(`${text}\n${url}`); window.dispatchEvent(new CustomEvent('mdq-toast', { detail: 'اتنسخ رابط التطبيق · الصقه في واتساب' })); }
+  catch { window.open(`https://wa.me/?text=${encodeURIComponent(`${text}\n${url}`)}`, '_blank', 'noopener'); }
 }
 
 // On phones the less-used buttons go behind ☰. The list closes by itself: after choosing, tapping outside, or 8 seconds.
