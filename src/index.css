@@ -738,3 +738,14 @@ body.net-bad .topbar { background: #FFF4E0; }
 .bell-prefs { display: flex; flex-direction: column; gap: 6px; margin: 0 4px 10px; padding: 10px 12px; border-radius: 14px; background: var(--bg); font-size: 13px; line-height: 1.6; }
 .bell-prefs label { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
 .bell-prefs input { margin-top: 4px; width: 17px; height: 17px; flex: none; accent-color: var(--blue); }
+
+/* update button */
+.upd-btn { position: relative; }
+.upd-btn.has { color: #fff; background: #22B07D; }
+.upd-btn.busy svg { animation: updSpin 0.9s linear infinite; }
+@keyframes updSpin { to { transform: rotate(360deg); } }
+.upd-dot { position: absolute; top: 4px; left: 4px; width: 10px; height: 10px; border-radius: 999px; background: #FFB020; border: 2px solid var(--card); }
+.upd-banner { position: fixed; bottom: calc(16px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); z-index: 360; display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 16px; border-radius: 999px; background: #1B1B2F; color: #fff; font-weight: 700; font-size: 14px; box-shadow: 0 14px 40px rgba(0,0,0,.35); white-space: nowrap; max-width: calc(100vw - 24px); }
+.upd-banner .btn { background: #22B07D; }
+.upd-x { border: 0; background: transparent; color: #fff; opacity: .6; font-size: 15px; padding: 4px 8px; cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .upd-btn.busy svg { animation: none; } }

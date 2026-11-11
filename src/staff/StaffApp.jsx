@@ -17,6 +17,7 @@ import { HelpButton, TourHost, useTour } from '../Tour.jsx';
 import { STAFF_PAGE, staffShell } from '../tours.js';
 import { logAct, logout } from '../activity.js';
 import { NotifyBell, feed } from '../notify.jsx';
+import { UpdateButton } from '../update.jsx';
 import { wants } from '../notifyPrefs.js';
 import { useShopShifts } from './Review.jsx';
 
@@ -151,6 +152,7 @@ export default function StaffApp({ profile }) {
             <button type="button" className="icon-btn" aria-label="غيّر الباسورد بتاعي" title="غيّر الباسورد بتاعي" onClick={() => setPwOpen(true)}><Icon d="lock" /></button>
             <button type="button" className="icon-btn" aria-label="غيّر شكل التطبيق" title="غيّر شكل التطبيق" onClick={() => setThemeOpen(true)}><Icon d="palette" /></button>
             <NotifyBell uid={profile.id} onOpen={openNote} alarmable={canReview && wants(me, 'handover')} settings={{ profile: me, onSave: savePrefs, canAll: isAdmin }} />
+            <UpdateButton />
             <HelpButton />
             <button type="button" className="icon-btn" aria-label="تسجيل خروج" title="تسجيل خروج" onClick={logout}><Icon d="logout" /></button>
           </div>
