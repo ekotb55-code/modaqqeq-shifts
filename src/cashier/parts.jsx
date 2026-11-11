@@ -2,7 +2,7 @@ import { Avatar, Icon, MachineMark, PhotoSlot, machineLook } from '../ui.jsx';
 import { HelpButton } from '../Tour.jsx';
 import { BILL_BG, FACES, fmt, machineGroupsOf, num } from '../lib';
 
-export function Topbar({ shopPub, profile, steps, onLogout, posUrl, onPin, onPhoto, regLabel, onTheme }) {
+export function Topbar({ shopPub, profile, steps, onLogout, posUrl, onPin, onPhoto, regLabel, onTheme, bell }) {
   return (
     <header className="topbar">
       <div className="topbar-in">
@@ -37,6 +37,7 @@ export function Topbar({ shopPub, profile, steps, onLogout, posUrl, onPin, onPho
           </span>
           {onTheme && <button type="button" className="icon-btn" aria-label="غيّر شكل التطبيق" title="غيّر شكل التطبيق" onClick={onTheme}><Icon d="palette" /></button>}
           {onPin && <button type="button" className="icon-btn" aria-label="غيّر الرقم السري" title="غيّر الرقم السري" onClick={onPin}><Icon d="lock" /></button>}
+          {bell}
           <HelpButton />
           <button type="button" className="icon-btn" aria-label="تسجيل خروج" title="تسجيل خروج" onClick={onLogout}><Icon d="logout" /></button>
         </div>

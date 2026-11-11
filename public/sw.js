@@ -1,5 +1,5 @@
 // Keeps the app shell on the device so it opens fast and works when the internet drops.
-const CACHE = 'mdq-shifts-v2';
+const CACHE = 'mdq-shifts-v3';
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['./', './index.html', './modaqqeq-logo.png', './icon-192.png'])).then(() => self.skipWaiting()));
 });
@@ -19,4 +19,15 @@ self.addEventListener('fetch', (e) => {
     if (r.ok) { const copy = r.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
     return r;
   })));
+});
+
+// A click on a notification: bring the app forward and open what it's about.
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const note = e.notification.data?.note;
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    const c = list[0];
+    if (c) { c.postMessage({ type: 'mdq-note', note }); return c.focus(); }
+    return self.clients.openWindow('./');
+  }));
 });

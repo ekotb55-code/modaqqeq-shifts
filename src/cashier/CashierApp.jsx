@@ -3,7 +3,7 @@ import { signOut, updatePassword } from 'firebase/auth';
 import { collection, deleteField, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where, deleteDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Icon, Avatar, Modal, Spinner, useToast } from '../ui.jsx';
-import { DEFAULT_SHOP, MAIN_REG, allOpen, cashierPassword, firstName, openOf, regName, registersOf, shopForRegister, timeStr, todayKey } from '../lib';
+import { DEFAULT_SHOP, MAIN_REG, allOpen, cashierPassword, dateStr, firstName, openOf, regName, registersOf, shopForRegister, timeStr, toDate, todayKey } from '../lib';
 import { usePendingTransfers } from './Transfers.jsx';
 import { AttentionBar, AttentionModal, useAttention } from './Attention.jsx';
 import { NetStrip, ThemePicker, useTheme } from '../theme.jsx';
@@ -18,6 +18,7 @@ import History from './History.jsx';
 import { logAct, logout as doLogout } from '../activity.js';
 import { captureDocument } from '../DocCamera.jsx';
 import { PhoneShotListener } from '../phoneShot.jsx';
+import { NotifyBell, feed } from '../notify.jsx';
 
 export default function CashierApp({ profile }) {
   const toast = useToast();
@@ -34,6 +35,39 @@ export default function CashierApp({ profile }) {
   const [pickReg, setPickReg] = useState(null);
   const pending = usePendingTransfers(shopId);
   const attention = useAttention(profile.id);
+  // This device belongs to this shop: remember its cashiers so the login page shows their pictures.
+  useEffect(() => {
+    if (!shop || !pub) return;
+    try {
+      const cashiers = (pub.cashiers || []).filter((c) => !c.disabled && c.username)
+        .map((c) => ({ uid: c.uid, name: c.name, username: c.username, color: c.color || null, photo: pub.photos?.[c.uid] || c.photo || null }));
+      localStorage.setItem('mdq-device-shop', JSON.stringify({ shopId: shop.id, name: pub.name || shop.name || '', logo: shop.logo || null, cashiers, savedAt: Date.now() }));
+    } catch { /* storage full: the normal login still works */ }
+  }, [shop?.id, shop?.logo, pub]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Notifications for the cashier: shift closed by the accountant, reopened for editing, a message.
+  const [closedNow, setClosedNow] = useState([]);
+  useEffect(() => onSnapshot(query(collection(db, 'shifts'), where('cashierUid', '==', profile.id), where('status', '==', 'closed'), where('month', '==', todayKey().slice(0, 7))),
+    (q) => setClosedNow(q.docs.map((d) => ({ id: d.id, ...d.data() }))), () => {}), [profile.id]);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const ms = (v) => toDate(v)?.getTime?.() || 0;
+      const items = [];
+      closedNow.forEach((s) => items.push({ key: `${s.id}:closed:${ms(s.closedAt)}`, emoji: '🔒', color: '#0E9F6E', title: 'المحاسب قفل ورديتك',
+        body: `وردية ${dateStr(s.openedAt || s.openedAtLocal)}${s.shortageState === 'review' ? ' · فيه عجز محتاج تراجعه' : ''}`, shiftId: s.id, go: 'view' }));
+      attention.forEach((s) => {
+        if (s.status === 'reopened') items.push({ key: `${s.id}:reopen:${ms(s.reopenedAt) || s.reopenNote || ''}`, emoji: '✏️', color: '#FF7A1A', title: 'المحاسب فتحلك وردية تعدّلها', body: s.reopenNote || `وردية ${dateStr(s.openedAt || s.openedAtLocal)}`, shiftId: s.id, go: 'attn' });
+        if (s.cashierUnread && s.lastMsg?.side === 'staff') items.push({ key: `${s.id}:msg:${s.lastMsg.at}`, emoji: '💬', color: '#4CC3FF', title: `رسالة من ${s.lastMsg.byName || 'المحاسب'}`, body: s.lastMsg.text, shiftId: s.id, go: s.shortageState === 'review' ? 'view' : 'attn' });
+      });
+      feed(profile.id, 'cashier', items);
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [closedNow, attention]); // eslint-disable-line react-hooks/exhaustive-deps
+  const openNote = (n) => {
+    if (!n.shiftId) return;
+    const a = attention.find((x) => x.id === n.shiftId);
+    if (n.go === 'attn' && a && a.shortageState !== 'review') { setAttn(a); return; }
+    setHistOpen(false); setViewId(n.shiftId);
+  };
   const [attn, setAttn] = useState(null);
   const [theme, setTheme] = useTheme(profile);
   const [themeOpen, setThemeOpen] = useState(false);
@@ -114,7 +148,7 @@ export default function CashierApp({ profile }) {
   const me = { ...profile, photo: pub?.photos?.[profile.id] || profile.photo };
   const active = entries.filter((e) => !e.deleted);
   const deleted = entries.filter((e) => e.deleted);
-  const top = <Topbar shopPub={pub} profile={me} regLabel={reg && reg !== MAIN_REG ? regName(shop, reg) : (regs.length && reg ? regName(shop, reg) : null)} onPhoto={() => setPhotoOpen(true)} onTheme={() => setThemeOpen(true)} steps={showFollow || histOpen || (open && !mine && !done) || !reg ? null : steps} onLogout={logout} posUrl={shop.posUrl} onPin={() => setPinOpen(true)} />;
+  const top = <Topbar bell={<NotifyBell uid={profile.id} onOpen={openNote} />} shopPub={pub} profile={me} regLabel={reg && reg !== MAIN_REG ? regName(shop, reg) : (regs.length && reg ? regName(shop, reg) : null)} onPhoto={() => setPhotoOpen(true)} onTheme={() => setThemeOpen(true)} steps={showFollow || histOpen || (open && !mine && !done) || !reg ? null : steps} onLogout={logout} posUrl={shop.posUrl} onPin={() => setPinOpen(true)} />;
 
   let body;
   if (done) body = <Done info={done} profile={me} onFollow={() => setDone(null)} />;

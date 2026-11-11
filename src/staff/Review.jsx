@@ -62,7 +62,12 @@ export function useShopShifts(shops, statuses) {
 
 export default function Review({ profile, shops }) {
   const pending = useShopShifts(shops, ['open', 'submitted', 'reviewing', 'reopened', 'disputed']);
-  const [selId, setSelId] = useState(null);
+  const [selId, setSelId] = useState(() => { try { const v = sessionStorage.getItem('mdq-open-shift'); sessionStorage.removeItem('mdq-open-shift'); return v; } catch { return null; } });
+  useEffect(() => {
+    const h = (e) => { setSelId(e.detail); try { sessionStorage.removeItem('mdq-open-shift'); } catch { /* ignore */ } };
+    window.addEventListener('mdq-open-shift', h);
+    return () => window.removeEventListener('mdq-open-shift', h);
+  }, []);
   const shopName = (id) => shops.find((s) => s.id === id)?.name || '';
   const sorted = useMemo(() => {
     const rank = { reviewing: 0, disputed: 1, submitted: 1, open: 2, reopened: 3 };

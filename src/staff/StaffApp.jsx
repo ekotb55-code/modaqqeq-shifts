@@ -6,7 +6,7 @@ import { auth, db, SUPER_ADMINS } from '../firebase';
 import Activity from './Activity.jsx';
 import MyPhoto from '../MyPhoto.jsx';
 import { Avatar, Icon, Modal, useToast } from '../ui.jsx';
-import { DEFAULT_SHOP, ROLE_LABEL, allOpen, isAdminRole } from '../lib';
+import { DEFAULT_SHOP, ROLE_LABEL, allOpen, dateStr, isAdminRole, toDate } from '../lib';
 import Review from './Review.jsx';
 import Ledger from './Ledger.jsx';
 import Reports from './Reports.jsx';
@@ -16,6 +16,8 @@ import { NetStrip, ThemePicker, useTheme } from '../theme.jsx';
 import { HelpButton, TourHost, useTour } from '../Tour.jsx';
 import { STAFF_PAGE, staffShell } from '../tours.js';
 import { logAct, logout } from '../activity.js';
+import { NotifyBell, feed } from '../notify.jsx';
+import { useShopShifts } from './Review.jsx';
 
 export default function StaffApp({ profile }) {
   const isAdmin = isAdminRole(profile.role);
@@ -48,6 +50,36 @@ export default function StaffApp({ profile }) {
   const validSel = shopSel === 'all' || shops.some((x) => x.id === shopSel) ? shopSel : null;
   const effSel = validSel || (shops.length === 1 ? shops[0].id : null);
   const viewShops = effSel && effSel !== 'all' ? shops.filter((x) => x.id === effSel) : shops;
+
+  // Notifications for accountants: a shift handed over (or fixed after reopening), a cashier's request, a message.
+  const live = useShopShifts(canReview ? shops : [], ['open', 'submitted', 'reviewing', 'reopened', 'disputed']);
+  useEffect(() => {
+    if (!canReview) return undefined;
+    const t = setTimeout(() => {
+      const name = (id) => shops.find((x) => x.id === id)?.name || '';
+      const ms = (v) => toDate(v)?.getTime?.() || 0;
+      const items = [];
+      live.forEach((s) => {
+        const day = dateStr(s.openedAt || s.openedAtLocal);
+        if (s.status === 'submitted') {
+          const fixed = !!s.reopenDoneAt;
+          items.push({ key: `${s.id}:sub:${ms(s.submittedAt || s.submittedAtLocal)}:${ms(s.reopenDoneAt)}`, emoji: fixed ? '✅' : '📥', color: '#1565D8',
+            title: fixed ? `${s.cashierName} خلّص تعديل الوردية` : `${s.cashierName} سلّم الوردية`, body: `${name(s.shopId)} · وردية ${day} · مستنية مراجعتك`, shiftId: s.id, shopId: s.shopId });
+        }
+        if (s.status === 'disputed') items.push({ key: `${s.id}:disp:${(s.cashierRequests || []).length}`, emoji: '✋', color: '#E5484D', title: `${s.cashierName} عنده طلب على الوردية`, body: `${name(s.shopId)} · وردية ${day}`, shiftId: s.id, shopId: s.shopId });
+        if (s.staffUnread && s.lastMsg?.side === 'cashier') items.push({ key: `${s.id}:msg:${s.lastMsg.at}`, emoji: '💬', color: '#4CC3FF', title: `رسالة من ${s.cashierName}`, body: s.lastMsg.text, shiftId: s.id, shopId: s.shopId });
+      });
+      feed(profile.id, 'staff', items);
+    }, 2500);
+    return () => clearTimeout(t);
+  }, [live]); // eslint-disable-line react-hooks/exhaustive-deps
+  const openNote = (n) => {
+    if (!n.shiftId) return;
+    if (effSel && effSel !== 'all' && effSel !== n.shopId) setShopSel(n.shopId);
+    try { sessionStorage.setItem('mdq-open-shift', n.shiftId); } catch { /* ignore */ }
+    setTab('review');
+    setTimeout(() => window.dispatchEvent(new CustomEvent('mdq-open-shift', { detail: n.shiftId })), 50);
+  };
   const setupShop = effSel && effSel !== 'all' ? effSel : null;
   const selName = effSel === 'all' ? 'كل الفروع' : shops.find((x) => x.id === effSel)?.name;
   useEffect(() => { if (selName && shops.length > 1) logAct('branch', `اختار ${selName === 'كل الفروع' ? 'كل الفروع' : `فرع ${selName}`}`, { shopId: effSel !== 'all' ? effSel : null }); }, [selName]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -111,6 +143,7 @@ export default function StaffApp({ profile }) {
             </span>
             <button type="button" className="icon-btn" aria-label="غيّر الباسورد بتاعي" title="غيّر الباسورد بتاعي" onClick={() => setPwOpen(true)}><Icon d="lock" /></button>
             <button type="button" className="icon-btn" aria-label="غيّر شكل التطبيق" title="غيّر شكل التطبيق" onClick={() => setThemeOpen(true)}><Icon d="palette" /></button>
+            <NotifyBell uid={profile.id} onOpen={openNote} />
             <HelpButton />
             <button type="button" className="icon-btn" aria-label="تسجيل خروج" title="تسجيل خروج" onClick={logout}><Icon d="logout" /></button>
           </div>
