@@ -7,6 +7,7 @@ import { ENTRY_TYPES, OWNER, SRC_LABEL, WALLETS, WEEKDAYS, walletModeOf, fmt, nu
 import { logAct } from '../activity.js';
 import { requestFromPhone } from '../phoneShot.jsx';
 import { setPhoto as addPhotoDoc } from '../cloud.js';
+import { WalletInPick } from './WalletIn.jsx';
 
 const META = {
   expense: { title: 'مصروف جديد', icon: 'up' },
@@ -38,7 +39,7 @@ function Chip({ on, onClick, children }) {
   return <button type="button" className={'chip' + (on ? ' on' : '')} onClick={onClick}>{children}</button>;
 }
 
-export default function EntryModal({ type, shop, shift, profile, onClose, balances }) {
+export default function EntryModal({ type, shop, shift, profile, onClose, balances, smsList = [], onSms }) {
   const toast = useToast();
   const kinds = useMemo(() => { const staff = shop.staff || []; return [
     { id: 'supplier', label: 'مورد', icon: 'truck', q: 'مين المورد؟', subs: shop.suppliers || [], allowNew: 'مورد جديد' },
@@ -278,6 +279,7 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
         </div>
       )}
 
+      {type === 'transfer' && onSms && <WalletInPick list={smsList} onPick={onSms} />}
       {type === 'transfer' && (
         <div className="stack">
           <span className="small muted">العميل حوّل على</span>

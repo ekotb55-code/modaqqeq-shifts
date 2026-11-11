@@ -9,11 +9,12 @@ import { Incoming, SendModal } from './Transfers.jsx';
 import EntryModal from './EntryModal.jsx';
 import { logAct } from '../activity.js';
 import { photoSrc } from '../cloud.js';
+import { ClaimModal, WalletInCard, useWalletIn } from './WalletIn.jsx';
 
 export function entryTitle(e) {
   if (e.type === 'expense') return [e.kindLabel || 'مصروف', e.sub, e.kind === 'supplier' ? (e.invoice === 'invoice' ? '(فاتورة)' : '(توريد بدون فاتورة)') : '', e.note].filter(Boolean).join(' · ');
   if (e.type === 'income') return ['إيراد', e.reason, e.note].filter(Boolean).join(' · ');
-  if (e.type === 'transfer') return `تحويل ${SRC_LABEL[e.wallet] || ''}`;
+  if (e.type === 'transfer') return [`تحويل ${SRC_LABEL[e.wallet] || ''}`, e.smsName, e.smsId ? '✓ برسالة البنك' : ''].filter(Boolean).join(' · ');
   if (e.type === 'topup') return ['شحن رصيد', e.machine].filter(Boolean).join(' · ');
   if (e.type === 'move') return (e.to || 'side') === 'side' ? 'نقل من الدرج للجانبي' : 'نقل من الجانبي للدرج';
   if (e.type === 'withdraw') return ['سحب لصاحب المحل', e.note].filter(Boolean).join(' · ');
@@ -83,6 +84,8 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
     ops && { t: 'liquidate', label: 'تسييل وتحويل بين الخزن', icon: 'swap' },
     !shop.noSide && { t: 'move', label: 'نقل بين الدرجين', icon: 'swap' },
   ].filter(Boolean);
+  const sms = useWalletIn(shift.shopId, wallets, profile.id);
+  const [claim, setClaim] = useState(null);
   const pendingIds = new Set(outgoing.map((t) => t.id));
   const opened = shift.openedAt || shift.openedAtLocal;
 
@@ -122,6 +125,8 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
       </div>
 
       <Incoming list={incoming} shop={shop} shift={shift} profile={profile} />
+
+      <WalletInCard sms={sms} shop={shop} shift={shift} profile={profile} />
 
       {tiles.length > 0 && <div data-tour="tiles" className="tiles" style={tiles.length < 3 ? { gridTemplateColumns: `repeat(${tiles.length}, 1fr)` } : undefined}>
         {tiles.map((x) => (
@@ -215,7 +220,8 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
 
       {del && <DeleteModal entry={del} shift={shift} profile={profile} onClose={() => setDel(null)} />}
       {modal === 'xfer' && <SendModal shop={shop} shift={shift} profile={profile} balances={balances} onClose={() => setModal(null)} />}
-      {modal && modal !== 'xfer' && <EntryModal type={modal} shop={shop} shift={shift} profile={profile} balances={balances} onClose={() => setModal(null)} />}
+      {modal && modal !== 'xfer' && <EntryModal type={modal} shop={shop} shift={shift} profile={profile} balances={balances} smsList={sms.list} onSms={(x) => { setModal(null); setClaim(x); }} onClose={() => setModal(null)} />}
+      {claim && <ClaimModal s={claim} shop={shop} shift={shift} profile={profile} onClose={() => setClaim(null)} />}
       <PhotoView src={viewPhoto} onClose={() => setViewPhoto(null)} />
     </div>
   );
@@ -248,6 +254,8 @@ export function DeleteModal({ entry, shift, profile, onClose }) {
       deletedBy: profile.id, deletedByName: profile.name, deleteReason: reason.trim(),
     });
     if (entry.type === 'xfer_out' && entry.transferId) b.update(doc(db, 'transfers', entry.transferId), { status: 'cancelled', cancelledAt: serverTimestamp() });
+    // A bank-confirmed transfer goes back to the list so the right cashier can take it.
+    if (entry.smsId) b.update(doc(db, 'walletIn', entry.smsId), { status: 'new', claimedBy: null, claimedByName: null, claimedShiftId: null, claimedEntryId: null, claimedAtMs: null });
     b.commit().catch((err) => { console.error(err); toast('مش قادرين نمسحها، جرّب تاني', 'err'); });
     logAct('delete', `مسح «${entryTitle(entry)}» ${fmt(entry.amount)} ج${reason.trim() ? ` · السبب: ${reason.trim()}` : ''}`, { shopId: shift.shopId, shiftId: shift.id });
     toast('العملية اتمسحت واتحطت في المحذوفات');

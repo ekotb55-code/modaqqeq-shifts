@@ -79,6 +79,8 @@ function sendNotifications_() {
     const ev = fields_(d);
     let uids = [];
     if (ev.to === 'cashier' && ev.toUid) uids = [ev.toUid];
+    else if (ev.to === 'shopCashiers' && ev.shopId) uids = runUsers_({ fieldFilter: { field: { fieldPath: 'shopIds' }, op: 'ARRAY_CONTAINS', value: { stringValue: ev.shopId } } })
+      .filter(function (u) { return u.role === 'cashier' && !u.disabled; }).map(function (u) { return u.id; });
     else if (ev.to === 'staff' && ev.shopId) {
       if (!staffCache[ev.shopId]) staffCache[ev.shopId] = staffOf_(ev.shopId);
       const key = PREF_OF[ev.type] || 'handover';
@@ -213,6 +215,12 @@ function cleanup() {
     const monthEnd = new Date(Number(m[1]), Number(m[2]), 1).getTime(); // أول الشهر اللي بعده
     if (monthEnd < limit) f.setTrashed(true);
   }
+  // تحويلات البنك اللي محدش أكدها من ٣ أيام: تتشال من قدام الكاشير
+  const q = req_('post', FS + ':runQuery', { structuredQuery: { from: [{ collectionId: 'walletIn' }], where: { fieldFilter: { field: { fieldPath: 'status' }, op: 'EQUAL', value: { stringValue: 'new' } } }, limit: 300 } });
+  (q.json || []).forEach(function (x) {
+    if (!x.document) return;
+    if ((fields_(x.document).atMs || 0) < Date.now() - 3 * 24 * 3600 * 1000) req_('patch', 'https://firestore.googleapis.com/v1/' + x.document.name + '?updateMask.fieldPaths=status', { fields: { status: { stringValue: 'expired' } } });
+  });
 }
 
 // ───────── عرض صورة من Drive جوّه التطبيق ─────────
@@ -220,12 +228,71 @@ function cleanup() {
 // فلو قواعد Firebase مش سامحاله يشوف الوردية دي، مش هياخد الصورة.
 function doPost(e) {
   try {
+    if (e.parameter && e.parameter.k) return json_(sms_(e.parameter.k, smsText_(e)));
     const body = JSON.parse(e.postData.contents);
     if (body.action === 'img') return json_(getImg_(body));
     return json_({ ok: false, error: 'unknown action' });
   } catch (err) { return json_({ ok: false, error: String(err) }); }
 }
-function doGet() { return json_({ ok: true, app: 'modaqqeq-shifts' }); }
+function doGet(e) {
+  if (e && e.parameter && e.parameter.k && e.parameter.t) return json_(sms_(e.parameter.k, e.parameter.t));
+  return json_({ ok: true, app: 'modaqqeq-shifts' });
+}
+
+// ───────── رسايل البنك من موبايل صاحب المحل ─────────
+// تطبيق MacroDroid على الموبايل بيبعت نص الرسالة على الرابط بتاع المحفظة (?k=المفتاح).
+// بنسجّلها في walletIn والكاشير بيأكد إن التحويل ده بتاع عميله.
+function smsText_(e) {
+  if (e.parameter.t) return String(e.parameter.t);
+  const raw = (e.postData && e.postData.contents) || '';
+  try { const j = JSON.parse(raw); if (j && typeof j === 'object') return String(j.text || j.message || j.sms || j.body || ''); } catch (err) { /* نص عادي */ }
+  return String(raw);
+}
+function parseSms_(text) {
+  let t = String(text || '').replace(/\s+/g, ' ').trim();
+  t = t.replace(/[٠-٩]/g, function (d) { return String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)); }).replace(/٫/g, '.').replace(/٬/g, ',');
+  if (!/استقبلت|استلمت|received/i.test(t)) return null; // رسايل التحويل اللي طالع مش بتاعتنا
+  const am = t.match(/مبلغ\s*:?\s*([\d,]+(?:\.\d+)?)/) || t.match(/([\d,]+(?:\.\d+)?)\s*(?:جم|جنيه|ج\.م|EGP|LE)/i);
+  if (!am) return null;
+  const amount = Number(am[1].replace(/,/g, ''));
+  if (!(amount > 0)) return null;
+  const nm = t.match(/(?:^|\s)من\s+(.+?)\s+(?:يوم|في|بتاريخ|رقم|بتاريخ)(?:\s|$)/);
+  const dt = t.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
+  const tm = t.match(/(\d{1,2}:\d{2})/);
+  const rf = t.match(/(?:رقم المعاملة|رقم العملية|الرقم المرجعي|المرجع|Ref(?:erence)?(?: No)?\.?)\s*:?\s*([A-Za-z0-9]{4,})/i);
+  return { amount: amount, fromName: nm ? nm[1].trim().slice(0, 80) : '', smsDate: dt ? dt[1] : '', smsTime: tm ? tm[1] : '', ref: rf ? rf[1] : '', text: t.slice(0, 400) };
+}
+function sms_(key, text) {
+  if (!/^[a-z0-9]{10,40}$/.test(String(key))) return { ok: false, error: 'bad key' };
+  const kr = req_('get', FS + '/smsKeys/' + key);
+  if (kr.code !== 200) return { ok: false, error: 'bad key' };
+  const k = fields_(kr.json);
+  const p = parseSms_(text);
+  req_('patch', FS + '/smsKeys/' + key + '?updateMask.fieldPaths=lastAtMs&updateMask.fieldPaths=lastText&updateMask.fieldPaths=lastOk',
+    { fields: toFields_({ lastAtMs: Date.now(), lastText: String(text || '').replace(/\s+/g, ' ').slice(0, 200), lastOk: !!p }) });
+  if (!p) return { ok: true, skipped: true };
+  const id = k.shopId + '_' + (p.ref || Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, p.text).map(function (b) { return ((b + 256) % 256).toString(16); }).join('').slice(0, 16));
+  const now = new Date();
+  const doc = { shopId: k.shopId, wallet: k.wallet || 'insta', amount: p.amount, fromName: p.fromName, ref: p.ref, smsDate: p.smsDate, smsTime: p.smsTime, text: p.text,
+    atMs: now.getTime(), day: Utilities.formatDate(now, 'Africa/Cairo', 'yyyy-MM-dd'), status: 'new' };
+  const r = req_('post', FS + '/walletIn?documentId=' + encodeURIComponent(id), { fields: toFields_(doc) });
+  if (r.code === 409) return { ok: true, dup: true }; // نفس الرسالة وصلت مرتين
+  if (r.code !== 200) return { ok: false, error: 'save ' + r.code };
+  req_('post', FS + '/outbox', { fields: toFields_({ type: 'sms', shopId: k.shopId, shiftId: '', to: 'shopCashiers', toUid: '', byUid: '', atMs: now.getTime(),
+    title: '💰 وصل تحويل ' + p.amount + ' ج', body: (p.fromName ? 'من ' + p.fromName + ' · ' : '') + 'لو ده عميلك أكّده في التطبيق' }) });
+  return { ok: true };
+}
+function toFields_(o) {
+  const out = {};
+  Object.keys(o).forEach(function (k) {
+    const v = o[k];
+    if (v === null || v === undefined) out[k] = { nullValue: null };
+    else if (typeof v === 'boolean') out[k] = { booleanValue: v };
+    else if (typeof v === 'number') out[k] = Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+    else out[k] = { stringValue: String(v) };
+  });
+  return out;
+}
 
 function getImg_(body) {
   if (!/^shifts\/[^/]+\/photos\/[^/]+$/.test(body.path || '') || !body.idToken) return { ok: false, error: 'bad request' };

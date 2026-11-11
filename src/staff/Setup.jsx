@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { Avatar, Icon, Modal, useToast } from '../ui.jsx';
 import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, MACHINE_PRESETS, REG_KIND, allOpen, isAdminRole, newRegister, newExpenseType, RATE_FROM, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, newVault, num, pickImage } from '../lib';
 import { logAct } from '../activity.js';
+import { CLOUD } from '../cloud.js';
 
 export default function Setup({ profile, shops, sel, setSel }) {
   const [view, setView] = useState('shops');
@@ -382,6 +383,8 @@ function ShopEditor({ shop }) {
           );
         })}
       </section>
+
+      <SmsForward shop={shop} wallets={WALLETS.filter((w) => f.wallets.includes(w.key) && (f.walletModes[w.key] || 'owner') === 'owner')} />
 
       <MachinesEditor list={f.machineList} onChange={(v) => set('machineList', v)} />
 
@@ -925,5 +928,70 @@ function StaffAccounts({ shops, profile }) {
         {passFor && <StaffPassChange u={passFor} onClose={() => setPassFor(null)} />}
       </section>
     </div>
+  );
+}
+
+// ── Bank SMS on the owner's phone → the shop app ──
+// Each wallet gets a secret link. A small app on the owner's Android phone (MacroDroid) sends every
+// "you received a transfer" SMS to that link; the cashier then confirms which ones are his customers'.
+const newKey = () => Array.from(crypto.getRandomValues(new Uint8Array(18)), (b) => 'abcdefghijkmnpqrstuvwxyz23456789'[b % 32]).join('');
+function SmsForward({ shop, wallets }) {
+  const toast = useToast();
+  const [keys, setKeys] = useState([]);
+  const [show, setShow] = useState(null);
+  useEffect(() => onSnapshot(query(collection(db, 'smsKeys'), where('shopId', '==', shop.id)),
+    (q) => setKeys(q.docs.map((d) => ({ id: d.id, ...d.data() }))), (e) => console.warn('smsKeys', e.code)), [shop.id]);
+  if (!wallets.length || !CLOUD.url) return null;
+  const linkOf = (k) => `${CLOUD.url}?k=${k.id}`;
+  const make = async (w) => {
+    try {
+      await setDoc(doc(db, 'smsKeys', newKey()), { shopId: shop.id, shopName: shop.name || '', wallet: w.key, atMs: Date.now() });
+      logAct('setup', `عمل رابط رسايل البنك لـ ${w.label} · ${shop.name}`, { shopId: shop.id });
+    } catch (e) { console.error(e); toast('مش قادرين نعمله، جرّب تاني', 'err'); }
+  };
+  const remove = async (k) => {
+    if (!window.confirm('تلغي الرابط ده؟ الموبايل اللي بيبعت عليه هيبطل يوصل.')) return;
+    await deleteDoc(doc(db, 'smsKeys', k.id)).catch(() => toast('مش قادرين نلغيه', 'err'));
+  };
+  const copy = (t) => { navigator.clipboard?.writeText(t).then(() => toast('اتنسخ'), () => toast('انسخه بإيدك', 'err')); };
+  return (
+    <section className="card tint-violet">
+      <h2 className="h2">📩 رسايل البنك على موبايل صاحب المحل</h2>
+      <span className="tiny muted" style={{ lineHeight: 1.8 }}>
+        لما العميل يحوّل على انستاباي/المحفظة، البنك بيبعت رسالة لموبايل صاحب المحل. الرسالة دي توصل للكاشير في التطبيق، يدوس «ده عميلي» ويتسجل التحويل من غير صورة.
+        محتاجين موبايل صاحب المحل أندرويد عليه تطبيق MacroDroid (مجاني).
+      </span>
+      {wallets.map((w) => {
+        const k = keys.find((x) => x.wallet === w.key);
+        return (
+          <div key={w.key} className="stack" style={{ background: '#fff', borderRadius: 20, padding: '12px 14px', gap: 8 }}>
+            <div className="spread">
+              <strong>{w.label}</strong>
+              {k ? <span className="badge">{k.lastAtMs ? `آخر رسالة: ${new Date(k.lastAtMs).toLocaleString('ar-EG', { day: 'numeric', month: 'numeric', hour: 'numeric', minute: '2-digit' })}` : 'لسه موصلش رسايل'}</span>
+                : <button type="button" className="btn sm" onClick={() => make(w)}>اعمل رابط</button>}
+            </div>
+            {k && <>
+              {k.lastText && <span className="tiny" style={{ background: 'var(--chip)', borderRadius: 12, padding: '6px 10px', lineHeight: 1.7 }}>{k.lastOk ? '✓ ' : '✗ مفهمناش الرسالة دي: '}{k.lastText}</span>}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button type="button" className="btn sm" onClick={() => copy(linkOf(k))}>انسخ الرابط</button>
+                <button type="button" className="btn sm soft" style={{ height: 44 }} onClick={() => setShow(show === k.id ? null : k.id)}>{show === k.id ? 'اقفل الخطوات' : 'خطوات تجهيز الموبايل'}</button>
+                <button type="button" className="btn sm soft" style={{ height: 44, color: '#C62828' }} onClick={() => remove(k)}>إلغاء الرابط</button>
+              </div>
+              {show === k.id && (
+                <ol className="small" style={{ lineHeight: 2, paddingInlineStart: 20, margin: 0 }}>
+                  <li>على موبايل صاحب المحل نزّل <b>MacroDroid</b> من Play Store وافتحه.</li>
+                  <li>دوس <b>Add Macro</b> وسمّيه «مدقق».</li>
+                  <li>في <b>Triggers</b> اختار <b>Call/SMS</b> ← <b>SMS Received</b>، وفي الرسالة اختار <b>Contains</b> واكتب <code>استقبلت</code>. (لو مش موجود: <b>Applications</b> ← <b>Notification</b> واختار تطبيق الرسايل.)</li>
+                  <li>في <b>Actions</b> اختار <b>Connectivity</b> ← <b>HTTP Request</b>: النوع <b>POST</b>، والـ URL هو الرابط اللي فوق.</li>
+                  <li>في الـ Body دوس على <b>...</b> واختار <b>SMS Message</b> (أو <b>Notification Text</b>).</li>
+                  <li>احفظ ✓ ووافق على الصلاحيات اللي يطلبها.</li>
+                  <li>جرّب بتحويل صغير؛ بعد ثواني هتلاقي «آخر رسالة» هنا اتغيرت، والكاشير يشوفه عنده.</li>
+                </ol>
+              )}
+            </>}
+          </div>
+        );
+      })}
+    </section>
   );
 }

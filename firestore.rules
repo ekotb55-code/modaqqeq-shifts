@@ -166,6 +166,23 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['uid', 'token', 'device', 'atMs']);
     }
 
+    // ── Bank SMS forwarded from the shop owner's phone (written only by the Apps Script helper) ──
+    // Secret link per wallet. Only Modaqqeq admins and support make or see them.
+    match /smsKeys/{key} {
+      allow read, write: if isAdmin();
+    }
+    // One incoming transfer. The shop's people see it; a cashier takes it ("my customer") or gives back his own.
+    match /walletIn/{id} {
+      allow read: if inShop(resource.data.shopId) || staffOf(resource.data.shopId);
+      allow update: if reviewerOf(resource.data.shopId)
+        || (inShop(resource.data.shopId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'claimedBy', 'claimedByName', 'claimedShiftId', 'claimedEntryId', 'claimedAtMs'])
+            && ((resource.data.status == 'new' && request.resource.data.status == 'claimed' && request.resource.data.claimedBy == request.auth.uid)
+                || (resource.data.status == 'claimed' && resource.data.claimedBy == request.auth.uid && request.resource.data.status == 'new')));
+      allow create: if false;
+      allow delete: if isAdmin();
+    }
+
     // Login & activity log. Everyone writes only lines about himself; nobody edits or deletes.
     // Only Modaqqeq's owner and support can read it.
     match /activity/{id} {
