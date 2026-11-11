@@ -9,7 +9,7 @@ import { app, auth, db } from './firebase';
 // Both values below are public (not secrets). Empty = the script isn't set up yet → everything stays as before.
 export const CLOUD = {
   url: '',
-  vapid: '',
+  vapid: 'BLjJGVLg7Xai6GfNce7TgSfgIpE4KGrXvdCKwfJXf6dTstN-jnYS9IGayqTTJstr8tYgP6JWFwZQ5DUPM3iVanA',
 };
 export const cloudReady = () => !!CLOUD.url;
 
