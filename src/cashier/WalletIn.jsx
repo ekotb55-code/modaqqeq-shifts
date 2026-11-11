@@ -42,7 +42,13 @@ export function useWalletIn(shopId, wallets, uid) {
     try { localStorage.setItem(HIDE, JSON.stringify(next)); } catch { /* ignore */ }
     setHidden(next);
   };
-  return { list: shown, all: fresh, hide };
+  const unhideAll = () => {
+    const ids = new Set(fresh.map((s) => s.id));
+    const next = readHidden().filter((id) => !ids.has(id));
+    try { localStorage.setItem(HIDE, JSON.stringify(next)); } catch { /* ignore */ }
+    setHidden(next);
+  };
+  return { list: shown, all: fresh, hiddenCount: fresh.length - shown.length, hide, unhideAll };
 }
 
 const when = (s) => {
@@ -54,7 +60,10 @@ const when = (s) => {
 // Dashboard card.
 export function WalletInCard({ sms, shop, shift, profile }) {
   const [open, setOpen] = useState(null);
-  if (!sms.list.length) return null;
+  if (!sms.list.length && !sms.hiddenCount) return null;
+  if (!sms.list.length) return (
+    <button type="button" className="link" style={{ alignSelf: 'flex-start' }} onClick={sms.unhideAll}>↩ رجّع التحويلات اللي قلت عليها «مش بتاعي» ({sms.hiddenCount})</button>
+  );
   return (
     <section className="card" style={{ background: '#F3E8FF', gap: 10 }} data-tour="sms-in">
       <h2 style={{ fontSize: 17, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}><Icon d="phone" />تحويلات وصلت لصاحب المحل · لو ده عميلك أكّده</h2>
@@ -72,6 +81,7 @@ export function WalletInCard({ sms, shop, shift, profile }) {
           </span>
         </div>
       ))}
+      {sms.hiddenCount > 0 && <button type="button" className="link" style={{ alignSelf: 'flex-start' }} onClick={sms.unhideAll}>↩ رجّع اللي قلت عليها «مش بتاعي» ({sms.hiddenCount})</button>}
       {open && <ClaimModal s={open} shop={shop} shift={shift} profile={profile} onClose={() => setOpen(null)} />}
     </section>
   );

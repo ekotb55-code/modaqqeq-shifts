@@ -219,7 +219,7 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
 
       {del && <DeleteModal entry={del} shift={shift} profile={profile} onClose={() => setDel(null)} />}
       {modal === 'xfer' && <SendModal shop={shop} shift={shift} profile={profile} balances={balances} onClose={() => setModal(null)} />}
-      {modal && modal !== 'xfer' && <EntryModal type={modal} shop={shop} shift={shift} profile={profile} balances={balances} smsList={sms.list} onSms={(x) => { setModal(null); setClaim(x); }} onClose={() => setModal(null)} />}
+      {modal && modal !== 'xfer' && <EntryModal type={modal} shop={shop} shift={shift} profile={profile} balances={balances} smsList={sms.all} onSms={(x) => { setModal(null); setClaim(x); }} onClose={() => setModal(null)} />}
       {claim && <ClaimModal s={claim} shop={shop} shift={shift} profile={profile} onClose={() => setClaim(null)} />}
       <PhotoView src={viewPhoto} onClose={() => setViewPhoto(null)} />
     </div>
