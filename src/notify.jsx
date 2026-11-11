@@ -25,6 +25,60 @@ let banner = null; // { note }
 const bsubs = new Set();
 const setBanner = (b) => { banner = b; bsubs.forEach((f) => f()); };
 
+// ── Loud alarm for the accountant: rings until someone presses "تمام، شفتها" ──
+// Browsers only allow sound after the person touched the page once, so the sound is "unlocked" on the first tap.
+let actx = null;
+const audio = () => {
+  try {
+    const C = window.AudioContext || window.webkitAudioContext; if (!C) return null;
+    if (!actx) actx = new C();
+    if (actx.state === 'suspended') actx.resume().catch(() => {});
+    return actx;
+  } catch { return null; }
+};
+if (typeof window !== 'undefined') {
+  const unlock = () => { audio(); window.removeEventListener('pointerdown', unlock); window.removeEventListener('keydown', unlock); };
+  window.addEventListener('pointerdown', unlock); window.addEventListener('keydown', unlock);
+}
+const ALARM_KEY = 'mdq-alarm-on';
+export const alarmEnabled = () => { try { return localStorage.getItem(ALARM_KEY) !== '0'; } catch { return true; } };
+let alarm = null; // { notes, timer }
+const asubs = new Set();
+const emitAlarm = () => asubs.forEach((f) => f());
+function siren() {
+  const ctx = audio(); if (!ctx) return;
+  const t0 = ctx.currentTime;
+  for (let i = 0; i < 4; i++) {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'square'; o.frequency.setValueAtTime(i % 2 ? 660 : 990, t0 + i * 0.28);
+    g.gain.setValueAtTime(0.0001, t0 + i * 0.28);
+    g.gain.exponentialRampToValueAtTime(0.5, t0 + i * 0.28 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 0.28 + 0.26);
+    o.connect(g).connect(ctx.destination); o.start(t0 + i * 0.28); o.stop(t0 + i * 0.28 + 0.27);
+  }
+}
+let titleTimer = null, baseTitle = '';
+function startAlarm(notes) {
+  if (!alarmEnabled()) return;
+  if (alarm) { alarm.notes = [...notes, ...alarm.notes].slice(0, 6); emitAlarm(); return; }
+  const started = Date.now();
+  siren();
+  const timer = setInterval(() => {
+    if (Date.now() - started > 10 * 60 * 1000) { stopAlarm(); return; } // max 10 minutes
+    siren();
+  }, 2200);
+  alarm = { notes, timer };
+  baseTitle = document.title;
+  let flip = false;
+  titleTimer = setInterval(() => { flip = !flip; document.title = flip ? `🔔 ${notes[0].title}` : baseTitle; }, 1000);
+  emitAlarm();
+}
+export function stopAlarm() {
+  if (!alarm) return;
+  clearInterval(alarm.timer); clearInterval(titleTimer); document.title = baseTitle || document.title;
+  alarm = null; emitAlarm();
+}
+
 function beep() {
   try {
     const C = window.AudioContext || window.webkitAudioContext; if (!C) return;
@@ -69,7 +123,8 @@ export function feed(uid, watcher, items) {
   const notes = fresh.map((n) => ({ ...n, id: `${n.key}-${now}`, atMs: n.atMs || now, read: false }));
   cur.list = [...notes, ...cur.list].slice(0, 60);
   save();
-  beep();
+  const loud = notes.filter((n) => n.alarm);
+  if (loud.length && alarmEnabled()) startAlarm(loud); else beep();
   setBanner({ note: notes[0], more: notes.length - 1 });
   notes.slice(0, 3).forEach((n) => systemNotify(n));
 }
@@ -88,7 +143,8 @@ function useNotes(uid) {
 }
 
 // Bell + list + banner. onOpen(note) takes the person to the shift / chat.
-export function NotifyBell({ uid, onOpen }) {
+export function NotifyBell({ uid, onOpen, alarmable = false }) {
+  const [loudOn, setLoudOn] = useState(alarmEnabled);
   const list = useNotes(uid);
   const [open, setOpen] = useState(false);
   const [perm, setPerm] = useState(() => ('Notification' in window ? Notification.permission : 'unsupported'));
@@ -150,6 +206,12 @@ export function NotifyBell({ uid, onOpen }) {
             <button type="button" className="bell-allow" onClick={allow}>🔔 فعّل الإشعارات على الجهاز ده<span className="tiny">علشان يوصلك تنبيه حتى لو التطبيق في الخلفية</span></button>
           )}
           {perm === 'denied' && <span className="tiny muted bell-hint">إشعارات الجهاز مقفولة من المتصفح. تقدر تفتحها من إعدادات الموقع (علامة القفل جنب العنوان).</span>}
+          {alarmable && (
+            <label className="bell-toggle">
+              <input type="checkbox" checked={loudOn} onChange={(e) => { setLoudOn(e.target.checked); try { localStorage.setItem(ALARM_KEY, e.target.checked ? '1' : '0'); } catch { /* ignore */ } }} />
+              <span>🚨 زمّر بصوت عالي لما وردية تتسلّم (لحد ما تدوس «شفتها»)</span>
+            </label>
+          )}
           <button type="button" className="link" style={{ alignSelf: 'flex-start', padding: '0 6px 8px' }} onClick={test}>🔧 جرّب الإشعارات على الجهاز ده</button>
           {diag && <div className="bell-diag">{diag.map((l, i) => <span key={i}>{l.ok ? '✅' : '❌'} {l.t}</span>)}</div>}
           <div className="bell-list">
@@ -168,7 +230,26 @@ export function NotifyBell({ uid, onOpen }) {
         </div>
       )}
       <Banner />
+      <AlarmBox />
     </span>
+  );
+}
+
+function AlarmBox() {
+  const a = useSyncExternalStore((f) => { asubs.add(f); return () => asubs.delete(f); }, () => alarm);
+  if (!a) return null;
+  const n = a.notes[0];
+  return (
+    <div className="alarm-back" role="alertdialog" aria-modal="true" aria-label={n.title}>
+      <div className="alarm-card">
+        <span className="alarm-bell" aria-hidden="true">🔔</span>
+        <strong className="alarm-title">{n.title}</strong>
+        {n.body && <span className="alarm-body">{n.body}</span>}
+        {a.notes.length > 1 && <span className="tiny muted">و{a.notes.length - 1} كمان مستنيين</span>}
+        <button type="button" className="btn full" style={{ height: 58, fontSize: 18 }} onClick={() => { stopAlarm(); openNote(n); }}>افتح الوردية</button>
+        <button type="button" className="btn soft full" onClick={stopAlarm}>تمام، شفتها · وقّف الصوت</button>
+      </div>
+    </div>
   );
 }
 

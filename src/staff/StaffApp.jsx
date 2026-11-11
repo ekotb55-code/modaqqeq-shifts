@@ -63,10 +63,10 @@ export default function StaffApp({ profile }) {
         const day = dateStr(s.openedAt || s.openedAtLocal);
         if (s.status === 'submitted') {
           const fixed = !!s.reopenDoneAt;
-          items.push({ key: `${s.id}:sub:${ms(s.submittedAt || s.submittedAtLocal)}:${ms(s.reopenDoneAt)}`, emoji: fixed ? '✅' : '📥', color: '#1565D8',
+          items.push({ key: `${s.id}:sub:${ms(s.submittedAt || s.submittedAtLocal)}:${ms(s.reopenDoneAt)}`, emoji: fixed ? '✅' : '📥', color: '#1565D8', alarm: true,
             title: fixed ? `${s.cashierName} خلّص تعديل الوردية` : `${s.cashierName} سلّم الوردية`, body: `${name(s.shopId)} · وردية ${day} · مستنية مراجعتك`, shiftId: s.id, shopId: s.shopId });
         }
-        if (s.status === 'disputed') items.push({ key: `${s.id}:disp:${(s.cashierRequests || []).length}`, emoji: '✋', color: '#E5484D', title: `${s.cashierName} عنده طلب على الوردية`, body: `${name(s.shopId)} · وردية ${day}`, shiftId: s.id, shopId: s.shopId });
+        if (s.status === 'disputed') items.push({ key: `${s.id}:disp:${(s.cashierRequests || []).length}`, emoji: '✋', color: '#E5484D', alarm: true, title: `${s.cashierName} عنده طلب على الوردية`, body: `${name(s.shopId)} · وردية ${day}`, shiftId: s.id, shopId: s.shopId });
         if (s.staffUnread && s.lastMsg?.side === 'cashier') items.push({ key: `${s.id}:msg:${s.lastMsg.at}`, emoji: '💬', color: '#4CC3FF', title: `رسالة من ${s.cashierName}`, body: s.lastMsg.text, shiftId: s.id, shopId: s.shopId });
       });
       feed(profile.id, 'staff', items);
@@ -143,7 +143,7 @@ export default function StaffApp({ profile }) {
             </span>
             <button type="button" className="icon-btn" aria-label="غيّر الباسورد بتاعي" title="غيّر الباسورد بتاعي" onClick={() => setPwOpen(true)}><Icon d="lock" /></button>
             <button type="button" className="icon-btn" aria-label="غيّر شكل التطبيق" title="غيّر شكل التطبيق" onClick={() => setThemeOpen(true)}><Icon d="palette" /></button>
-            <NotifyBell uid={profile.id} onOpen={openNote} />
+            <NotifyBell uid={profile.id} onOpen={openNote} alarmable={canReview} />
             <HelpButton />
             <button type="button" className="icon-btn" aria-label="تسجيل خروج" title="تسجيل خروج" onClick={logout}><Icon d="logout" /></button>
           </div>

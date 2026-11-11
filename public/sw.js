@@ -1,5 +1,5 @@
 // Keeps the app shell on the device so it opens fast and works when the internet drops.
-const CACHE = 'mdq-shifts-v4';
+const CACHE = 'mdq-shifts-v5';
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['./', './index.html', './modaqqeq-logo.png', './icon-192.png'])).then(() => self.skipWaiting()));
 });
@@ -40,6 +40,7 @@ self.addEventListener('push', (e) => {
   const title = d.title || 'مدقق';
   e.waitUntil(self.registration.showNotification(title, {
     body: d.body || '', icon: './icon-192.png', badge: './icon-192.png', tag: d.tag || undefined, dir: 'rtl', lang: 'ar',
+    requireInteraction: d.alarm === '1', renotify: !!d.tag, silent: false, vibrate: d.alarm === '1' ? [400, 150, 400, 150, 400, 150, 800] : [200, 80, 200],
     data: { note: { id: d.tag || String(Date.now()), key: d.tag || '', title, body: d.body || '', shiftId: d.shiftId || null, shopId: d.shopId || null, go: d.go || null } },
   }));
 });

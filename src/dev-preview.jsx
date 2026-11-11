@@ -17,6 +17,8 @@ import { NetStrip, Intro } from './theme.jsx';
 import { captureDocument } from './DocCamera.jsx';
 import ShiftChat from './ShiftChat.jsx';
 import { TourHost } from './Tour.jsx';
+import { NotifyBell, feed } from './notify.jsx';
+window.__feed = feed;
 
 const shop = { id: 's1', name: 'مخبوزات لوفان', posUrl: 'https://x', wallets: ['insta', 'vf'], walletModes: { insta: 'shop', vf: 'owner' }, machines: [{ machine: 'فوري', account: 'الحساب الرئيسي', ratePct: 2 }, { machine: 'فوري', account: 'كاش أوت' }, { machine: 'فيزا', account: 'الرصيد', ratePct: 2, rateFrom: 'cashier' }],
   lastHandover: { cashierName: 'محمود سعيد', at: new Date().toISOString(), bills: { 200: 2, 100: 3, 50: 4, 20: 5, 10: 6, 5: 4, 1: 20 }, side: 5000, wallets: { insta: 300, vf: 0 }, machines: [{ machine: 'فوري', account: 'الحساب الرئيسي', value: 3250 }] },
@@ -42,6 +44,7 @@ const inc = [{ id: 't1', fromName: 'كريم الدليفري', fromRegName: 'د
 document.documentElement.dataset.theme = new URLSearchParams(location.search).get('theme') || 'mdq';
 let body;
 if (v === 'login') body = <Login />;
+else if (v === 'bell') body = <div style={{ padding: 40, display: 'flex', justifyContent: 'flex-end' }}><NotifyBell uid="t1" onOpen={() => {}} alarmable /></div>;
 else if (v === 'ddash') body = <Dash shop={dshop} shift={dshift} entries={[{ id: 'x1', type: 'xfer_in', src: 'drawer', amount: 300, fromName: 'شوقي محمد (الكاشير الأساسي)', createdAtLocal: new Date().toISOString() }]} profile={{ ...profile, name: 'كريم الدليفري' }} onHandover={() => {}} onReceive={() => {}} />;
 else if (v === 'dhand') body = <Handover shop={dshop} shift={dshift} entries={[]} profile={profile} onBack={() => {}} onDone={() => {}} />;
 else if (v === 'send') body = <SendModal shop={shopForRegister(shop, 'main')} shift={shift} profile={profile} balances={{ side: 5000 }} onClose={() => {}} />;
