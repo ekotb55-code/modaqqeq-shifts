@@ -10,7 +10,7 @@ import { newTransfer } from './Transfers.jsx';
 import { Bills, MachineRows, SideBox } from './parts.jsx';
 import { logAct } from '../activity.js';
 import { takePhoto } from '../phoneShot.jsx';
-import { setPhoto } from '../cloud.js';
+import { setPhoto as addPhotoDoc } from '../cloud.js';
 import { pushEvent } from '../cloud.js';
 
 const WHERE = { stay: 'يفضل في الدرج', shop: 'يتسلّم للمحل', main: 'يتسلّم للأساسي' };
@@ -150,11 +150,11 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
     try {
       const b = writeBatch(db);
       Object.entries(photos).forEach(([i, data]) => {
-        setPhoto(b, shift.id, { kind: 'machine', stage: 'handover', label: machinePhotoLabel(machines, i), data, check: 'pending', createdAt: serverTimestamp() });
+        addPhotoDoc(b, shift.id, { kind: 'machine', stage: 'handover', label: machinePhotoLabel(machines, i), data, check: 'pending', createdAt: serverTimestamp() });
       });
       Object.entries(wphotos).forEach(([k, data]) => {
         const w = shopWallets.find((x) => x.key === k);
-        setPhoto(b, shift.id, { kind: 'wallet', stage: 'handover', wallet: k, label: w?.label || k, amount: num(wtyped[k]), data, check: 'pending', createdAt: serverTimestamp() });
+        addPhotoDoc(b, shift.id, { kind: 'wallet', stage: 'handover', wallet: k, label: w?.label || k, amount: num(wtyped[k]), data, check: 'pending', createdAt: serverTimestamp() });
       });
       b.update(doc(db, 'shifts', shift.id), { status: 'submitted', submittedAt: serverTimestamp(), submittedAtLocal: now.toISOString(), handover, entryCount: entries.length });
       b.update(doc(db, 'shops', shop.id), {
