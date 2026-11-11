@@ -113,6 +113,25 @@ export function NotifyBell({ uid, onOpen }) {
   // keep this device's notification address fresh (it can change)
   useEffect(() => { if (perm === 'granted') registerPush(uid); }, [uid, perm]);
   const readAll = () => { cur.list = cur.list.map((n) => ({ ...n, read: true })); save(); };
+  const [diag, setDiag] = useState(null);
+  // Checks this device step by step and shows a test notification right away.
+  const test = async () => {
+    const lines = [];
+    const add = (ok, t) => lines.push({ ok, t });
+    const p = 'Notification' in window ? Notification.permission : 'unsupported';
+    add(p === 'granted', `إذن الإشعارات: ${p === 'granted' ? 'مسموح' : p === 'denied' ? 'مرفوض' : p === 'default' ? 'لسه ماتسألش' : 'الجهاز ده مش بيدعم الإشعارات'}`);
+    let reg = null;
+    try { reg = await navigator.serviceWorker?.getRegistration(); } catch { /* ignore */ }
+    add(!!reg?.active, `خدمة الخلفية: ${reg?.active ? 'شغالة' : 'مش شغالة'}`);
+    let sub = null;
+    try { sub = await reg?.pushManager?.getSubscription(); } catch { /* ignore */ }
+    add(!!sub, `الاشتراك في الإشعارات: ${sub ? 'موجود' : 'مش موجود'}`);
+    if (p === 'granted') { const ok = await registerPush(uid); add(ok, `عنوان الإشعارات: ${ok ? 'اتسجّل' : 'ماتسجّلش'}`); }
+    try {
+      if (reg && p === 'granted') { await reg.showNotification('تجربة من الجهاز 🔔', { body: 'لو شايف الإشعار ده يبقى الموبايل بيعرض إشعارات مدقق', icon: './icon-192.png', tag: 'local-test' }); add(true, 'بعتنا إشعار تجربة دلوقتي: بص فوق في شريط الإشعارات'); }
+    } catch (e) { add(false, 'عرض الإشعار فشل: ' + (e?.message || '')); }
+    setDiag(lines);
+  };
 
   return (
     <span className="bell-wrap" ref={box}>
@@ -131,6 +150,8 @@ export function NotifyBell({ uid, onOpen }) {
             <button type="button" className="bell-allow" onClick={allow}>🔔 فعّل الإشعارات على الجهاز ده<span className="tiny">علشان يوصلك تنبيه حتى لو التطبيق في الخلفية</span></button>
           )}
           {perm === 'denied' && <span className="tiny muted bell-hint">إشعارات الجهاز مقفولة من المتصفح. تقدر تفتحها من إعدادات الموقع (علامة القفل جنب العنوان).</span>}
+          <button type="button" className="link" style={{ alignSelf: 'flex-start', padding: '0 6px 8px' }} onClick={test}>🔧 جرّب الإشعارات على الجهاز ده</button>
+          {diag && <div className="bell-diag">{diag.map((l, i) => <span key={i}>{l.ok ? '✅' : '❌'} {l.t}</span>)}</div>}
           <div className="bell-list">
             {list.length === 0 && <span className="tiny muted" style={{ padding: 16, textAlign: 'center' }}>مفيش إشعارات لسه</span>}
             {list.map((n) => (

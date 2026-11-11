@@ -721,3 +721,5 @@ body.net-bad .topbar { background: #FFF4E0; }
 .wl-pin .avatar { border: 5px solid #fff; box-shadow: 0 10px 26px rgba(20,20,50,.16); }
 .wl-pin-in { text-align: center; font-size: 30px; letter-spacing: 10px; height: 64px; }
 @media (max-width: 480px) { .wl-grid { grid-template-columns: 1fr 1fr; } .wl-title { font-size: 24px; } }
+
+.bell-diag { display: flex; flex-direction: column; gap: 4px; margin: 0 4px 10px; padding: 10px 12px; border-radius: 14px; background: var(--bg); font-size: 13px; line-height: 1.6; }
