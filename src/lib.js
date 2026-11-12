@@ -121,7 +121,7 @@ export const ENTRY_TYPES = {
 // +1 money came into a drawer, -1 went out, 0 moved / didn't touch the drawers (e.g. «شحن آجل»).
 export const entrySign = (e) => (e?.type === 'topup' && e.credit ? 0 : ENTRY_TYPES[e?.type]?.sign || 0);
 
-export const SRC_LABEL = { drawer: 'درج الكاشير', side: 'الدرج الجانبي', insta: 'انستاباي', insta2: 'انستاباي شخصي', vf: 'فودافون كاش', 'out:owner': 'صاحب المحل' };
+export const SRC_LABEL = { drawer: 'درج الكاشير', side: 'الدرج الجانبي', insta: 'انستاباي', insta2: 'انستاباي شخصي', vf: 'فودافون كاش', nbe: 'الأهلي فون كاش', 'out:owner': 'صاحب المحل' };
 
 export const ROLE_LABEL = { admin: 'إدارة مدقق', support: 'دعم مدقق', reviewer: 'محاسب', accountant: 'محاسب', manager: 'مدير فرع', owner: 'أونر', cashier: 'كاشير' };
 
@@ -279,6 +279,7 @@ export const WALLETS = [
   { key: 'insta', label: 'انستاباي' },
   { key: 'insta2', label: 'انستاباي شخصي' },
   { key: 'vf', label: 'فودافون كاش' },
+  { key: 'nbe', label: 'الأهلي فون كاش' },
 ];
 // A wallet either belongs to the owner (every transfer is recorded with a photo, no balance is
 // received or handed over) or sits in the shop (opening and closing balance only, the accountant sees the difference).
@@ -370,7 +371,7 @@ export function shopSafes(shop) {
   return [
     { key: 'drawer', label: 'درج الكاشير', kind: 'cash', color: '#FF7A1A' },
     ...(shop?.noSide ? [] : [{ key: 'side', label: 'الدرج الجانبي', kind: 'cash', color: '#B6F000' }]),
-    ...WALLETS.filter((w) => wallets.includes(w.key)).map((w) => ({ ...w, kind: 'wallet', mode: walletModeOf(shop, w.key), color: w.key === 'vf' ? '#FF4D6D' : w.key === 'insta2' ? '#7C5CE0' : '#A07CFF' })),
+    ...WALLETS.filter((w) => wallets.includes(w.key)).map((w) => ({ ...w, kind: 'wallet', mode: walletModeOf(shop, w.key), color: w.key === 'vf' ? '#FF4D6D' : w.key === 'nbe' ? '#1F8A4C' : w.key === 'insta2' ? '#7C5CE0' : '#A07CFF' })),
     ...(shop?.machines || []).map((m) => ({ key: machineKey(m), label: `${m.machine} · ${m.account}`, kind: 'machine', color: '#FFC800', m })),
     ...vaultsOf(shop).map((v) => ({ key: vaultKey(v.id), label: v.name, kind: 'vault', color: '#2FBF9B' })),
   ];

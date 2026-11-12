@@ -117,7 +117,7 @@ export default function WalletTransfers({ shops, profile }) {
     <div className="wrap stack" style={{ gap: 14 }}>
       <div className="stack" style={{ gap: 2 }}>
         <h1 className="title" style={{ fontSize: 28 }}>التحويلات</h1>
-        <span className="small muted">تحويلات انستاباي اللي وصلت لصاحب المحل، ومين أكّدها من الكاشيرية</span>
+        <span className="small muted">تحويلات انستاباي والمحافظ اللي وصلت لصاحب المحل، ومين أكّدها من الكاشيرية</span>
       </div>
       {nothing && <section className="card empty">مفيش تحويلات مستنية حاجة دلوقتي ✓</section>}
       <Sec title="⏳ وصلت دلوقتي" hint="ظاهرة للكاشيرية" list={live}>
