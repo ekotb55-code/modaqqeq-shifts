@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { collection, doc, onSnapshot, query, serverTimestamp, where, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot, query, serverTimestamp, where, writeBatch } from 'firebase/firestore';
 import { pushEvent } from '../cloud.js';
 import { db } from '../firebase';
 import { Icon, Modal, WALLET_LOOK, WalletMark, useToast } from '../ui.jsx';
@@ -128,11 +128,12 @@ export function ClaimModal({ s, shop, shift, profile, onClose }) {
     setBusy(true);
     const b = writeBatch(db);
     const eref = doc(collection(db, 'shifts', shift.id, 'entries'));
-    b.set(eref, {
+    const entry = {
       type: 'transfer', wallet: s.wallet, src: s.wallet, amount: Number(s.amount) || 0, by: profile.id, byName: profile.name,
       smsId: s.id, smsGroup: s.group || '', smsName: s.fromName || '', smsPhone: s.fromPhone || '', smsRef: s.ref || '', smsTime: s.smsTime || '', invoiceNo: inv.trim().slice(0, 40),
       createdAt: serverTimestamp(), createdAtLocal: new Date().toISOString(), posted: false,
-    });
+    };
+    b.set(eref, entry);
     // If another cashier already took it, this fails and nothing is saved.
     b.update(doc(db, 'walletIn', s.id), {
       status: 'claimed', claimedBy: profile.id, claimedByName: profile.name, claimedShiftId: shift.id, claimedEntryId: eref.id, claimedAtMs: Date.now(), claimInvoice: inv.trim().slice(0, 40),
@@ -140,7 +141,15 @@ export function ClaimModal({ s, shop, shift, profile, onClose }) {
     // One lock per transfer for all branches: if a cashier in another branch took it first, this fails.
     if (s.group) b.set(doc(db, 'smsLocks', s.group), { shopId: shift.shopId, walletInId: s.id, by: profile.id, atMs: Date.now() });
     try {
-      await b.commit();
+      try { await b.commit(); } catch (e1) {
+        // Still free but refused? (rules on the server not updated yet) → the same without the new fields.
+        const cur = await getDoc(doc(db, 'walletIn', s.id)).catch(() => null);
+        if (e1?.code !== 'permission-denied' || cur?.data()?.status !== 'new') throw e1;
+        const b2 = writeBatch(db);
+        b2.set(eref, entry);
+        b2.update(doc(db, 'walletIn', s.id), { status: 'claimed', claimedBy: profile.id, claimedByName: profile.name, claimedShiftId: shift.id, claimedEntryId: eref.id, claimedAtMs: Date.now() });
+        await b2.commit();
+      }
       logAct('sms_claim', `أكّد تحويل ${SRC_LABEL[s.wallet] || ''} ${fmt(s.amount)} ج من ${s.fromName || 'عميل'} · فاتورة ${inv.trim()} (رسالة البنك)`, { shopId: shift.shopId, shiftId: shift.id });
       // The owner sees every confirmation and can refuse it if the money isn't the shop's.
       pushEvent({ type: 'sms_claim', shopId: shift.shopId, shiftId: shift.id, to: 'staff', title: `✋ ${profile.name} أكّد تحويل ${fmt(s.amount)} ج`, body: `من ${s.fromName || 'عميل'} · فاتورة ${inv.trim()} · لو مش بتاع المحل ارفضه من «التحويلات»` });
