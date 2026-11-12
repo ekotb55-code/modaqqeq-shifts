@@ -18,7 +18,7 @@ import { STAFF_PAGE, staffShell } from '../tours.js';
 import { logAct, logout } from '../activity.js';
 import { NotifyBell, feed } from '../notify.jsx';
 import { UpdateButton } from '../update.jsx';
-import { shareApp } from '../cashier/parts.jsx';
+import { MoreMenu, shareApp } from '../cashier/parts.jsx';
 import { wants } from '../notifyPrefs.js';
 import { useShopShifts } from './Review.jsx';
 
@@ -133,7 +133,7 @@ export default function StaffApp({ profile }) {
       )}
       {pwOpen && <MyPassword onClose={() => setPwOpen(false)} />}
       {themeOpen && <ThemePicker value={theme} onChange={setTheme} onClose={() => setThemeOpen(false)} />}
-      <header className="topbar">
+      <header className="topbar staff">
         <div className="topbar-in">
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <img className="logo-mdq" src="./modaqqeq-logo.png" alt="مدقق" />
@@ -150,13 +150,22 @@ export default function StaffApp({ profile }) {
               </button>
               <span className="stack" style={{ gap: 0 }}><strong style={{ fontSize: 15 }}>{profile.name}</strong><span className="tiny muted">{ROLE_LABEL[profile.role]}</span></span>
             </span>
-            <button type="button" className="icon-btn" aria-label="غيّر الباسورد بتاعي" title="غيّر الباسورد بتاعي" onClick={() => setPwOpen(true)}><Icon d="lock" /></button>
-            <button type="button" className="icon-btn" aria-label="غيّر شكل التطبيق" title="غيّر شكل التطبيق" onClick={() => setThemeOpen(true)}><Icon d="palette" /></button>
+            <span className="tb-wide">
+              <button type="button" className="icon-btn" aria-label="غيّر الباسورد بتاعي" title="غيّر الباسورد بتاعي" onClick={() => setPwOpen(true)}><Icon d="lock" /></button>
+              <button type="button" className="icon-btn" aria-label="غيّر شكل التطبيق" title="غيّر شكل التطبيق" onClick={() => setThemeOpen(true)}><Icon d="palette" /></button>
+            </span>
             <NotifyBell uid={profile.id} onOpen={openNote} alarmable={canReview && wants(me, 'handover')} settings={{ profile: me, onSave: savePrefs, canAll: isAdmin }} />
-            <UpdateButton />
-            <button type="button" className="icon-btn" aria-label="شارك التطبيق" title="شارك التطبيق" onClick={shareApp}><Icon d="share" /></button>
+            <span className="tb-upd"><UpdateButton /></span>
+            <span className="tb-wide"><button type="button" className="icon-btn" aria-label="شارك التطبيق" title="شارك التطبيق" onClick={shareApp}><Icon d="share" /></button></span>
             <HelpButton />
-            <button type="button" className="icon-btn" aria-label="تسجيل خروج" title="تسجيل خروج" onClick={logout}><Icon d="logout" /></button>
+            <span className="tb-wide"><button type="button" className="icon-btn" aria-label="تسجيل خروج" title="تسجيل خروج" onClick={logout}><Icon d="logout" /></button></span>
+            <MoreMenu items={[
+              { label: 'غيّر الباسورد بتاعي', el: <button type="button" className="icon-btn" aria-label="غيّر الباسورد بتاعي" onClick={() => setPwOpen(true)}><Icon d="lock" /></button> },
+              { label: 'غيّر شكل التطبيق', el: <button type="button" className="icon-btn" aria-label="غيّر شكل التطبيق" onClick={() => setThemeOpen(true)}><Icon d="palette" /></button> },
+              { label: 'حدّث التطبيق', el: <UpdateButton noBanner /> },
+              { label: 'شارك التطبيق', el: <button type="button" className="icon-btn" aria-label="شارك التطبيق" onClick={shareApp}><Icon d="share" /></button> },
+              { label: 'تسجيل خروج', el: <button type="button" className="icon-btn" aria-label="تسجيل خروج" onClick={logout}><Icon d="logout" /></button> },
+            ]} />
           </div>
         </div>
       </header>

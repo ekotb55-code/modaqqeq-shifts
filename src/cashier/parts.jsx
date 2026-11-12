@@ -69,7 +69,7 @@ export async function shareApp() {
 }
 
 // On phones the less-used buttons go behind ☰. The list closes by itself: after choosing, tapping outside, or 8 seconds.
-function MoreMenu({ items }) {
+export function MoreMenu({ items }) {
   const [open, setOpen] = useState(false);
   const box = useRef(null);
   useEffect(() => {

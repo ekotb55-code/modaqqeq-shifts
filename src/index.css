@@ -771,3 +771,15 @@ body.net-bad .topbar { background: #FFF4E0; }
 .sp-search button { border: 0; background: transparent; font-size: 16px; color: inherit; cursor: pointer; padding: 4px; }
 .sp-search.big { height: 54px; border-radius: 18px; background: var(--card); box-shadow: var(--shadow); max-width: 520px; }
 .sp-search.big input { font-size: 17px; }
+
+/* Staff header on phones: logo + buttons, then the branch picker full width, then the tabs */
+@media (max-width: 700px) {
+  .topbar.staff .topbar-in { grid-template-columns: auto 1fr; }
+  .topbar.staff .topbar-in > div:first-child { display: contents !important; }
+  .topbar.staff .topbar-in > div:first-child > .logo-mdq { grid-column: 1; grid-row: 1; height: 38px; }
+  .topbar.staff .topbar-in > div:last-child { grid-column: 2; grid-row: 1; min-width: 0; }
+  .topbar.staff .shop-picker { grid-column: 1 / -1; grid-row: 2; min-width: 0; }
+  .topbar.staff .shop-picker .sp-btn { width: 100%; justify-content: space-between; }
+  .topbar.staff .shop-picker .sp-btn strong { max-width: none; }
+  .topbar.staff .tabs { grid-row: 3; }
+}
