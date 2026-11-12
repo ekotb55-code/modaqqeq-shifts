@@ -8,12 +8,14 @@ import { logAct } from '../activity.js';
 import { requestFromPhone } from '../phoneShot.jsx';
 import { setPhoto as addPhotoDoc } from '../cloud.js';
 import { WalletInPick } from './WalletIn.jsx';
+import { addDebtChange, useRepDebts } from '../repDebt.js';
 
 const META = {
   expense: { title: 'مصروف جديد', icon: 'up' },
   income: { title: 'إيراد جديد', icon: 'down' },
   transfer: { title: 'تحويل محفظة', icon: 'phone' },
   topup: { title: 'شحن رصيد مكنة', icon: 'bolt' },
+  repPay: { title: 'سداد لمندوب مكنة', icon: 'up' },
   move: { title: 'نقل بين الدرجين', icon: 'swap' },
   liquidate: { title: 'تسييل وتحويل', icon: 'swap' },
   withdraw: { title: 'سحب لصاحب المحل', icon: 'person' },
@@ -68,6 +70,11 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
   const allSafes = shopSafes(shop).filter((x) => !(x.kind === 'wallet' && x.mode === 'owner'));
   const cashSafes = allSafes.filter((x) => x.kind === 'cash');
   const machineSafes = allSafes.filter((x) => x.kind === 'machine');
+  // Machines by name (the rep is per machine, not per account) and what the shop owes each rep.
+  const machineNames = [...new Set(machineSafes.map((x) => x.m?.machine).filter(Boolean))];
+  const debts = useRepDebts(shop.id);
+  const [repMachine, setRepMachine] = useState(machineNames.length === 1 ? machineNames[0] : '');
+  const topupSafes = [...cashSafes, { key: 'credit', label: 'آجل · المندوب هيتحاسب بعدين' }];
   const liqTargets = [...allSafes, { key: OWNER, label: 'صاحب المحل / المحفظة' }];
   const [note, setNote] = useState('');
   const [amount, setAmount] = useState('');
@@ -105,7 +112,7 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
   };
 
   const validate = () => {
-    if (['expense', 'income', 'topup', 'withdraw', 'liquidate'].includes(type) && !src) return type === 'income' ? 'اختار الفلوس داخلة فين' : 'اختار الفلوس طالعة منين';
+    if (['expense', 'income', 'topup', 'withdraw', 'liquidate', 'repPay'].includes(type) && !src) return type === 'income' ? 'اختار الفلوس داخلة فين' : 'اختار الفلوس طالعة منين';
     if (type === 'expense' && !kind) return 'اختار نوع المصروف';
     if (num(amount) <= 0) return 'اكتب المبلغ';
     if (advanceBlocked) return 'النهارده مش يوم سلف';
@@ -115,6 +122,7 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
     if (type === 'income' && !reasonValue) return 'اختار سبب الإيراد';
     if (type === 'withdraw' && !subValue) return 'اختار مين اللي سحب';
     if (type === 'topup' && !machine) return 'اختار المكنة';
+    if (type === 'repPay' && !repMachine) return 'اختار المكنة';
     if (type === 'liquidate' && !liqTo) return 'اختار الفلوس رايحة فين';
     if (type === 'liquidate' && liqTo === src) return 'اختار خزنة تانية';
     if (type === 'liquidate' && fee >= num(amount) && fee > 0) return 'مصاريف التسييل أكبر من المبلغ';
@@ -152,7 +160,8 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
       }
     }
     if (type === 'transfer') Object.assign(entry, { wallet, src: wallet });
-    if (type === 'topup') { const mm = machineSafes.find((x) => x.key === machine); Object.assign(entry, { src, machineKey: machine, machine: mm?.m?.machine || '', account: mm?.m?.account || '' }); }
+    if (type === 'topup') { const mm = machineSafes.find((x) => x.key === machine); Object.assign(entry, { src, machineKey: machine, machine: mm?.m?.machine || '', account: mm?.m?.account || '', ...(src === 'credit' ? { credit: true } : {}) }); }
+    if (type === 'repPay') Object.assign(entry, { src, machine: repMachine, note: note.trim() });
     if (type === 'liquidate') Object.assign(entry, { src, to: liqTo, note: note.trim(), fromLabel: safeLabel(src, shop), toLabel: safeLabel(liqTo, shop), fee: fee > 0 ? fee : 0, net: Math.round((num(amount) - fee) * 100) / 100 });
     if (type === 'move') Object.assign(entry, { src: moveTo === 'side' ? 'drawer' : 'side', to: moveTo });
     if (type === 'withdraw') {
@@ -171,6 +180,8 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
         entry.photoId = pref.id;
       }
       b.set(eref, entry);
+      // «شحن آجل» → the shop owes the rep more; «سداد» → less.
+      if (entry.credit || type === 'repPay') addDebtChange(b, { shopId: shop.id, machine: entry.machine, delta: entry.credit ? entry.amount : -entry.amount, shiftId: shift.id, entryId: eref.id, by: profile.id, byName: profile.name, note: entry.credit ? 'شحن آجل' : 'سداد' });
       
       const p = b.commit();
       if (navigator.onLine) await p; else p.catch(() => {});
@@ -192,10 +203,28 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
 
   return (
     <Modal title={META[type].title} icon={META[type].icon} color={ENTRY_TYPES[type].color} onClose={onClose}>
-      {['income', 'topup', 'withdraw'].includes(type) && (
+      {['income', 'topup', 'withdraw', 'repPay'].includes(type) && (
         <div className="stack">
-          <span className="small muted">{type === 'income' ? 'الفلوس داخلة فين؟' : 'الفلوس طالعة منين؟'}</span>
-          <SafePick safes={cashSafes} value={src} onPick={setSrc} balances={balances} />
+          <span className="small muted">{type === 'income' ? 'الفلوس داخلة فين؟' : type === 'repPay' ? 'دفعت للمندوب من أنهي درج؟' : 'الفلوس طالعة منين؟'}</span>
+          <SafePick safes={type === 'topup' ? topupSafes : cashSafes} value={src} onPick={setSrc} balances={balances} />
+          {type === 'topup' && src === 'credit' && <span className="small" style={{ background: '#FFF6C9', borderRadius: 14, padding: '8px 12px', lineHeight: 1.7 }}>رصيد المكنة هيزيد والدرج <b>مش هيتأثر</b>. المبلغ هيتسجل <b>دين على المحل للمندوب</b>، ولما ييجي ياخده دوس «سداد لمندوب مكنة».</span>}
+        </div>
+      )}
+
+      {type === 'repPay' && (
+        <div className="stack">
+          <span className="small muted">مندوب أنهي مكنة؟</span>
+          <div className="chips">
+            {machineNames.map((n) => (
+              <button key={n} type="button" className={'chip' + (repMachine === n ? ' on' : '')} onClick={() => setRepMachine(n)} style={{ height: 'auto', minHeight: 46, padding: '6px 16px', display: 'inline-flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1.35 }}>
+                <span>{n}</span><span style={{ fontSize: 12, fontWeight: 500, opacity: 0.85 }}>عليكم {fmt(debts[n] || 0)}</span>
+              </button>
+            ))}
+          </div>
+          {repMachine && <span className="small" style={{ background: num(debts[repMachine]) > 0 ? '#FFF6C9' : '#F1F0F7', borderRadius: 14, padding: '8px 12px', lineHeight: 1.7 }}>
+            {num(debts[repMachine]) > 0 ? <>عليكم لمندوب {repMachine} <b>{fmt(debts[repMachine])} ج</b></> : <>مفيش دين مسجّل لمندوب {repMachine}</>}
+            {num(amount) > 0 && num(amount) > num(debts[repMachine]) + 0.01 ? <><br /><b style={{ color: '#B42318' }}>المبلغ أكبر من الدين المسجّل · اتأكد قبل ما تحفظ</b></> : null}
+          </span>}
         </div>
       )}
       {type === 'expense' && (

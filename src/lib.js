@@ -107,12 +107,16 @@ export const ENTRY_TYPES = {
   income: { label: 'إيراد', color: 'var(--lime)', sign: 1 },
   transfer: { label: 'تحويل محفظة', color: 'var(--violet)', sign: 1 },
   topup: { label: 'شحن رصيد مكنة', color: 'var(--yellow)', sign: -1 },
+  repPay: { label: 'سداد لمندوب مكنة', color: 'var(--orange)', sign: -1 },
   move: { label: 'نقل بين الدرجين', color: 'var(--sky)', sign: 0 },
   liquidate: { label: 'تسييل / تحويل', color: 'var(--sky)', sign: 0 },
   withdraw: { label: 'سحب لصاحب المحل', color: 'var(--pink)', sign: -1 },
   xfer_out: { label: 'فلوس لكاشير تاني', color: 'var(--sky)', sign: -1 },
   xfer_in: { label: 'فلوس من كاشير تاني', color: 'var(--lime)', sign: 1 },
 };
+
+// +1 money came into a drawer, -1 went out, 0 moved / didn't touch the drawers (e.g. «شحن آجل»).
+export const entrySign = (e) => (e?.type === 'topup' && e.credit ? 0 : ENTRY_TYPES[e?.type]?.sign || 0);
 
 export const SRC_LABEL = { drawer: 'درج الكاشير', side: 'الدرج الجانبي', insta: 'انستاباي', insta2: 'انستاباي شخصي', vf: 'فودافون كاش', 'out:owner': 'صاحب المحل' };
 
@@ -360,6 +364,8 @@ export function safeLabel(key, shop) {
   if (key === 'in:income') return 'إيراد';
   if (key === 'in:customer') return 'عميل';
   if (key === 'out:reg' || key === 'in:reg') return 'كاشير تاني';
+  if (key === 'in:rep') return 'مندوب المكنة (آجل)';
+  if (key === 'out:rep') return 'مندوب المكنة (سداد)';
   if (key === 'drawer') return 'درج الكاشير';
   if (key === 'side') return 'الدرج الجانبي';
   const w = WALLETS.find((x) => x.key === key);
@@ -381,7 +387,9 @@ export function flows(e, shop) {
     case 'expense': return [{ from: e.src, to: 'out:expense', a }];
     case 'income': return [{ from: 'in:income', to: e.src, a }];
     case 'transfer': return [{ from: 'in:customer', to: e.wallet, a }];
-    case 'topup': return [{ from: e.src, to: e.machineKey || firstAcc(e.machine), a }];
+    // «آجل»: the rep sent balance without taking money — the shop owes him, no cash moved.
+    case 'topup': return [{ from: e.credit ? 'in:rep' : e.src, to: e.machineKey || firstAcc(e.machine), a }];
+    case 'repPay': return [{ from: e.src, to: 'out:rep', a }];
     case 'move': {
       const to = e.to || 'side';
       return [{ from: e.src || (to === 'side' ? 'drawer' : 'side'), to, a }];
@@ -429,13 +437,14 @@ export function computeShift(shift, entries, shop, sales = null) {
     if (amount >= 0) safes[k].inn += amount; else safes[k].out -= amount;
   };
 
-  let income = 0, expenses = 0, transfers = 0, insta = 0, vf = 0, topups = 0, withdraws = 0, liquidations = 0, xferIn = 0, xferOut = 0, liqFees = 0;
+  let income = 0, expenses = 0, transfers = 0, insta = 0, vf = 0, topups = 0, creditTopups = 0, repPays = 0, withdraws = 0, liquidations = 0, xferIn = 0, xferOut = 0, liqFees = 0;
   entries.forEach((e) => {
     const a = num(e.amount);
     if (e.type === 'expense') expenses += a;
     if (e.type === 'income') income += a;
     if (e.type === 'transfer') { transfers += a; if (e.wallet === 'insta' || e.wallet === 'insta2') insta += a; if (e.wallet === 'vf') vf += a; }
-    if (e.type === 'topup') topups += a;
+    if (e.type === 'topup') { if (e.credit) creditTopups += a; else topups += a; }
+    if (e.type === 'repPay') repPays += a;
     if (e.type === 'withdraw' || (e.type === 'liquidate' && e.to === OWNER)) withdraws += a;
     if (e.type === 'liquidate') { liquidations += a; liqFees += num(e.fee); }
     if (e.type === 'xfer_in') xferIn += a;
@@ -520,11 +529,11 @@ export function computeShift(shift, entries, shop, sales = null) {
 
   const recvCash = num(rcv.drawerTotal) + num(rcv.side);
   const handCash = hnd ? num(hnd.drawerTotal) + num(hnd.side) : 0;
-  const outCash = r2(expenses + topups + withdraws);
+  const outCash = r2(expenses + topups + repPays + withdraws);
   return {
     safes, machines, machineGroups: groupMachines(machines), drawer, side, sales: salesN, hasSales, machineCash: r2(machineCash), machineFees: r2(machineFees), liqFees: r2(liqFees), walletCash: r2(walletCash), walletInfo,
     drawerDiff, sideDiff, diff,
-    income, expenses, transfers, insta, vf, topups, withdraws, liquidations, xferIn, xferOut, recvCash, handCash, outCash,
+    income, expenses, transfers, insta, vf, topups, creditTopups, repPays, withdraws, liquidations, xferIn, xferOut, recvCash, handCash, outCash,
     expected: drawer.expected === null ? null : r2(drawer.expected + side.expected),
   };
 }
@@ -549,7 +558,8 @@ function opLabel(e) {
   if (e.type === 'expense') return [e.kindLabel || 'مصروف', e.sub, e.note].filter(Boolean).join(' · ');
   if (e.type === 'income') return ['إيراد', e.reason].filter(Boolean).join(' · ');
   if (e.type === 'transfer') return 'تحويل من عميل';
-  if (e.type === 'topup') return 'شحن رصيد';
+  if (e.type === 'topup') return e.credit ? 'شحن آجل' : 'شحن رصيد';
+  if (e.type === 'repPay') return 'سداد مندوب';
   if (e.type === 'move') return 'نقل';
   if (e.type === 'withdraw') return 'سحب';
   if (e.type === 'liquidate') return ['تسييل / تحويل', num(e.fee) ? `مصاريف ${fmt(e.fee)}` : '', e.note].filter(Boolean).join(' · ');

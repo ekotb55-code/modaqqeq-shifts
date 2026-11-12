@@ -1,11 +1,12 @@
 import { WalletSmsCard } from '../walletSms.jsx';
+import { addDebtChange } from '../repDebt.js';
 import { useTour } from '../Tour.jsx';
 import { CASHIER_DASH } from '../tours.js';
 import { useEffect, useState } from 'react';
 import { collection, doc, onSnapshot, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Avatar, Icon, Img, Modal, NetMeter, PhotoView, WALLET_LOOK, WalletMark, useToast } from '../ui.jsx';
-import { ENTRY_TYPES, SRC_LABEL, WALLETS, durationStr, firstName, fmt, liveBalances, machineTotals, num, walletModeOf, registersOf, safeLabel, shopSafes, timeStr } from '../lib';
+import { ENTRY_TYPES, SRC_LABEL, WALLETS, durationStr, firstName, fmt, liveBalances, machineTotals, num, walletModeOf, registersOf, safeLabel, shopSafes, timeStr, entrySign } from '../lib';
 import { Incoming, SendModal } from './Transfers.jsx';
 import EntryModal from './EntryModal.jsx';
 import { logAct } from '../activity.js';
@@ -16,7 +17,8 @@ export function entryTitle(e) {
   if (e.type === 'expense') return [e.kindLabel || 'مصروف', e.sub, e.kind === 'supplier' ? (e.invoice === 'invoice' ? '(فاتورة)' : '(توريد بدون فاتورة)') : '', e.note].filter(Boolean).join(' · ');
   if (e.type === 'income') return ['إيراد', e.reason, e.note].filter(Boolean).join(' · ');
   if (e.type === 'transfer') return [`تحويل ${SRC_LABEL[e.wallet] || ''}`, e.smsName, e.smsId ? '✓ برسالة البنك' : ''].filter(Boolean).join(' · ');
-  if (e.type === 'topup') return ['شحن رصيد', e.machine].filter(Boolean).join(' · ');
+  if (e.type === 'topup') return [e.credit ? 'شحن آجل (دين للمندوب)' : 'شحن رصيد', e.machine].filter(Boolean).join(' · ');
+  if (e.type === 'repPay') return ['سداد لمندوب', e.machine].filter(Boolean).join(' · ');
   if (e.type === 'move') return (e.to || 'side') === 'side' ? 'نقل من الدرج للجانبي' : 'نقل من الجانبي للدرج';
   if (e.type === 'withdraw') return ['سحب لصاحب المحل', e.note].filter(Boolean).join(' · ');
   if (e.type === 'liquidate') return [`تسييل/تحويل ${e.fromLabel || ''} ← ${e.toLabel || ''}`, e.note].filter(Boolean).join(' · ');
@@ -33,7 +35,7 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const action = params.get('action');
-      if (['expense', 'income', 'transfer', 'topup', 'move', 'liquidate', 'withdraw'].includes(action)) {
+      if (['expense', 'income', 'transfer', 'topup', 'move', 'liquidate', 'withdraw', 'repPay'].includes(action)) {
         // مسح الـ action من الرابط عشان لو عمل Refresh متفتحش النافذة تاني لوحدها
         window.history.replaceState(null, '', window.location.pathname);
         return action;
@@ -64,7 +66,7 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
   const balances = liveBalances(shift, entries, shop);
   const byType = (t) => entries.filter((e) => e.type === t);
   const subOf = (arr) => (arr.length ? `${arr.length} عمليات · ${fmt(arr.reduce((a, e) => a + num(e.amount), 0))} ج` : 'لسه مفيش النهارده');
-  const out = (src) => sum((e) => (['expense', 'topup', 'withdraw', 'xfer_out'].includes(e.type) || (e.type === 'liquidate' && e.to !== 'drawer' && e.to !== 'side')) && e.src === src);
+  const out = (src) => sum((e) => (['expense', 'topup', 'withdraw', 'xfer_out', 'repPay'].includes(e.type) || (e.type === 'liquidate' && e.to !== 'drawer' && e.to !== 'side')) && e.src === src);
 
   const wallets = WALLETS.filter((w) => (shop.wallets || ['insta', 'vf']).includes(w.key) && walletModeOf(shop, w.key) === 'owner').map((w) => w.key);
   const ops = !shop.noOps;
@@ -81,6 +83,7 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
   const extras = [
     registersOf(shop).length > 0 && { t: 'xfer', label: 'فلوس / فكة لكاشير تاني', icon: 'swap', color: '#4CC3FF' },
     ops && (shop.machines || []).length > 0 && { t: 'topup', label: 'شحن رصيد مكنة', icon: 'bolt' },
+    ops && (shop.machines || []).length > 0 && { t: 'repPay', label: 'سداد لمندوب مكنة', icon: 'up' },
     ops && { t: 'liquidate', label: 'تسييل وتحويل بين الخزن', icon: 'swap' },
     !shop.noSide && { t: 'move', label: 'نقل بين الدرجين', icon: 'swap' },
   ].filter(Boolean);
@@ -159,7 +162,7 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
             return (
               <div key={e.id} className="feed-row">
                 <span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-                  <span className="feed-ic" style={{ background: ENTRY_TYPES[e.type]?.color }}><Icon d={{ expense: 'up', income: 'down', transfer: 'phone', topup: 'bolt', move: 'swap', withdraw: 'person', liquidate: 'swap', xfer_out: 'swap', xfer_in: 'down' }[e.type]} size={18} /></span>
+                  <span className="feed-ic" style={{ background: ENTRY_TYPES[e.type]?.color }}><Icon d={{ expense: 'up', income: 'down', transfer: 'phone', topup: 'bolt', repPay: 'up', move: 'swap', withdraw: 'person', liquidate: 'swap', xfer_out: 'swap', xfer_in: 'down' }[e.type]} size={18} /></span>
                   <span className="stack" style={{ gap: 0, minWidth: 0 }}>
                     <span style={{ fontSize: 15, fontWeight: 600 }}>{entryTitle(e)}</span>
                     <span className="tiny muted">{timeStr(e.createdAt || e.createdAtLocal)} · {SRC_LABEL[e.src] || SRC_LABEL[e.wallet] || safeLabel(e.src, shop)}{e.hasPendingWrites ? ' · لسه بيترفع' : ''}{e.type === 'xfer_out' ? (pendingIds.has(e.transferId) ? ' · مستني تأكيد' : ' · ✓ اتأكد') : ''}</span>
@@ -167,7 +170,7 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {ph && <Img className="thumb" style={{ width: 44, height: 44 }} src={ph} alt="صورة العملية" title="افتح الصورة" onClick={() => setViewPhoto(ph)} />}
-                  <span style={{ fontSize: 17, fontWeight: 700, whiteSpace: 'nowrap' }}>{ENTRY_TYPES[e.type]?.sign < 0 ? '−' : ENTRY_TYPES[e.type]?.sign > 0 ? '+' : ''}{fmt(e.amount)}</span>
+                  <span style={{ fontSize: 17, fontWeight: 700, whiteSpace: 'nowrap' }}>{entrySign(e) < 0 ? '−' : entrySign(e) > 0 ? '+' : ''}{fmt(e.amount)}</span>
                   {shift.status === 'open' && e.type !== 'xfer_in' && (e.type !== 'xfer_out' || pendingIds.has(e.transferId)) && <button type="button" className="icon-btn del-btn" aria-label={`امسح ${entryTitle(e)}`} title="امسح العملية" onClick={() => setDel(e)}><Icon d="trash" size={17} /></button>}
                 </span>
               </div>
@@ -256,6 +259,7 @@ export function DeleteModal({ entry, shift, profile, onClose }) {
     });
     if (entry.type === 'xfer_out' && entry.transferId) b.update(doc(db, 'transfers', entry.transferId), { status: 'cancelled', cancelledAt: serverTimestamp() });
     // A bank-confirmed transfer goes back to the list so the right cashier can take it.
+    if (entry.credit || entry.type === 'repPay') addDebtChange(b, { shopId: shift.shopId, machine: entry.machine, delta: entry.credit ? -num(entry.amount) : num(entry.amount), shiftId: shift.id, entryId: entry.id, by: profile.id, byName: profile.name, note: 'اتمسحت العملية' });
     if (entry.smsId) b.update(doc(db, 'walletIn', entry.smsId), { status: 'new', claimedBy: null, claimedByName: null, claimedShiftId: null, claimedEntryId: null, claimedAtMs: null });
     b.commit().catch((err) => { console.error(err); toast('مش قادرين نمسحها، جرّب تاني', 'err'); });
     logAct('delete', `مسح «${entryTitle(entry)}» ${fmt(entry.amount)} ج${reason.trim() ? ` · السبب: ${reason.trim()}` : ''}`, { shopId: shift.shopId, shiftId: shift.id });

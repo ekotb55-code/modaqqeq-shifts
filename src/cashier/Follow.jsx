@@ -3,7 +3,7 @@ import { collection, doc, getDocs, onSnapshot, orderBy, query, serverTimestamp, 
 import { db } from '../firebase';
 import { Icon, Img, Modal, PhotoView, useToast } from '../ui.jsx';
 import ShiftChat from '../ShiftChat.jsx';
-import { dateStr, diffText, durationStr, firstName, fmt, num, timeStr } from '../lib';
+import { dateStr, diffText, durationStr, firstName, fmt, num, timeStr, entrySign } from '../lib';
 import { logAct } from '../activity.js';
 import { photoSrc, pushEvent } from '../cloud.js';
 import { ENTRY_TYPES, SRC_LABEL, WALLETS, machineKey } from '../lib';
@@ -24,9 +24,9 @@ function ShiftOpsList({ shift }) {
   const live = (entries || []).filter((e) => !e.deleted);
   const deleted = (entries || []).filter((e) => e.deleted);
   const groups = [
-    { id: 'out', title: 'المصروفات واللي طلع من الدرج', color: 'var(--orange)', list: live.filter((e) => (ENTRY_TYPES[e.type]?.sign || 0) < 0) },
-    { id: 'in', title: 'الإيرادات والتحويلات اللي دخلت', color: '#22B07D', list: live.filter((e) => (ENTRY_TYPES[e.type]?.sign || 0) > 0) },
-    { id: 'mv', title: 'نقل وتسييل', color: 'var(--sky)', list: live.filter((e) => !(ENTRY_TYPES[e.type]?.sign)) },
+    { id: 'out', title: 'المصروفات واللي طلع من الدرج', color: 'var(--orange)', list: live.filter((e) => entrySign(e) < 0) },
+    { id: 'in', title: 'الإيرادات والتحويلات اللي دخلت', color: '#22B07D', list: live.filter((e) => entrySign(e) > 0) },
+    { id: 'mv', title: 'نقل وتسييل', color: 'var(--sky)', list: live.filter((e) => !entrySign(e)) },
   ].filter((g) => g.list.length);
   const total = (l) => l.reduce((a, e) => a + num(e.amount), 0);
   const Row = ({ e, struck }) => (
@@ -163,9 +163,9 @@ async function shareShift(shift, toast) {
   rows.forEach((x) => L.push(`• ${x.label}: ${c(x.a)} ← ${h ? c(x.b) : 'لسه'}${x.note ? ` (${x.note})` : ''}`));
   if (mrows.length) { L.push('', '🏧 المكن (استلمت ← سلّمت)'); mrows.forEach((x) => L.push(`• ${x.label}: ${c(x.a)} ← ${h ? c(x.b) : 'لسه'}`)); }
   const groups = [
-    ['📤 المصروفات واللي طلع من الدرج', entries.filter((e) => (ENTRY_TYPES[e.type]?.sign || 0) < 0)],
-    ['📥 الإيرادات والتحويلات', entries.filter((e) => (ENTRY_TYPES[e.type]?.sign || 0) > 0)],
-    ['🔁 نقل وتسييل', entries.filter((e) => !(ENTRY_TYPES[e.type]?.sign))],
+    ['📤 المصروفات واللي طلع من الدرج', entries.filter((e) => entrySign(e) < 0)],
+    ['📥 الإيرادات والتحويلات', entries.filter((e) => entrySign(e) > 0)],
+    ['🔁 نقل وتسييل', entries.filter((e) => !entrySign(e))],
   ].filter(([, l]) => l.length);
   groups.forEach(([t, l]) => {
     L.push('', `${t} · ${fmt(l.reduce((a, e) => a + num(e.amount), 0))} ج`);

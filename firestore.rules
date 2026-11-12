@@ -171,6 +171,18 @@ service cloud.firestore {
     match /smsKeys/{key} {
       allow read, write: if isAdmin();
     }
+    // What the shop owes each machine's rep («شحن آجل» adds, «سداد» takes off). The shop's people change it with their operations.
+    match /repDebts/{shopId} {
+      allow read: if inShop(shopId) || staffOf(shopId);
+      allow create, update: if reviewerOf(shopId) || isAdmin()
+        || (inShop(shopId) && request.resource.data.keys().hasOnly(['machines', 'atMs']));
+      match /log/{id} {
+        allow read: if inShop(shopId) || staffOf(shopId);
+        allow create: if (inShop(shopId) || reviewerOf(shopId)) && request.resource.data.by == request.auth.uid
+          && request.resource.data.keys().hasOnly(['machine', 'delta', 'shiftId', 'entryId', 'by', 'byName', 'note', 'atMs']);
+        allow update, delete: if isAdmin();
+      }
+    }
     // Bank message formats taught from the app (used for every shop).
     match /smsFormats/{id} {
       allow read, write: if isAdmin();

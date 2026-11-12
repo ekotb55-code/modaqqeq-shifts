@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, Modal, useToast } from '../ui.jsx';
-import { ENTRY_TYPES, SRC_LABEL, dateStr, fmt, liveBalances, safeLabel, shopForRegister, timeStr } from '../lib';
+import { ENTRY_TYPES, SRC_LABEL, dateStr, fmt, liveBalances, safeLabel, shopForRegister, timeStr, entrySign } from '../lib';
 import ShiftChat from '../ShiftChat.jsx';
 import EntryModal from './EntryModal.jsx';
 import { DeleteModal, entryTitle } from './Dash.jsx';
@@ -88,7 +88,7 @@ export function AttentionModal({ shift: initial, shop: fullShop, profile, onClos
                   <span className="tiny muted">{timeStr(e.createdAt || e.createdAtLocal)} · {SRC_LABEL[e.src] || SRC_LABEL[e.wallet] || safeLabel(e.src, shop)}</span>
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <strong>{ENTRY_TYPES[e.type]?.sign < 0 ? '−' : ENTRY_TYPES[e.type]?.sign > 0 ? '+' : ''}{fmt(e.amount)}</strong>
+                  <strong>{entrySign(e) < 0 ? '−' : entrySign(e) > 0 ? '+' : ''}{fmt(e.amount)}</strong>
                   {!e.byAccountant && <button type="button" className="icon-btn del-btn" aria-label={`امسح ${entryTitle(e)}`} onClick={() => setDel(e)}><Icon d="trash" size={16} /></button>}
                 </span>
               </div>

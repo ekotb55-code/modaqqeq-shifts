@@ -1,3 +1,4 @@
+import RepDebtsCard from '../RepDebtsCard.jsx';
 import { WalletSmsReview, useShiftWalletSms } from '../walletSms.jsx';
 import { useTour } from '../Tour.jsx';
 import { STAFF_DETAIL, STAFF_REVIEWING } from '../tours.js';
@@ -37,8 +38,9 @@ function dirOf(e, shop) {
     const from = to === 'side' ? 'drawer' : 'side';
     return { kind: 'move', text: `⇄ نقل من ${DRAWER_NAME[from]} إلى ${DRAWER_NAME[to]}` };
   }
+  if (e.type === 'topup' && e.credit) return { kind: 'move', text: '⏳ آجل · دين على المحل للمندوب (الدرج مااتأثرش)' };
   if (e.type === 'liquidate' && (e.to === 'drawer' || e.to === 'side')) return { kind: 'in', text: `⬇ دخل ${DRAWER_NAME[e.to]}` };
-  if (['expense', 'topup', 'withdraw', 'xfer_out', 'liquidate'].includes(e.type)) return { kind: 'out', text: `⬆ خرج من ${where}` };
+  if (['expense', 'topup', 'withdraw', 'xfer_out', 'liquidate', 'repPay'].includes(e.type)) return { kind: 'out', text: `⬆ خرج من ${where}` };
   if (['income', 'xfer_in'].includes(e.type)) return { kind: 'in', text: `⬇ دخل ${where}` };
   const sign = ENTRY_TYPES[e.type]?.sign;
   if (sign < 0) return { kind: 'out', text: `⬆ خرج من ${where}` };
@@ -471,6 +473,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
       {rcv.diffFromPrev && <div className="alert warn small">الكاشير عدّل في أرقام الاستلام{shift.receiveEdits ? ` (${shift.receiveEdits} مرة بعد ما بدأ)` : ''} · اللي قبله سلّم درج {fmt(rcv.prevDrawerTotal)} وجانبي {fmt(rcv.prevSide)}، وهو استلم درج {fmt(rcv.drawerTotal)} وجانبي {fmt(rcv.side)}</div>}
       <Statements c={sum} shift={shift} shop={shop} />
       <WalletSmsReview shift={shift} shop={shop} data={wsms} canEdit={canReview && shift.status !== 'closed'} />
+      <RepDebtsCard shop={fullShop} profile={profile} canEdit={!!canReview} />
       <BillsCompare rcv={rcv} hnd={shift.handover} />
 
       <section className="card" style={{ gap: 0 }} data-tour="moves">
