@@ -38,7 +38,7 @@ function dirOf(e, shop) {
     const from = to === 'side' ? 'drawer' : 'side';
     return { kind: 'move', text: `⇄ نقل من ${DRAWER_NAME[from]} إلى ${DRAWER_NAME[to]}` };
   }
-  if (e.type === 'topup' && e.credit) return { kind: 'move', text: '⏳ آجل · دين على المحل للمندوب (الدرج مااتأثرش)' };
+  if (e.type === 'topup' && e.credit) return { kind: 'move', text: `⏳ آجل · سجّلها من حساب «مندوب ${e.machine || 'المكنة'}» (دائن) ← ${e.machine || 'المكنة'} · الدرج مااتأثرش` };
   if (e.type === 'liquidate' && (e.to === 'drawer' || e.to === 'side')) return { kind: 'in', text: `⬇ دخل ${DRAWER_NAME[e.to]}` };
   if (['expense', 'topup', 'withdraw', 'xfer_out', 'liquidate', 'repPay'].includes(e.type)) return { kind: 'out', text: `⬆ خرج من ${where}` };
   if (['income', 'xfer_in'].includes(e.type)) return { kind: 'in', text: `⬇ دخل ${where}` };
@@ -181,6 +181,48 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
   const allMoves = systemMoves(shift, sum, cashierSafe);
   const moves = [...allMoves.filter((m) => m.id !== 'close'), ...transferMoves];
   const endMoves = allMoves.filter((m) => m.id === 'close');
+  // ── The same order in every shift (the way the accountant enters it on the POS system) ──
+  // 1 receiving → 2 the cashier's operations, same kinds together → 3 machine / wallet differences
+  // (they come after the operations, so no safe goes below zero on the system) → 4 service fees → 5 handover.
+  const steps = useMemo(() => {
+    const op = (e) => ({ e });
+    const sortBy = (l, f) => l.slice().sort((x, y) => String(f(x)).localeCompare(String(f(y)), 'ar') || String(x.createdAtLocal || '').localeCompare(String(y.createdAtLocal || '')));
+    const grp = (id, title, list, key) => ({ id, title, items: (key ? sortBy(list, key) : sortBy(list, () => '')).map(op), count: list.length, total: list.reduce((a, e) => a + num(e.amount), 0) });
+    const exp = opEntries.filter((e) => e.type === 'expense');
+    const EXP_ORDER = ['supplier', 'advance', 'wage', 'delivery', 'shop'];
+    const expKinds = [...new Set(exp.map((e) => e.kind || 'other'))].sort((x, y) => {
+      const r = (k) => (EXP_ORDER.includes(k) ? EXP_ORDER.indexOf(k) : k === 'refund' ? 90 : k === 'other' ? 95 : k === 'correction' ? 99 : 50);
+      return r(x) - r(y);
+    });
+    const KIND_TITLE = { supplier: 'مصروفات · موردين', advance: 'مصروفات · سلف موظفين', wage: 'مصروفات · يوميات ومرتبات', delivery: 'مصروفات · قبض دليفري', shop: 'مصروفات · مصروفات المحل', refund: 'مصروفات · مرتجعات عملاء', other: 'مصروفات · حاجات تانية', correction: 'مصروفات · تصحيح من المحاسب' };
+    const ops = [
+      grp('inc', 'إيرادات', opEntries.filter((e) => e.type === 'income' || e.type === 'xfer_in'), (e) => e.reason || ''),
+      ...expKinds.map((k) => { const l = exp.filter((e) => (e.kind || 'other') === k); return grp('exp:' + k, KIND_TITLE[k] || `مصروفات · ${l[0]?.kindLabel || 'تانية'}`, l, (e) => e.sub || ''); }),
+      grp('topup', 'شحن رصيد مكن (كاش)', opEntries.filter((e) => e.type === 'topup' && !e.credit), (e) => e.machine || ''),
+      grp('credit', 'شحن آجل (من حساب المندوب)', opEntries.filter((e) => e.type === 'topup' && e.credit), (e) => e.machine || ''),
+      grp('rep', 'سداد مندوبين', opEntries.filter((e) => e.type === 'repPay'), (e) => e.machine || ''),
+      { id: 'tr', title: transferMoves.length ? 'تحويلات العملاء على محافظ صاحب المحل' : '', items: transferMoves.map((m) => ({ m })), count: transferMoves.reduce((a, m) => a + (m.parts?.length || 0), 0), total: transferMoves.reduce((a, m) => a + m.amount, 0) },
+      grp('wd', 'سحب لصاحب المحل', opEntries.filter((e) => e.type === 'withdraw'), (e) => e.sub || ''),
+      grp('liq', 'تسييل ونقل بين الخزن', opEntries.filter((e) => e.type === 'liquidate' || e.type === 'move'), (e) => e.type),
+      grp('xo', 'فلوس لكاشير تاني', opEntries.filter((e) => e.type === 'xfer_out'), () => ''),
+    ].filter((g) => g.items.length);
+    const known = new Set(ops.flatMap((g) => g.items.map((it) => it.e?.id).filter(Boolean)));
+    const rest = opEntries.filter((e) => !known.has(e.id));
+    if (rest.length) ops.push(grp('rest', 'عمليات تانية', rest));
+    const pick = (f) => allMoves.filter(f).map((m) => ({ m }));
+    const out = [
+      { title: 'الاستلام', groups: [{ id: 'o', items: pick((m) => m.id === 'open') }] },
+      { title: 'عمليات الكاشير', hint: 'كل نوع ورا بعضه', groups: ops },
+      { title: 'فروق المكن والمحافظ', hint: 'بعد العمليات علشان الخزنة ماتنزلش تحت الصفر', groups: [{ id: 'd', items: pick((m) => /^(m|w):/.test(m.id)) }] },
+      { title: 'مقابل الخدمة والمصاريف', groups: [{ id: 'f', items: pick((m) => /^(s|wf|f):/.test(m.id)) }] },
+      { title: 'التسليم', hint: 'في الآخر خالص', groups: [{ id: 'c', items: pick((m) => m.id === 'close') }] },
+    ].filter((st) => st.groups.some((g) => g.items.length));
+    // Anything new the steps don't know yet still shows, at the end of the differences.
+    const placed = new Set(out.flatMap((st) => st.groups.flatMap((g) => g.items.map((it) => it.m?.id).filter(Boolean))));
+    const extra = allMoves.filter((m) => !placed.has(m.id));
+    if (extra.length) out.splice(Math.max(out.length - 1, 0), 0, { title: 'حركات تانية', groups: [{ id: 'x', items: extra.map((m) => ({ m })) }] });
+    return out.map((st, i) => ({ ...st, n: i + 1 }));
+  }, [opEntries, allMoves, transferMoves]); // eslint-disable-line react-hooks/exhaustive-deps
   const autoPosted = review?.autoPosted || {};
   const toggleMove = (m) => setDoc(doc(db, 'reviews', shift.id), { shopId: shift.shopId, autoPosted: { [m.id]: !autoPosted[m.id] } }, { merge: true })
     .then(() => logAct('post', `${autoPosted[m.id] ? 'شال العلامة من' : 'علّم ✓ على'} «${m.title}» ${fmt(m.amount)} ج · وردية ${shift.cashierName}`, { shopId: shift.shopId, shiftId: shift.id }))
@@ -363,7 +405,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
           <input type="checkbox" checked={!!e.posted} onChange={() => togglePosted(e)} disabled={!canReview} style={{ width: 20, height: 20, accentColor: 'var(--blue)' }} />
           <span className="stack" style={{ gap: 1 }}>
             <span style={{ fontWeight: 700 }}>{entryTitle(e)}{e.newItem && <span className="badge warn" style={{ marginInlineStart: 6 }}>جديد</span>}</span>
-            <span className="tiny muted">{timeStr(e.createdAt || e.createdAtLocal)} · {SRC_LABEL[e.src] || safeLabel(e.src, shop)}{e.type === 'liquidate' ? ` ← ${safeLabel(e.to, shop)}` : ''}</span>
+            <span className="tiny muted">{timeStr(e.createdAt || e.createdAtLocal)} · {e.type === 'topup' && e.credit ? `مندوب ${e.machine || ''} (دائن)` : (SRC_LABEL[e.src] || safeLabel(e.src, shop))}{e.type === 'liquidate' ? ` ← ${safeLabel(e.to, shop)}` : ''}{e.type === 'topup' ? ` ← ${e.machine || ''}${e.account && e.account !== 'الرصيد' ? ` · ${e.account}` : ''}` : ''}{e.type === 'repPay' ? ` ← مندوب ${e.machine || ''}` : ''}</span>
             {dir && <span style={{ alignSelf: 'flex-start', marginTop: 3, padding: '2px 10px', borderRadius: 999, fontSize: 12, fontWeight: 800, ...DIR_STYLE[dir.kind] }}>{dir.text}</span>}
           </span>
         </label>
@@ -481,25 +523,28 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
           <h2 className="h2">2. المصروفات والحركات <span className="tiny muted" style={{ fontWeight: 500 }}>· علّم على كل حاجة دخلتها على السيستم</span></h2>
           {leftMoves + leftEntries > 0 ? <span className="badge warn">فاضل {leftMoves + leftEntries}</span> : <span className="badge ok">✓ كله اتعلّم</span>}
         </div>
-        {moves.length > 0 && <div className="tiny muted" style={{ fontWeight: 700, padding: '6px 0' }}>حركات الخزن (المحاسب بيعملها)</div>}
-        {moves.map((m) => <MoveRow key={m.id} m={m} on={!!autoPosted[m.id]} onToggle={() => toggleMove(m)} canReview={canReview} photoOf={photoOf} onView={setView} />)}
-        {opEntries.length === 0 && moves.length === 0 && endMoves.length === 0 && <div className="empty">مفيش عمليات في الوردية دي</div>}
-
-        {cashierOps.length > 0 && (
-          <div className="spread" style={{ margin: '18px 0 6px', padding: '10px 14px', borderRadius: 12, background: '#E6F4FF', color: '#144F86', borderInlineStart: '6px solid var(--blue)', fontSize: 17, fontWeight: 800 }}>
-            <span>عمليات درج الكاشير</span>
-            <span style={{ fontSize: 14, fontWeight: 700 }}>{cashierOps.length} عملية · {flowOf(cashierOps)}</span>
+        {steps.length === 0 && <div className="empty">مفيش عمليات في الوردية دي</div>}
+        {steps.map((st) => (
+          <div key={st.n} className="stack" style={{ gap: 0 }}>
+            <div className="spread" style={{ margin: '16px 0 4px', padding: '9px 14px', borderRadius: 12, background: '#E6F4FF', color: '#144F86', borderInlineStart: '6px solid var(--blue)', fontSize: 16, fontWeight: 800, gap: 10 }}>
+              <span>{st.n}. {st.title}</span>
+              {st.hint && <span style={{ fontSize: 12, fontWeight: 600 }}>{st.hint}</span>}
+            </div>
+            {st.groups.map((g) => (
+              <div key={g.id} className="stack" style={{ gap: 0 }}>
+                {g.title && (
+                  <div className="spread" style={{ padding: '8px 4px 2px', gap: 10 }}>
+                    <span className="small" style={{ fontWeight: 800 }}>{g.title}</span>
+                    <span className="tiny muted" style={{ fontWeight: 700 }}>{g.count} · {fmt(g.total)} ج</span>
+                  </div>
+                )}
+                {g.items.map((it) => (it.m
+                  ? <MoveRow key={it.m.id} m={it.m} on={!!autoPosted[it.m.id]} onToggle={() => toggleMove(it.m)} canReview={canReview} photoOf={photoOf} onView={setView} />
+                  : renderOp(it.e)))}
+              </div>
+            ))}
           </div>
-        )}
-        {cashierOps.map(renderOp)}
-
-        {sideOps.length > 0 && (
-          <div className="spread" style={{ margin: '22px 0 6px', padding: '10px 14px', borderRadius: 12, background: '#FFF1DE', color: '#8A4B00', borderInlineStart: '6px solid #FF9F43', fontSize: 17, fontWeight: 800 }}>
-            <span>عمليات الدرج الجانبي</span>
-            <span style={{ fontSize: 14, fontWeight: 700 }}>{sideOps.length} عملية · {flowOf(sideOps)}</span>
-          </div>
-        )}
-        {sideOps.map(renderOp)}
+        ))}
 
         {canReview && !closed && (
           <div className="row" style={{ gap: 8, paddingTop: 12 }}>
@@ -513,8 +558,6 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
             {shift.corrections.map((c, i) => <span key={i} className="tiny">{c.by}: {c.what} · من {typeof c.from === 'number' ? fmt(c.from) : c.from} لـ {typeof c.to === 'number' ? fmt(c.to) : c.to}</span>)}
           </div>
         )}
-        {endMoves.length > 0 && <div className="tiny muted" style={{ fontWeight: 700, padding: '10px 0 6px' }}>في الآخر خالص</div>}
-        {endMoves.map((m) => <MoveRow key={m.id} m={m} on={!!autoPosted[m.id]} onToggle={() => toggleMove(m)} canReview={canReview} photoOf={photoOf} onView={setView} />)}
       </section>
 
       {xfers.filter((t) => t.status !== 'cancelled').length > 0 && (
