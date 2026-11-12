@@ -24,7 +24,7 @@ export default function Setup({ profile, shops, sel, setSel }) {
       </div>
       {view === 'staff' ? <StaffAccounts shops={shops} profile={profile} /> : (
         <div className="stack" style={{ gap: 16 }}>
-          {shop ? <ShopEditor key={shop.id} shop={shop} /> : (
+          {shop ? <ShopEditor key={shop.id} shop={shop} shops={shops} /> : (
             <div className="card empty" style={{ minHeight: 220, justifyContent: 'center' }}>{shops.length ? 'اختار المحل من فوق جنب لوجو مدقق علشان تعدّل إعداداته' : 'ابدأ بإضافة أول محل من «اختار المحل» فوق'}</div>
           )}
         </div>
@@ -273,7 +273,7 @@ function ExpenseTypesEditor({ custom, hidden, onCustom, onHidden }) {
   );
 }
 
-function ShopEditor({ shop }) {
+function ShopEditor({ shop, shops = [] }) {
   const toast = useToast();
   const [pub, setPub] = useState(null);
   const [f, setF] = useState(() => ({
@@ -316,11 +316,33 @@ function ShopEditor({ shop }) {
   };
 
 
+  const [copyOpen, setCopyOpen] = useState(false);
+  // Copy chosen parts of another shop's settings into this form. Nothing is saved until «حفظ».
+  const copyFrom = (src, parts) => {
+    const clone = (v) => JSON.parse(JSON.stringify(v ?? null));
+    const up = {};
+    if (parts.shifts) Object.assign(up, { shiftsCount: src.shiftsCount || 1, firstShiftStart: src.firstShiftStart || '09:00', shiftDuration: src.shiftDuration || 12 });
+    if (parts.machines) up.machineList = clone(machineListOf(src));
+    if (parts.wallets) Object.assign(up, { wallets: clone(src.wallets || ['insta', 'vf']), walletModes: clone(walletModesOf(src)), walletFees: clone(src.walletFees || {}) });
+    if (parts.expenses) Object.assign(up, { customExpenseTypes: clone(src.customExpenseTypes || []), hiddenExpenseTypes: clone(src.hiddenExpenseTypes || []), shopExpenses: clone(src.shopExpenses || []), advanceDays: clone(src.advanceDays || []) });
+    if (parts.income) up.incomeReasons = clone(src.incomeReasons || []);
+    if (parts.suppliers) up.suppliers = clone(src.suppliers || []);
+    if (parts.staff) Object.assign(up, { staff: clone(src.staff || []), partners: clone(src.partners || []) });
+    if (parts.registers) Object.assign(up, { registers: clone(src.registers || []), vaults: clone((src.vaults || []).map((v) => ({ ...v }))) });
+    if (parts.pos) up.posUrl = src.posUrl || '';
+    setF((x) => ({ ...x, ...up }));
+    setDirty(true);
+    setCopyOpen(false);
+    toast(`اتنسخ من ${src.name} · راجع الإعدادات ودوس «حفظ»`);
+  };
+
   return (
     <div className="stack" style={{ gap: 16 }}>
+      {copyOpen && <CopySettings shops={shops.filter((x) => x.id !== shop.id)} target={shop} onCopy={copyFrom} onClose={() => setCopyOpen(false)} />}
       <section className="card tint-blue">
         <div className="spread">
           <h2 className="h2">بيانات المحل</h2>
+          {shops.length > 1 && <button type="button" className="btn sm soft" style={{ height: 44 }} onClick={() => setCopyOpen(true)}><Icon d="swap" size={16} />انسخ الإعدادات من محل تاني</button>}
         </div>
         <div className="row" style={{ gap: 16, alignItems: 'center' }}>
           <div className="stack center" style={{ flex: '0 0 auto' }}>
@@ -1190,6 +1212,64 @@ function TeachSms({ sample: first, onClose }) {
       )}
       {got && <span className="tiny muted" style={{ lineHeight: 1.7 }}>📱 متنساش: في MacroDroid على موبايل صاحب المحل، ضيف محفّز رسالة SMS تاني بكلمة من «{format.key}».</span>}
       <button type="button" className="btn full" disabled={!ok} onClick={save}>{!v.bank.trim() && got ? 'اكتب اسم البنك' : 'احفظ الصيغة'}</button>
+    </Modal>
+  );
+}
+
+// Pick a shop and the parts of its settings to copy.
+const COPY_PARTS = [
+  { k: 'machines', label: 'المكن وحساباتها ونسبها ومقابل الخدمة', on: true },
+  { k: 'wallets', label: 'المحافظ وطريقتها ومقابل الخدمة بتاعها', on: true },
+  { k: 'expenses', label: 'أنواع المصروفات ومصروفات المحل وأيام السلف', on: true },
+  { k: 'income', label: 'أسباب الإيراد', on: true },
+  { k: 'shifts', label: 'عدد الورديات ومواعيدها', on: true },
+  { k: 'suppliers', label: 'الموردين', on: false },
+  { k: 'staff', label: 'أسماء الموظفين والشركا', on: false },
+  { k: 'registers', label: 'الأدراج والخزن', on: false },
+  { k: 'pos', label: 'لينك برنامج البيع', on: false },
+];
+function CopySettings({ shops, target, onCopy, onClose }) {
+  const [q, setQ] = useState('');
+  const [src, setSrc] = useState(null);
+  const [parts, setParts] = useState(() => Object.fromEntries(COPY_PARTS.map((p) => [p.k, p.on])));
+  const list = shops.filter((s) => matches(s.name, q));
+  const count = (s, k) => ({
+    machines: (s.machineList || []).length || [...new Set((s.machines || []).map((m) => m.machine))].length,
+    wallets: (s.wallets || []).length, expenses: (s.customExpenseTypes || []).length + (s.shopExpenses || []).length,
+    income: (s.incomeReasons || []).length, suppliers: (s.suppliers || []).length, staff: (s.staff || []).length,
+    registers: (s.registers || []).length + (s.vaults || []).length,
+  }[k]);
+  return (
+    <Modal title={`انسخ إعدادات لـ ${target.name}`} icon="swap" color="var(--blue)" onClose={onClose} width={560}>
+      {!src ? (
+        <>
+          <span className="small muted">من أنهي محل؟</span>
+          <div className="sp-search"><Icon d="search" size={18} /><input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="دوّر على محل…" /></div>
+          <div className="stack" style={{ gap: 6, maxHeight: 360, overflowY: 'auto' }}>
+            {list.map((s) => (
+              <button key={s.id} type="button" className="m-row" style={{ padding: '10px 14px', border: 0, cursor: 'pointer', textAlign: 'start', width: '100%' }} onClick={() => setSrc(s)}>
+                <span className="lbl"><span style={{ fontWeight: 700 }}>{s.name}</span><span className="tiny muted">{count(s, 'machines') || 0} مكنة · {(s.wallets || []).length} محفظة · {(s.customExpenseTypes || []).length + (s.shopExpenses || []).length} نوع مصروف</span></span>
+              </button>
+            ))}
+            {!list.length && <span className="tiny muted">مفيش محل بالاسم ده</span>}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="spread"><span>من: <b>{src.name}</b></span><button type="button" className="link" onClick={() => setSrc(null)}>غيّر المحل</button></div>
+          <span className="small muted">تنسخ إيه؟ (اللي هتعلّم عليه هيحل محل اللي في {target.name})</span>
+          <div className="stack" style={{ gap: 4 }}>
+            {COPY_PARTS.map((p) => (
+              <label key={p.k} className="m-row" style={{ padding: '8px 12px', cursor: 'pointer', gap: 10 }}>
+                <input type="checkbox" checked={!!parts[p.k]} onChange={(e) => setParts({ ...parts, [p.k]: e.target.checked })} style={{ width: 20, height: 20, accentColor: 'var(--blue)' }} />
+                <span className="lbl"><span className="small" style={{ fontWeight: 600 }}>{p.label}</span>{count(src, p.k) !== undefined && <span className="tiny muted">{count(src, p.k)} عنصر في {src.name}</span>}</span>
+              </label>
+            ))}
+          </div>
+          <span className="tiny muted" style={{ lineHeight: 1.7 }}>الأرصدة والكاشيرية والمسؤولين ولوجو المحل مش بيتنسخوا. بعد النسخ راجع الإعدادات ودوس «حفظ»، ولو غيّرت رأيك اقفل الصفحة من غير حفظ.</span>
+          <button type="button" className="btn full" disabled={!Object.values(parts).some(Boolean)} onClick={() => onCopy(src, parts)}>انسخ</button>
+        </>
+      )}
     </Modal>
   );
 }
