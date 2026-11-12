@@ -831,8 +831,13 @@ async function reuseEmail({ email, pass, data }) {
   const all = (await getDocs(query(collection(db, 'users'), where('email', '==', email)))).docs.map((d) => ({ id: d.id, ...d.data() }));
   const u = all[0];
   if (u) {
-    if (!window.confirm(`الإيميل ده لحساب «${u.name}» (${ROLE_LABEL[u.role] || u.role}${u.disabled ? ' · متوقف' : ''}).\nترجّعه${u.disabled ? ' وتفعّله' : ''} وتضيفه على المحلات دي؟`)) return 'cancel';
-    await updateDoc(doc(db, 'users', u.id), { disabled: false, shopIds: [...new Set([...(u.shopIds || []), ...(data.shopIds || [])])], ...(u.role === 'cashier' ? {} : { role: data.role || u.role }) });
+    if (!window.confirm(`الإيميل ده لحساب «${u.name}» (${ROLE_LABEL[u.role] || u.role}${u.disabled ? ' · متوقف' : ''}).\nترجّعه${u.disabled ? ' وتفعّله' : ''} باسم «${data.name}» وتضيفه على المحلات دي؟`)) return 'cancel';
+    await updateDoc(doc(db, 'users', u.id), { disabled: false, name: data.name || u.name, shopIds: [...new Set([...(u.shopIds || []), ...(data.shopIds || [])])], ...(u.role === 'cashier' ? {} : { role: data.role || u.role }) });
+    // The new password too, if we know the old one.
+    try {
+      const old = (await getDoc(doc(db, 'cashierSecrets', u.id))).data()?.password;
+      if (old && pass && old !== pass) { await changeAccountPassword(email, old, pass); await setDoc(doc(db, 'cashierSecrets', u.id), { password: pass, updatedAt: serverTimestamp() }); }
+    } catch { /* keeps the old password */ }
     logAct('staff_edit', `رجّع حساب ${u.name} (${email})`);
     return 'reused';
   }
