@@ -47,6 +47,9 @@ export default function Statements({ c, shift, shop, showDrawer = true }) {
             {(c.walletInfo || []).filter((x) => x.mode === 'shop' && x.sales).map((x) => (
               <Line key={x.key} label={`مبيعات اتدفعت على ${x.label} (الفرق)`} amount={-x.sales} />
             ))}
+            {(c.walletInfo || []).filter((x) => x.mode === 'shop' && x.smsFees).map((x) => (
+              <Line key={x.key + 'f'} label={`مقابل خدمة ${x.label} (من الرسايل)`} amount={x.smsFees} />
+            ))}
             {c.machines.filter((m) => m.svc).map((m) => (
               <Line key={m.key + 's'} label={`مقابل خدمة ${m.machine} (${fmt(m.svcPct)}%)`} amount={m.svc} />
             ))}

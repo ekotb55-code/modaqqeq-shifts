@@ -254,19 +254,30 @@ function normSms_(text) {
     .replace(/[٠-٩]/g, function (d) { return String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)); }).replace(/٫/g, '.').replace(/٬/g, ',');
 }
 function esc_(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+// dir: 'in' فلوس دخلت الحساب، 'out' فلوس طلعت منه. balance: الرصيد اللي في الرسالة لو موجود.
+const IN_RE_ = /استقبلت|استلمت|[اإأ]ستلام|[اإأ]يداع|received|credited/i;
+const OUT_RE_ = /تم تحويل|تم سحب|تم دفع|تم شراء|حولت|سحبت|دفعت|sent|transferred to|debited|withdraw/i;
+function smsDir_(t) { if (IN_RE_.test(t)) return 'in'; if (OUT_RE_.test(t)) return 'out'; return null; }
+function smsBalance_(t) {
+  const m = t.match(/رصيد(?:ك|كم)?(?:\s*(?:الحالي|المتاح|الجديد))?(?:\s*(?:هو|اصبح|أصبح))?\s*:?\s*([\d,]+(?:\.\d+)?)/) || t.match(/balance(?: is)?\s*:?\s*(?:EGP|LE)?\s*([\d,]+(?:\.\d+)?)/i);
+  return m ? Number(m[1].replace(/,/g, '')) : null;
+}
 function parseSms_(text) {
   const t = normSms_(text);
-  if (!/استقبلت|استلمت|[اإأ]ستلام|received/i.test(t)) return null; // رسايل التحويل اللي طالع مش بتاعتنا
-  const am = t.match(/مبلغ\s*:?\s*([\d,]+(?:\.\d+)?)/) || t.match(/([\d,]+(?:\.\d+)?)\s*(?:جم|جنيه|ج\.م|EGP|LE)/i);
+  const dir = smsDir_(t);
+  if (!dir) return null;
+  const am = t.match(/مبلغ\s*:?\s*([\d,]+(?:\.\d+)?)/) || t.match(/([\d,]+(?:\.\d+)?)\s*(?:جم|جنيه|ج\.م|EGP|LE)/i) || t.match(/(?:EGP|LE)\s*([\d,]+(?:\.\d+)?)/i);
   if (!am) return null;
   const amount = Number(am[1].replace(/,/g, ''));
   if (!(amount > 0)) return null;
-  const nm = t.match(/(?:^|\s)من\s+(.+?)\s*(?:\s(?:يوم|في|بتاريخ|رقم|برقم)(?:\s|$)|[،,])/);
-  const ph = t.match(/برقم\s*(\+?\d{10,13})/);
+  const by = t.match(/باسم\s+(.+?)\s*(?:[،,.;]|\s(?:رصيد|رقم|يوم|في)(?:\s|$))/);
+  const nm = by || t.match(/(?:^|\s)(?:من|إلى|الى|لـ?)\s+(?!رقم)(.+?)\s*(?:\s(?:يوم|في|بتاريخ|رقم|برقم)(?:\s|$)|[،,])/);
+  const ph = t.match(/(?:^|\D)(\+?2?01\d{9})(?!\d)/);
   const dt = t.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
   const tm = t.match(/(\d{1,2}:\d{2})/);
-  const rf = t.match(/(?:رقم المعاملة|رقم العملية|الرقم المرجعي|المرجع|Ref(?:erence)?(?: No)?\.?)\s*:?\s*([A-Za-z0-9]{4,})/i);
-  return { amount: amount, fromName: nm ? nm[1].trim().slice(0, 80) : '', fromPhone: ph ? ph[1] : '', smsDate: dt ? dt[1] : '', smsTime: tm ? tm[1] : '', ref: rf ? rf[1] : '', text: t.slice(0, 400) };
+  const rf = t.match(/(?:رقم المعاملة|رقم العملية|الرقم المرجعي|المرجع|Ref(?:erence)?(?: No)?\.?|Transaction ID)\s*:?\s*([A-Za-z0-9]{4,})/i);
+  const name = nm ? nm[1].trim() : '';
+  return { dir: dir, amount: amount, balance: smsBalance_(t), fromName: /^\+?\d+$/.test(name) ? '' : name.slice(0, 80), fromPhone: ph ? ph[1] : '', smsDate: dt ? dt[1] : '', smsTime: tm ? tm[1] : '', ref: rf ? rf[1] : '', text: t.slice(0, 400) };
 }
 // صيغة اتعلّمت من التطبيق (الإعداد ← رسايل البنك ← علّم السيستم رسالة جديدة)
 function applyFormat_(f, text) {
@@ -289,7 +300,8 @@ function applyFormat_(f, text) {
   if (!(amount > 0)) return null;
   const tm = t.match(/(\d{1,2}:\d{2})/);
   const dt = t.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
-  return { amount: amount, fromName: words(f.name), fromPhone: num(f.phone, /^(\+?\d{8,13})/), ref: num(f.ref, /^([A-Za-z0-9]{3,})/), smsDate: dt ? dt[1] : '', smsTime: tm ? tm[1] : '', text: t.slice(0, 400) };
+  const bal = num(f.balance, /^([\d,]+(?:\.\d+)?)/);
+  return { dir: f.dir === 'out' ? 'out' : 'in', amount: amount, balance: bal ? Number(bal.replace(/,/g, '')) : smsBalance_(t), fromName: words(f.name), fromPhone: num(f.phone, /^(\+?\d{8,13})/), ref: num(f.ref, /^([A-Za-z0-9]{3,})/), smsDate: dt ? dt[1] : '', smsTime: tm ? tm[1] : '', text: t.slice(0, 400) };
 }
 function smsFormats_() {
   const cache = CacheService.getScriptCache();
@@ -312,18 +324,26 @@ function sms_(key, text) {
   if (kr.code !== 200) return { ok: false, error: 'bad key' };
   const k = fields_(kr.json);
   const p = parseAny_(text);
+  // المحفظة «تبع المحل» (زي فودافون كاش): كل رسالة داخل/طالع بتتسجل لوحدها. «بتروح لصاحب المحل»: بس الداخل، والكاشير يأكده.
+  const sr = req_('get', FS + '/shops/' + k.shopId);
+  const shop = sr.code === 200 ? fields_(sr.json) : {};
+  const wallet = k.wallet || 'insta';
+  const shopMode = (shop.walletModes || {})[wallet] === 'shop';
+  const okMsg = !!p && (shopMode || p.dir === 'in');
   req_('patch', FS + '/smsKeys/' + key + '?updateMask.fieldPaths=lastAtMs&updateMask.fieldPaths=lastText&updateMask.fieldPaths=lastOk',
-    { fields: toFields_({ lastAtMs: Date.now(), lastText: String(text || '').replace(/\s+/g, ' ').slice(0, 200), lastOk: !!p }) });
-  if (!p) return { ok: true, skipped: true };
+    { fields: toFields_({ lastAtMs: Date.now(), lastText: String(text || '').replace(/\s+/g, ' ').slice(0, 200), lastOk: okMsg }) });
+  if (!okMsg) return { ok: true, skipped: true };
   const id = k.shopId + '_' + (p.ref || Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, p.text).map(function (b) { return ((b + 256) % 256).toString(16); }).join('').slice(0, 16));
   const now = new Date();
-  const doc = { shopId: k.shopId, wallet: k.wallet || 'insta', amount: p.amount, fromName: p.fromName, fromPhone: p.fromPhone, ref: p.ref, smsDate: p.smsDate, smsTime: p.smsTime, text: p.text,
-    atMs: now.getTime(), day: Utilities.formatDate(now, 'Africa/Cairo', 'yyyy-MM-dd'), status: 'new' };
+  const doc = { shopId: k.shopId, wallet: wallet, dir: p.dir, amount: p.amount, balance: p.balance, fromName: p.fromName, fromPhone: p.fromPhone, ref: p.ref, smsDate: p.smsDate, smsTime: p.smsTime, text: p.text,
+    atMs: now.getTime(), day: Utilities.formatDate(now, 'Africa/Cairo', 'yyyy-MM-dd'), status: shopMode ? 'auto' : 'new' };
   const r = req_('post', FS + '/walletIn?documentId=' + encodeURIComponent(id), { fields: toFields_(doc) });
   if (r.code === 409) return { ok: true, dup: true }; // نفس الرسالة وصلت مرتين
   if (r.code !== 200) return { ok: false, error: 'save ' + r.code };
-  req_('post', FS + '/outbox', { fields: toFields_({ type: 'sms', shopId: k.shopId, shiftId: '', to: 'shopCashiers', toUid: '', byUid: '', atMs: now.getTime(),
-    title: '💰 وصل تحويل ' + p.amount + ' ج', body: (p.fromName ? 'من ' + p.fromName + ' · ' : '') + 'لو ده عميلك أكّده في التطبيق' }) });
+  if (!shopMode) {
+    req_('post', FS + '/outbox', { fields: toFields_({ type: 'sms', shopId: k.shopId, shiftId: '', to: 'shopCashiers', toUid: '', byUid: '', atMs: now.getTime(),
+      title: '💰 وصل تحويل ' + p.amount + ' ج', body: (p.fromName ? 'من ' + p.fromName + ' · ' : '') + 'لو ده عميلك أكّده في التطبيق' }) });
+  }
   return { ok: true };
 }
 function toFields_(o) {

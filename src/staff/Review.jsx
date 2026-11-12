@@ -1,3 +1,4 @@
+import { WalletSmsReview, useShiftWalletSms } from '../walletSms.jsx';
 import { useTour } from '../Tour.jsx';
 import { STAFF_DETAIL, STAFF_REVIEWING } from '../tours.js';
 import { useEffect, useMemo, useState } from 'react';
@@ -132,7 +133,10 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
     return () => { a(); b(); c(); d(); };
   }, [shift.id]);
 
-  const sum = computeShift(shift, entries, shop, sales === '' ? null : num(sales));
+  // Shop wallets (Vodafone Cash «تبع المحل»): their messages give the service fees that stay in the drawer.
+  const wsms = useShiftWalletSms(shift, shop);
+  const smsFees = shift.status === 'closed' && shift.smsFees ? shift.smsFees : wsms.fees;
+  const sum = computeShift({ ...shift, smsFees }, entries, shop, sales === '' ? null : num(sales));
   const rcv = shift.receive || {};
   const hnd = shift.handover || {};
   const status = shift.status;
@@ -220,7 +224,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
         vApplied[id] = d;
       });
       if (Object.keys(vInc).length) b.update(doc(db, 'shops', shift.shopId), vInc);
-      b.update(doc(db, 'shifts', shift.id), { status: 'closed', closedAt: serverTimestamp(), closedBy: profile.name, diff: sum.diff, ...(Object.keys(vApplied).length ? { vaultApplied: vApplied } : {}), ...alertCashier });
+      b.update(doc(db, 'shifts', shift.id), { status: 'closed', closedAt: serverTimestamp(), closedBy: profile.name, diff: sum.diff, smsFees: smsFees || {}, ...(Object.keys(vApplied).length ? { vaultApplied: vApplied } : {}), ...alertCashier });
       if (sum.diff !== 0) {
         b.set(doc(db, 'ledger', shift.id), {
           shopId: shift.shopId, shiftId: shift.id, cashierUid: shift.cashierUid, cashierName: shift.cashierName, day: shift.day, month: shift.month,
@@ -466,6 +470,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
 
       {rcv.diffFromPrev && <div className="alert warn small">الكاشير عدّل في أرقام الاستلام{shift.receiveEdits ? ` (${shift.receiveEdits} مرة بعد ما بدأ)` : ''} · اللي قبله سلّم درج {fmt(rcv.prevDrawerTotal)} وجانبي {fmt(rcv.prevSide)}، وهو استلم درج {fmt(rcv.drawerTotal)} وجانبي {fmt(rcv.side)}</div>}
       <Statements c={sum} shift={shift} shop={shop} />
+      <WalletSmsReview shift={shift} shop={shop} data={wsms} canEdit={canReview && shift.status !== 'closed'} />
       <BillsCompare rcv={rcv} hnd={shift.handover} />
 
       <section className="card" style={{ gap: 0 }} data-tour="moves">
@@ -631,8 +636,9 @@ function systemMoves(shift, sum, cashierSafe) {
   const hnd = shift.handover || null;
   const list = [];
   if (num(rcv.drawerTotal) > 0) list.push({ id: 'open', title: 'استلام أول المدة', from: 'خزنة التسليم', to: cashierSafe, amount: num(rcv.drawerTotal) });
-  (sum.walletInfo || []).filter((w) => w.mode === 'shop' && w.sales).forEach((w) => {
-    list.push({ id: 'w:' + w.key, title: `فرق ${w.label}`, from: w.sales < 0 ? w.label : cashierSafe, to: w.sales < 0 ? cashierSafe : w.label, amount: Math.abs(w.sales) });
+  (sum.walletInfo || []).filter((w) => w.mode === 'shop' && (w.sales || w.smsFees)).forEach((w) => {
+    if (w.sales) list.push({ id: 'w:' + w.key, title: `فرق ${w.label}`, from: w.sales < 0 ? w.label : cashierSafe, to: w.sales < 0 ? cashierSafe : w.label, amount: Math.abs(w.sales) });
+    if (w.smsFees) list.push({ id: 'wf:' + w.key, title: `مقابل خدمة ${w.label}`, from: 'إيراد مقابل خدمة', to: w.label, amount: w.smsFees });
   });
   (sum.machineGroups || []).filter((g) => g.affects && g.sales).forEach((g) => {
     list.push({ id: 'm:' + g.machine, title: `فرق ${g.machine} الإجمالي`, from: g.sales < 0 ? g.machine : cashierSafe, to: g.sales < 0 ? cashierSafe : g.machine, amount: Math.abs(g.sales) });

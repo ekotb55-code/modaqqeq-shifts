@@ -1,3 +1,4 @@
+import { WalletSmsCard } from '../walletSms.jsx';
 import { useTour } from '../Tour.jsx';
 import { CASHIER_DASH } from '../tours.js';
 import { useEffect, useState } from 'react';
@@ -126,6 +127,7 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
       <Incoming list={incoming} shop={shop} shift={shift} profile={profile} />
 
       <WalletInCard sms={sms} shop={shop} shift={shift} profile={profile} />
+      <WalletSmsCard shift={shift} shop={shop} />
 
       {tiles.length > 0 && <div data-tour="tiles" className="tiles" style={tiles.length < 3 ? { gridTemplateColumns: `repeat(${tiles.length}, 1fr)` } : undefined}>
         {tiles.map((x) => (

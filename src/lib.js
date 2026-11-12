@@ -261,6 +261,47 @@ export const WALLETS = [
 // A wallet either belongs to the owner (every transfer is recorded with a photo, no balance is
 // received or handed over) or sits in the shop (opening and closing balance only, the accountant sees the difference).
 export const WALLET_MODE = { owner: 'بتروح لصاحب المحل', shop: 'تبع المحل' };
+
+// ── Service fee the customer pays on wallet operations (shop wallets like Vodafone Cash) ──
+// A list of {upTo, fee}: up to 500 → 5, up to 800 → 10, … Above the last row the last fee is used.
+export const DEFAULT_FEE_TIERS = [{ upTo: 500, fee: 5 }, { upTo: 800, fee: 10 }, { upTo: 1000, fee: 15 }, { upTo: 1500, fee: 20 }, { upTo: 1800, fee: 30 }];
+const tiersOf = (t) => (t || []).map((x) => ({ upTo: num(x.upTo), fee: num(x.fee) })).filter((x) => x.upTo > 0).sort((a, b) => a.upTo - b.upTo);
+export function tierFee(base, tiers) {
+  const l = tiersOf(tiers);
+  if (!l.length) return 0;
+  return (l.find((x) => base <= x.upTo) || l[l.length - 1]).fee;
+}
+// One wallet message → the sale/cash amount (base) and the fee.
+// in: the customer sent base + fee (105 = 100 + 5), the drawer gave/sold 100.
+// out: we sent base (500), the customer paid base + fee cash (505).
+export function splitWalletSms(sms, tiers) {
+  const a = num(sms.amount);
+  const l = tiersOf(tiers);
+  if (!l.length || sms.ignored) return { base: a, fee: 0 };
+  if (sms.dir === 'out') return { base: a, fee: tierFee(a, l) };
+  let lo = 0;
+  for (const x of l) {
+    const b = r2(a - x.fee);
+    if (b > lo && b <= x.upTo) return { base: b, fee: x.fee };
+    lo = x.upTo;
+  }
+  const fee = tierFee(a, l);
+  return { base: r2(a - fee), fee };
+}
+// Messages of one wallet → totals.
+export function walletSmsTotals(list, tiers) {
+  const t = { inCount: 0, inTotal: 0, inBase: 0, inFees: 0, outCount: 0, outTotal: 0, outBase: 0, outFees: 0, fees: 0, lastBalance: null, lastAtMs: 0, rows: [] };
+  list.slice().sort((a, b) => (a.atMs || 0) - (b.atMs || 0)).forEach((sms) => {
+    const sp = splitWalletSms(sms, tiers);
+    t.rows.push({ ...sms, ...sp });
+    if (sms.balance !== null && sms.balance !== undefined && (sms.atMs || 0) >= t.lastAtMs) { t.lastBalance = num(sms.balance); t.lastAtMs = sms.atMs || 0; }
+    if (sms.ignored || sms.status === 'ignored') return;
+    if (sms.dir === 'out') { t.outCount++; t.outTotal = r2(t.outTotal + num(sms.amount)); t.outBase = r2(t.outBase + sp.base); t.outFees = r2(t.outFees + sp.fee); }
+    else { t.inCount++; t.inTotal = r2(t.inTotal + num(sms.amount)); t.inBase = r2(t.inBase + sp.base); t.inFees = r2(t.inFees + sp.fee); }
+    t.fees = r2(t.fees + sp.fee);
+  });
+  return t;
+}
 export const walletModeOf = (shop, k) => (shop?.walletModes?.[k] === 'shop' ? 'shop' : 'owner');
 export const walletModesOf = (shop) => Object.fromEntries(WALLETS.map((w) => [w.key, walletModeOf(shop, w.key)]));
 export const machineKey = (m) => `m:${m.machine}|${m.account}`;
@@ -452,7 +493,14 @@ export function computeShift(shift, entries, shop, sales = null) {
     if (mode === 'shop') {
       const typed = hnd?.walletsTyped?.[w.key];
       x.close = typed === undefined || typed === null ? null : num(typed);
-      if (x.close !== null) { x.sales = r2(x.close - x.expected); walletCash -= x.sales; }
+      if (x.close !== null) {
+        x.sales = r2(x.close - x.expected);
+        walletCash -= x.sales;
+        // Service fees on this wallet's operations (from its messages): the customer paid them on top,
+        // so they are the shop's — the drawer keeps them (105 in the wallet = 100 sold + 5 fee).
+        x.smsFees = num(shift.smsFees?.[w.key]);
+        if (x.smsFees) { walletCash += x.smsFees; x.sales = r2(x.sales - x.smsFees); }
+      }
     } else x.close = x.expected;
     walletInfo.push(x);
   });

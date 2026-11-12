@@ -7,20 +7,35 @@ export function normSms(text) {
 }
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-// Built-in formats (Alex Bank, National Bank of Egypt and similar).
+// Built-in formats (Alex Bank, National Bank of Egypt, Vodafone Cash and similar).
+// dir: 'in' money came into the account, 'out' money left it. balance: the account balance the message says, if any.
+const IN_RE = /استقبلت|استلمت|[اإأ]ستلام|[اإأ]يداع|received|credited/i;
+const OUT_RE = /تم تحويل|تم سحب|تم دفع|تم شراء|حولت|سحبت|دفعت|sent|transferred to|debited|withdraw/i;
+export function smsDir(t) {
+  if (IN_RE.test(t)) return 'in';
+  if (OUT_RE.test(t)) return 'out';
+  return null;
+}
+export function smsBalance(t) {
+  const m = t.match(/رصيد(?:ك|كم)?(?:\s*(?:الحالي|المتاح|الجديد))?(?:\s*(?:هو|اصبح|أصبح))?\s*:?\s*([\d,]+(?:\.\d+)?)/) || t.match(/balance(?: is)?\s*:?\s*(?:EGP|LE)?\s*([\d,]+(?:\.\d+)?)/i);
+  return m ? Number(m[1].replace(/,/g, '')) : null;
+}
 export function parseBuiltIn(text) {
   const t = normSms(text);
-  if (!/استقبلت|استلمت|[اإأ]ستلام|received/i.test(t)) return null;
-  const am = t.match(/مبلغ\s*:?\s*([\d,]+(?:\.\d+)?)/) || t.match(/([\d,]+(?:\.\d+)?)\s*(?:جم|جنيه|ج\.م|EGP|LE)/i);
+  const dir = smsDir(t);
+  if (!dir) return null;
+  const am = t.match(/مبلغ\s*:?\s*([\d,]+(?:\.\d+)?)/) || t.match(/([\d,]+(?:\.\d+)?)\s*(?:جم|جنيه|ج\.م|EGP|LE)/i) || t.match(/(?:EGP|LE)\s*([\d,]+(?:\.\d+)?)/i);
   if (!am) return null;
   const amount = Number(am[1].replace(/,/g, ''));
   if (!(amount > 0)) return null;
-  const nm = t.match(/(?:^|\s)من\s+(.+?)\s*(?:\s(?:يوم|في|بتاريخ|رقم|برقم)(?:\s|$)|[،,])/);
-  const ph = t.match(/برقم\s*(\+?\d{10,13})/);
+  const by = t.match(/باسم\s+(.+?)\s*(?:[،,.;]|\s(?:رصيد|رقم|يوم|في)(?:\s|$))/);
+  const nm = by || t.match(/(?:^|\s)(?:من|إلى|الى|لـ?)\s+(?!رقم)(.+?)\s*(?:\s(?:يوم|في|بتاريخ|رقم|برقم)(?:\s|$)|[،,])/);
+  const ph = t.match(/(?:^|\D)(\+?2?01\d{9})(?!\d)/);
   const dt = t.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
   const tm = t.match(/(\d{1,2}:\d{2})/);
-  const rf = t.match(/(?:رقم المعاملة|رقم العملية|الرقم المرجعي|المرجع|Ref(?:erence)?(?: No)?\.?)\s*:?\s*([A-Za-z0-9]{4,})/i);
-  return { amount, fromName: nm ? nm[1].trim().slice(0, 80) : '', fromPhone: ph ? ph[1] : '', smsDate: dt ? dt[1] : '', smsTime: tm ? tm[1] : '', ref: rf ? rf[1] : '', text: t.slice(0, 400) };
+  const rf = t.match(/(?:رقم المعاملة|رقم العملية|الرقم المرجعي|المرجع|Ref(?:erence)?(?: No)?\.?|Transaction ID)\s*:?\s*([A-Za-z0-9]{4,})/i);
+  const name = nm ? nm[1].trim() : '';
+  return { dir, amount, balance: smsBalance(t), fromName: /^\+?\d+$/.test(name) ? '' : name.slice(0, 80), fromPhone: ph ? ph[1] : '', smsDate: dt ? dt[1] : '', smsTime: tm ? tm[1] : '', ref: rf ? rf[1] : '', text: t.slice(0, 400) };
 }
 
 // A format taught from the app: { key, amount:{before}, name:{before,after}, phone:{before}, ref:{before} }
@@ -44,7 +59,8 @@ export function applyFormat(f, text) {
   if (!(amount > 0)) return null;
   const tm = t.match(/(\d{1,2}:\d{2})/);
   const dt = t.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
-  return { amount, fromName: words(f.name), fromPhone: num(f.phone, /^(\+?\d{8,13})/), ref: num(f.ref, /^([A-Za-z0-9]{3,})/), smsDate: dt ? dt[1] : '', smsTime: tm ? tm[1] : '', text: t.slice(0, 400) };
+  const bal = num(f.balance, /^([\d,]+(?:\.\d+)?)/);
+  return { dir: f.dir === 'out' ? 'out' : 'in', amount, balance: bal ? Number(bal.replace(/,/g, '')) : smsBalance(t), fromName: words(f.name), fromPhone: num(f.phone, /^(\+?\d{8,13})/), ref: num(f.ref, /^([A-Za-z0-9]{3,})/), smsDate: dt ? dt[1] : '', smsTime: tm ? tm[1] : '', text: t.slice(0, 400) };
 }
 
 export function parseSms(text, formats = []) {
@@ -54,7 +70,7 @@ export function parseSms(text, formats = []) {
 
 // Teach: the sample message + the values as they appear in it → a format.
 // The anchor is the one word just before each value (the bank's fixed label, like «بمبلغ» or «برقم»).
-export function buildFormat(sample, { key, amount, name, phone, ref }) {
+export function buildFormat(sample, { key, amount, name, phone, ref, balance, dir }) {
   const t = normSms(sample);
   const find = (v) => {
     const s = normSms(v);
@@ -67,8 +83,8 @@ export function buildFormat(sample, { key, amount, name, phone, ref }) {
     const after = post ? (/^[،,.]/.test(post) ? post[0] : post.split(' ')[0]) : '';
     return { before, after };
   };
-  const out = { key: normSms(key), amount: find(amount), name: find(name), phone: find(phone), ref: find(ref) };
-  const missing = ['amount', 'name', 'phone', 'ref'].filter((k) => out[k]?.missing);
+  const out = { key: normSms(key), dir: dir === 'out' ? 'out' : 'in', amount: find(amount), name: find(name), phone: find(phone), ref: find(ref), balance: find(balance) };
+  const missing = ['amount', 'name', 'phone', 'ref', 'balance'].filter((k) => out[k]?.missing);
   return { format: out, missing };
 }
 export const firstWords = (text, n = 3) => normSms(text).split(' ').slice(0, n).join(' ');

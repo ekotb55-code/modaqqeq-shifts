@@ -3,7 +3,7 @@ import { collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, query, serverT
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { Avatar, Icon, Modal, useToast } from '../ui.jsx';
-import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, MACHINE_PRESETS, REG_KIND, allOpen, isAdminRole, newRegister, newExpenseType, RATE_FROM, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, matches, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, newVault, num, pickImage } from '../lib';
+import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, MACHINE_PRESETS, REG_KIND, allOpen, isAdminRole, newRegister, newExpenseType, RATE_FROM, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, matches, normUsername, DEFAULT_FEE_TIERS, tierFee, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, newVault, num, pickImage } from '../lib';
 import { logAct } from '../activity.js';
 import { CLOUD } from '../cloud.js';
 import { applyFormat, buildFormat, firstWords, parseSms } from '../smsFormat.js';
@@ -279,7 +279,7 @@ function ShopEditor({ shop }) {
   const [f, setF] = useState(() => ({
     name: shop.name || '', posUrl: shop.posUrl || '', walletName: shop.walletName || '',
     shiftsCount: shop.shiftsCount || 1, firstShiftStart: shop.firstShiftStart || '09:00', shiftDuration: shop.shiftDuration || 12,
-    machineList: machineListOf(shop), wallets: shop.wallets || ['insta', 'vf'], walletModes: walletModesOf(shop), 
+    machineList: machineListOf(shop), wallets: shop.wallets || ['insta', 'vf'], walletModes: walletModesOf(shop), walletFees: shop.walletFees || {},
     suppliers: shop.suppliers || [], staff: shop.staff || [], stoppedStaff: shop.stoppedStaff || [], partners: shop.partners || [],
     shopExpenses: shop.shopExpenses || [], customExpenseTypes: shop.customExpenseTypes || [], hiddenExpenseTypes: shop.hiddenExpenseTypes || [], incomeReasons: shop.incomeReasons || [], advanceDays: shop.advanceDays || [],
     registers: shop.registers || [], vaults: shop.vaults || [],
@@ -382,12 +382,13 @@ function ShopEditor({ shop }) {
                   ? 'الكاشير مش بيستلم ولا بيسلّم رصيد. بيسجّل كل تحويل لوحده بصورته، والتحويلات بتتخصم من درجه.'
                   : 'الكاشير بيستلم رصيد أول الوردية ويكتب الرصيد آخر الوردية بس. الفرق بيظهر للمحاسب وبيتخصم من الدرج.'}
               </span>
+              {mode === 'shop' && <FeeTiers tiers={f.walletFees[w.key]} onChange={(v) => set('walletFees', { ...f.walletFees, [w.key]: v })} />}
             </div>
           );
         })}
       </section>
 
-      <SmsForward shop={shop} wallets={WALLETS.filter((w) => f.wallets.includes(w.key) && (f.walletModes[w.key] || 'owner') === 'owner')} />
+      <SmsForward shop={shop} wallets={WALLETS.filter((w) => f.wallets.includes(w.key)).map((w) => ({ ...w, mode: f.walletModes[w.key] || 'owner' }))} />
 
       <MachinesEditor list={f.machineList} onChange={(v) => set('machineList', v)} />
 
@@ -1012,6 +1013,34 @@ function StaffAccounts({ shops, profile }) {
   );
 }
 
+// Service fee the customer pays on each wallet operation: up to 500 → 5, up to 800 → 10 …
+function FeeTiers({ tiers, onChange }) {
+  const list = tiers && tiers.length ? tiers : DEFAULT_FEE_TIERS;
+  const upd = (i, k, v) => onChange(list.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
+  let from = 0;
+  return (
+    <div className="stack" style={{ gap: 8, background: '#F7F6FB', borderRadius: 16, padding: '10px 12px' }}>
+      <span className="small"><b>مقابل الخدمة على العميل</b> <span className="muted">· بيتحسب على كل رسالة داخل أو طالع</span></span>
+      {list.map((x, i) => {
+        const lo = from; from = num(x.upTo) || from;
+        return (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span className="small" style={{ minWidth: 54 }}>من {fmt(lo)}</span>
+            <label className="small" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>لحد<input className="input" style={{ width: 96, height: 40 }} inputMode="decimal" dir="ltr" value={x.upTo} onChange={(e) => upd(i, 'upTo', e.target.value)} /></label>
+            <label className="small" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>الخدمة<input className="input" style={{ width: 80, height: 40 }} inputMode="decimal" dir="ltr" value={x.fee} onChange={(e) => upd(i, 'fee', e.target.value)} />ج</label>
+            <button type="button" className="icon-btn" style={{ width: 36, height: 36 }} aria-label="امسح السطر" onClick={() => onChange(list.filter((_, j) => j !== i))}><Icon d="trash" size={14} /></button>
+          </div>
+        );
+      })}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button type="button" className="btn sm soft" style={{ height: 38 }} onClick={() => onChange([...list, { upTo: (num(list[list.length - 1]?.upTo) || 0) + 500, fee: num(list[list.length - 1]?.fee) || 0 }])}><Icon d="plus" size={14} />سطر</button>
+        <button type="button" className="link" onClick={() => onChange(DEFAULT_FEE_TIERS)}>رجّع الأرقام الأصلية</button>
+      </div>
+      <span className="tiny muted" style={{ lineHeight: 1.7 }}>مثال: وصل للمحفظة {fmt(100 + tierFee(100, list))} يعني العميل اشترى بـ 100 والخدمة {fmt(tierFee(100, list))} · وصل {fmt(700 + tierFee(700, list))} يعني باع بـ 700. فوق آخر سطر بياخد آخر رقم خدمة.</span>
+    </div>
+  );
+}
+
 // ── Bank SMS on the owner's phone → the shop app ──
 // Each wallet gets a secret link. A small app on the owner's Android phone (MacroDroid) sends every
 // "you received a transfer" SMS to that link; the cashier then confirms which ones are his customers'.
@@ -1027,7 +1056,7 @@ function SmsForward({ shop, wallets }) {
   const linkOf = (k) => `${CLOUD.url}?k=${k.id}`;
   const make = async (w) => {
     try {
-      await setDoc(doc(db, 'smsKeys', newKey()), { shopId: shop.id, shopName: shop.name || '', wallet: w.key, atMs: Date.now() });
+      await setDoc(doc(db, 'smsKeys', newKey()), { shopId: shop.id, shopName: shop.name || '', wallet: w.key, mode: w.mode || 'owner', atMs: Date.now() });
       logAct('setup', `عمل رابط رسايل البنك لـ ${w.label} · ${shop.name}`, { shopId: shop.id });
     } catch (e) { console.error(e); toast('مش قادرين نعمله، جرّب تاني', 'err'); }
   };
@@ -1040,15 +1069,16 @@ function SmsForward({ shop, wallets }) {
     <section className="card tint-violet">
       <h2 className="h2">📩 رسايل البنك على موبايل صاحب المحل</h2>
       <span className="tiny muted" style={{ lineHeight: 1.8 }}>
-        لما العميل يحوّل على انستاباي/المحفظة، البنك بيبعت رسالة لموبايل صاحب المحل. الرسالة دي توصل للكاشير في التطبيق، يدوس «ده عميلي» ويتسجل التحويل من غير صورة.
-        محتاجين موبايل صاحب المحل أندرويد عليه تطبيق MacroDroid (مجاني).
+        المحفظة اللي «بتروح لصاحب المحل»: رسالة البنك توصل للكاشير ويدوس «ده عميلي» ويتسجل التحويل من غير صورة.
+        المحفظة اللي «تبع المحل» (زي فودافون كاش على موبايل المحل): كل رسالة داخل أو طالع بتتسجل لوحدها بمقابل الخدمة، والكاشير والمحاسب بيشوفوا الرصيد.
+        محتاجين الموبايل اللي بتوصله الرسايل أندرويد عليه تطبيق MacroDroid (مجاني).
       </span>
       {wallets.map((w) => {
         const k = keys.find((x) => x.wallet === w.key);
         return (
           <div key={w.key} className="stack" style={{ background: '#fff', borderRadius: 20, padding: '12px 14px', gap: 8 }}>
             <div className="spread">
-              <strong>{w.label}</strong>
+              <span className="stack" style={{ gap: 0 }}><strong>{w.label}</strong><span className="tiny muted">{w.mode === 'shop' ? 'تبع المحل · كل رسالة داخل/طالع بتتسجل لوحدها' : 'بتروح لصاحب المحل · الكاشير بيأكد التحويل'}</span></span>
               {k ? <span className="badge">{k.lastAtMs ? `آخر رسالة: ${new Date(k.lastAtMs).toLocaleString('ar-EG', { day: 'numeric', month: 'numeric', hour: 'numeric', minute: '2-digit' })}` : 'لسه موصلش رسايل'}</span>
                 : <button type="button" className="btn sm" onClick={() => make(w)}>اعمل رابط</button>}
             </div>
@@ -1064,7 +1094,7 @@ function SmsForward({ shop, wallets }) {
                 <ol className="small" style={{ lineHeight: 2, paddingInlineStart: 20, margin: 0 }}>
                   <li>على موبايل صاحب المحل نزّل <b>MacroDroid</b> من Play Store وافتحه.</li>
                   <li>دوس <b>Add Macro</b> وسمّيه «مدقق».</li>
-                  <li>في <b>Triggers</b> اختار <b>Call/SMS</b> ← <b>SMS Received</b>، وفي الرسالة اختار <b>Contains</b> واكتب <code>استقبلت</code>. لو صاحب المحل عنده حساب في البنك الأهلي كمان، دوس + في «المحفزات» واعمل محفّز تاني بنفس الطريقة بكلمة <code>ستلام</code>. (لو مش موجود: <b>Applications</b> ← <b>Notification</b> واختار تطبيق الرسايل.)</li>
+                  <li>في <b>Triggers</b> اختار <b>Call/SMS</b> ← <b>SMS Received</b>، وفي الرسالة اختار <b>Contains</b> واكتب <code>استقبلت</code> (ولمحفظة «تبع المحل» زي فودافون كاش اكتب <code>مبلغ</code> علشان تمسك الداخل والطالع). لو صاحب المحل عنده حساب في البنك الأهلي كمان، دوس + في «المحفزات» واعمل محفّز تاني بنفس الطريقة بكلمة <code>ستلام</code>. (لو مش موجود: <b>Applications</b> ← <b>Notification</b> واختار تطبيق الرسايل.)</li>
                   <li>في <b>Actions</b> اختار <b>Connectivity</b> ← <b>HTTP Request</b>: النوع <b>POST</b>، والـ URL هو الرابط اللي فوق.</li>
                   <li>في الـ Body دوس على <b>...</b> واختار <b>SMS Message</b> (أو <b>Notification Text</b>).</li>
                   <li>احفظ ✓ ووافق على الصلاحيات اللي يطلبها.</li>
@@ -1107,16 +1137,16 @@ function TeachSms({ sample: first, onClose }) {
   const toast = useToast();
   const [sample, setSample] = useState(first || '');
   const guess = parseSms(first || '') || {};
-  const [v, setV] = useState({ bank: '', key: firstWords(first || ''), amount: guess.amount ? String(first.match(/[\d,]+(?:\.\d+)?/g)?.find((x) => Number(x.replace(/,/g, '')) === guess.amount) || guess.amount) : '', name: guess.fromName || '', phone: guess.fromPhone || '', ref: guess.ref || '' });
+  const [v, setV] = useState({ bank: '', key: firstWords(first || ''), amount: guess.amount ? String(first.match(/[\d,]+(?:\.\d+)?/g)?.find((x) => Number(x.replace(/,/g, '')) === guess.amount) || guess.amount) : '', name: guess.fromName || '', phone: guess.fromPhone || '', ref: guess.ref || '', balance: guess.balance ? String(first.match(/[\d,]+(?:\.\d+)?/g)?.find((x) => Number(x.replace(/,/g, '')) === guess.balance) || guess.balance) : '', dir: guess.dir || 'in' });
   const set = (k, x) => setV((o) => ({ ...o, [k]: x }));
   const onSample = (x) => { setSample(x); if (!v.key || v.key === firstWords(sample)) set('key', firstWords(x)); };
   const { format, missing } = buildFormat(sample, v);
   const got = sample && v.key && v.amount ? applyFormat(format, sample) : null;
-  const LBL = { amount: 'المبلغ', name: 'الاسم', phone: 'الموبايل', ref: 'رقم المعاملة' };
+  const LBL = { amount: 'المبلغ', name: 'الاسم', phone: 'الموبايل', ref: 'رقم المعاملة', balance: 'الرصيد' };
   const ok = got && !missing.length && v.bank.trim();
   const save = async () => {
     try {
-      await setDoc(doc(collection(db, 'smsFormats')), { bank: v.bank.trim(), key: format.key, amount: format.amount, name: format.name, phone: format.phone, ref: format.ref, sample: sample.slice(0, 400), on: true, atMs: Date.now() });
+      await setDoc(doc(collection(db, 'smsFormats')), { bank: v.bank.trim(), key: format.key, dir: format.dir, amount: format.amount, name: format.name, phone: format.phone, ref: format.ref, balance: format.balance, sample: sample.slice(0, 400), on: true, atMs: Date.now() });
       logAct('setup', `علّم السيستم رسالة ${v.bank.trim()}`);
       toast('اتحفظ ✓ الرسايل الجاية بالشكل ده هتوصل للكاشير');
       onClose();
@@ -1136,6 +1166,16 @@ function TeachSms({ sample: first, onClose }) {
         <label className="field" style={{ flex: '1 1 160px' }}>رقم الموبايل (لو موجود)<input className="input" dir="ltr" value={v.phone} onChange={(e) => set('phone', e.target.value)} /></label>
         <label className="field" style={{ flex: '1 1 160px' }}>رقم المعاملة (لو موجود)<input className="input" dir="ltr" value={v.ref} onChange={(e) => set('ref', e.target.value)} /></label>
       </div>
+      <div className="row" style={{ gap: 10, alignItems: 'flex-end' }}>
+        <label className="field" style={{ flex: '1 1 160px' }}>الرصيد بعد العملية (لو موجود)<input className="input" dir="ltr" value={v.balance} onChange={(e) => set('balance', e.target.value)} /></label>
+        <div className="stack" style={{ flex: '1 1 200px', gap: 6 }}>
+          <span className="small">الرسالة دي فلوس</span>
+          <div className="chips">
+            <button type="button" className={'chip sm' + (v.dir !== 'out' ? ' on' : '')} onClick={() => set('dir', 'in')}>داخلة (استلمنا)</button>
+            <button type="button" className={'chip sm' + (v.dir === 'out' ? ' on' : '')} onClick={() => set('dir', 'out')}>طالعة (حوّلنا)</button>
+          </div>
+        </div>
+      </div>
       <div className="row" style={{ gap: 10 }}>
         <label className="field" style={{ flex: '1 1 160px' }}>اسم البنك<input className="input" value={v.bank} onChange={(e) => set('bank', e.target.value)} placeholder="مثلًا بنك مصر" /></label>
         <label className="field" style={{ flex: '2 1 220px' }}>الرسالة بتبدأ بـ (كلام ثابت في كل رسالة)<input className="input" value={v.key} onChange={(e) => set('key', e.target.value)} /></label>
@@ -1143,8 +1183,8 @@ function TeachSms({ sample: first, onClose }) {
       {missing.length > 0 && <span className="badge bad">مش لاقيين في الرسالة: {missing.map((k) => LBL[k]).join('، ')} · انسخها من الرسالة بالظبط</span>}
       {sample && v.amount && !missing.length && (
         <div className="stack" style={{ background: got ? '#EAFBC2' : '#FFE4E4', borderRadius: 16, padding: '10px 14px', gap: 4 }}>
-          <strong className="small">{got ? '✓ السيستم هيقرا الرسالة كده:' : '✗ السيستم مش قادر يقرا الرسالة بالشكل ده'}</strong>
-          {got && <span className="small" style={{ lineHeight: 1.8 }}>المبلغ <b>{fmt(got.amount)} ج</b> · الاسم <b>{got.fromName || '—'}</b>{got.fromPhone ? <> · الموبايل <b>{got.fromPhone}</b></> : ''}{got.ref ? <> · رقم المعاملة <b>{got.ref}</b></> : ''}</span>}
+          <strong className="small">{got ? `✓ السيستم هيقرا الرسالة كده (${got.dir === 'out' ? 'فلوس طالعة' : 'فلوس داخلة'}):` : '✗ السيستم مش قادر يقرا الرسالة بالشكل ده'}</strong>
+          {got && <span className="small" style={{ lineHeight: 1.8 }}>المبلغ <b>{fmt(got.amount)} ج</b> · الاسم <b>{got.fromName || '—'}</b>{got.fromPhone ? <> · الموبايل <b>{got.fromPhone}</b></> : ''}{got.ref ? <> · رقم المعاملة <b>{got.ref}</b></> : ''}{got.balance !== null && got.balance !== undefined ? <> · الرصيد <b>{fmt(got.balance)}</b></> : ''}</span>}
           {!got && <span className="tiny">اتأكد إن «الرسالة بتبدأ بـ» كلام موجود فعلًا في أول الرسالة.</span>}
         </div>
       )}
