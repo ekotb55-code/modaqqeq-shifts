@@ -204,7 +204,8 @@ service cloud.firestore {
         // The owner / branch manager decides: send to the cashiers, «شخصي», or refuse a confirmation.
         || (staffOf(resource.data.shopId)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'releasedAtMs', 'decidedBy', 'decidedByName', 'decidedAtMs'])
-            && request.resource.data.status in ['new', 'personal', 'rejected', 'big'])
+            && (request.resource.data.status in ['new', 'personal', 'rejected', 'big', 'approved']
+                || (request.resource.data.status == 'claimed' && resource.data.get('claimedBy', '') != '')))
         || (inShop(resource.data.shopId)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'claimedBy', 'claimedByName', 'claimedShiftId', 'claimedEntryId', 'claimedAtMs', 'claimInvoice'])
             && ((resource.data.status == 'new' && request.resource.data.status == 'claimed' && request.resource.data.claimedBy == request.auth.uid)

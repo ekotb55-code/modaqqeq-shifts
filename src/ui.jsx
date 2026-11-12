@@ -67,10 +67,11 @@ export const useToast = () => useContext(ToastCtx);
 export function ToastProvider({ children }) {
   const [t, setT] = useState(null);
   const timer = useRef();
-  const show = useCallback((msg, kind = 'ok') => {
-    setT({ msg, kind });
+  // opts.undo: a «تراجع» button on the toast, which stays a bit longer
+  const show = useCallback((msg, kind = 'ok', opts = {}) => {
+    setT({ msg, kind, undo: opts.undo || null });
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => setT(null), 2800);
+    timer.current = setTimeout(() => setT(null), opts.undo ? 7000 : 2800);
   }, []);
   useEffect(() => { const f = (e) => show(e.detail); window.addEventListener('mdq-toast', f); return () => window.removeEventListener('mdq-toast', f); }, [show]);
   return (
@@ -79,6 +80,7 @@ export function ToastProvider({ children }) {
       {t && (
         <div role="status" className={'toast' + (t.kind === 'err' ? ' err' : '')}>
           <span className="ok">{t.kind === 'err' ? '!' : '✓'}</span>{t.msg}
+          {t.undo && <button type="button" className="toast-undo" onClick={() => { const f = t.undo; setT(null); f(); }}>تراجع</button>}
         </div>
       )}
     </ToastCtx.Provider>

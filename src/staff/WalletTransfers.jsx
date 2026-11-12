@@ -2,16 +2,17 @@ import { useEffect, useState } from 'react';
 import { collection, doc, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { WalletMark, useToast } from '../ui.jsx';
-import { SRC_LABEL, fmt, todayKey, walletModeOf } from '../lib';
+import { fmt, todayKey, walletModeOf } from '../lib';
 import { logAct } from '../activity.js';
 import { pushEvent } from '../cloud.js';
 import { windowOf } from '../cashier/WalletIn.jsx';
 
-// Bank transfers to the owner's wallet (InstaPay…), for the owner and the accountant:
-//  · bigger than the shop's limit → they decide: send it to the cashiers, or «شخصي»;
-//  · shown to the cashiers now → can still be marked «شخصي»;
-//  · confirmed by a cashier (with the sale invoice number) → «مش بتاع المحل» refuses it: it no longer counts
-//    for the cashier, so the drawer must have that money.
+// Bank transfers to the owner's wallet (InstaPay…), for the owner and the accountant. Newest on top:
+//  · «وصلت دلوقتي»: shown to the cashiers now → can be marked «شخصي»;
+//  · «مستنية قرارك»: bigger than the shop's limit → send it to the cashiers, or «شخصي»;
+//  · «أكّدها الكاشير» (with the sale invoice number) → «✓ تبع المحل» (done) or «✗ مش بتاع المحل» (refused:
+//    it no longer counts for the cashier, so the drawer must have that money);
+//  · «اللي خلص»: every decision can be taken back («رجّعه»), and right after a tap there's «تراجع» on the toast.
 
 const lastDays = (n) => Array.from({ length: n }, (_, i) => todayKey(new Date(Date.now() - i * 86400000)));
 
@@ -33,91 +34,122 @@ export default function WalletTransfers({ shops, profile }) {
   const byGroup = new Map();
   all.forEach((x) => { const g = x.group || x.id; if (!byGroup.has(g)) byGroup.set(g, []); byGroup.get(g).push(x); });
   const items = [...byGroup.values()].map((copies) => {
-    const claimed = copies.find((c) => c.status === 'claimed' || c.status === 'rejected');
+    const claimed = copies.find((c) => ['claimed', 'rejected', 'approved'].includes(c.status));
     const main = claimed || copies[0];
     return { ...main, copies, shopNames: copies.map((c) => shops.find((s) => s.id === c.shopId)?.name).filter(Boolean) };
-  }).sort((a, b) => (b.atMs || 0) - (a.atMs || 0));
+  });
   const now = Date.now();
-  const big = items.filter((x) => x.status === 'big');
-  const live = items.filter((x) => x.status === 'new' && (x.releasedAtMs || x.atMs || 0) > now - windowOf(x));
-  const claimed = items.filter((x) => x.status === 'claimed');
-  const done = items.filter((x) => ['rejected', 'personal', 'expired'].includes(x.status) || (x.status === 'new' && (x.releasedAtMs || x.atMs || 0) <= now - windowOf(x)));
+  const newest = (k) => (a, b) => (b[k] || b.atMs || 0) - (a[k] || a.atMs || 0);
+  const isLive = (x) => x.status === 'new' && (x.releasedAtMs || x.atMs || 0) > now - windowOf(x);
+  const live = items.filter(isLive).sort(newest('releasedAtMs'));
+  const big = items.filter((x) => x.status === 'big').sort(newest('atMs'));
+  const claimed = items.filter((x) => x.status === 'claimed').sort(newest('claimedAtMs'));
+  const done = items.filter((x) => ['approved', 'rejected', 'personal', 'expired'].includes(x.status) || (x.status === 'new' && !isLive(x))).sort(newest('decidedAtMs'));
 
-  const setAll = async (x, patch, what) => {
-    const b = writeBatch(db);
-    x.copies.forEach((c) => b.update(doc(db, 'walletIn', c.id), { ...patch, decidedBy: profile.id, decidedByName: profile.name, decidedAtMs: Date.now() }));
-    try { await b.commit(); logAct('sms_decide', `${what} · تحويل ${fmt(x.amount)} ج من ${x.fromName || 'عميل'}`, { shopId: x.shopId }); toast('اتعمل ✓'); }
-    catch (e) { console.error(e); toast('مش قادرين نحفظ', 'err'); }
+  const stamp = () => ({ decidedBy: profile.id, decidedByName: profile.name, decidedAtMs: Date.now() });
+  const commit = async (b, msg, undo) => {
+    try { await b.commit(); toast(msg, 'ok', undo ? { undo } : {}); return true; }
+    catch (e) { console.error(e); toast('مش قادرين نحفظ', 'err'); return false; }
   };
-  const release = (x) => setAll(x, { status: 'new', releasedAtMs: Date.now() }, 'بعته للكاشيرية');
-  const personal = (x) => setAll(x, { status: 'personal' }, 'علّم عليه شخصي');
-  const refuse = async (x) => {
-    if (!window.confirm(`ترفض تحويل ${fmt(x.amount)} ج اللي ${x.claimedByName || 'الكاشير'} أكّده؟\nهيتشال من حسابه، والدرج المفروض يبقى فيه المبلغ ده.`)) return;
+  const label = (x) => `تحويل ${fmt(x.amount)} ج من ${x.fromName || 'عميل'}`;
+  // every copy (branch) of the transfer gets the same status
+  const setAll = async (x, patch, what, undoPatch) => {
     const b = writeBatch(db);
-    b.update(doc(db, 'walletIn', x.id), { status: 'rejected', decidedBy: profile.id, decidedByName: profile.name, decidedAtMs: Date.now() });
-    if (x.claimedShiftId && x.claimedEntryId) b.update(doc(db, 'shifts', x.claimedShiftId, 'entries', x.claimedEntryId), { smsRejected: true, smsRejectedBy: profile.name, smsRejectedAt: Date.now() });
-    try {
-      await b.commit();
-      logAct('sms_refuse', `رفض تحويل ${fmt(x.amount)} ج اللي ${x.claimedByName} أكّده (فاتورة ${x.claimInvoice || '—'})`, { shopId: x.shopId, shiftId: x.claimedShiftId });
-      pushEvent({ type: 'sms_refused', shopId: x.shopId, shiftId: x.claimedShiftId, to: 'staff', title: `❌ ${profile.name} رفض تحويل ${fmt(x.amount)} ج`, body: `اللي ${x.claimedByName} أكّده · المبلغ ده بقى على الكاشير` });
-      toast('اترفض · المبلغ بقى على الكاشير');
-    } catch (e) { console.error(e); toast('مش قادرين نحفظ', 'err'); }
+    x.copies.forEach((c) => b.update(doc(db, 'walletIn', c.id), { ...patch, ...stamp() }));
+    const ok = await commit(b, what, undoPatch ? () => setAll(x, undoPatch, 'رجع زي ما كان') : null);
+    if (ok) logAct('sms_decide', `${what} · ${label(x)}`, { shopId: x.shopId });
+  };
+  const release = (x) => setAll(x, { status: 'new', releasedAtMs: Date.now() }, 'اتبعت للكاشيرية', { status: x.status });
+  const personal = (x) => setAll(x, { status: 'personal' }, 'اتعلّم شخصي', { status: x.status });
+  // only the copy the cashier confirmed (the other branches' copies stay as they are)
+  const setOne = async (x, status, what, undoStatus) => {
+    const b = writeBatch(db);
+    b.update(doc(db, 'walletIn', x.id), { status, ...stamp() });
+    const ok = await commit(b, what, undoStatus ? () => setOne(x, undoStatus, 'رجع زي ما كان') : null);
+    if (ok) logAct('sms_decide', `${what} · ${label(x)}`, { shopId: x.shopId });
+  };
+  const approve = (x) => setOne(x, 'approved', 'اتعلّم تبع المحل', 'claimed');
+
+  const entryRef = (x) => (x.claimedShiftId && x.claimedEntryId ? doc(db, 'shifts', x.claimedShiftId, 'entries', x.claimedEntryId) : null);
+  const unrefuse = async (x) => {
+    const b = writeBatch(db);
+    b.update(doc(db, 'walletIn', x.id), { status: 'claimed', ...stamp() });
+    const er = entryRef(x);
+    if (er) b.update(er, { smsRejected: false, smsRejectedBy: profile.name, smsRejectedAt: Date.now() });
+    if (await commit(b, 'رجع زي ما كان · المبلغ رجع في حساب الكاشير')) logAct('sms_unrefuse', `رجّع ${label(x)} اللي كان رفضه`, { shopId: x.shopId, shiftId: x.claimedShiftId });
+  };
+  const refuse = async (x) => {
+    const b = writeBatch(db);
+    b.update(doc(db, 'walletIn', x.id), { status: 'rejected', ...stamp() });
+    const er = entryRef(x);
+    if (er) b.update(er, { smsRejected: true, smsRejectedBy: profile.name, smsRejectedAt: Date.now() });
+    if (!(await commit(b, 'اترفض · المبلغ بقى على الكاشير', () => unrefuse(x)))) return;
+    logAct('sms_refuse', `رفض ${label(x)} اللي ${x.claimedByName} أكّده (فاتورة ${x.claimInvoice || '—'})`, { shopId: x.shopId, shiftId: x.claimedShiftId });
+    pushEvent({ type: 'sms_refused', shopId: x.shopId, shiftId: x.claimedShiftId, to: 'staff', title: `❌ ${profile.name} رفض تحويل ${fmt(x.amount)} ج`, body: `اللي ${x.claimedByName} أكّده · المبلغ ده بقى على الكاشير` });
   };
 
   if (!owned.length) return <div className="wrap"><div className="card empty">مفيش محافظ «بتروح لصاحب المحل» في المحلات دي</div></div>;
-  const when = (ms) => new Date(ms).toLocaleString('ar-EG', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
-  const Row = ({ x, children, note }) => (
-    <div className="list-row" style={{ gap: 10, flexWrap: 'wrap' }}>
-      <WalletMark k={x.wallet} size={36} />
-      <span className="stack" style={{ gap: 1, flex: '1 1 220px', minWidth: 0 }}>
-        <strong style={{ fontSize: 15 }}>{fmt(x.amount)} ج · {x.fromName || 'عميل'}{x.fromPhone ? <span className="tiny muted" style={{ fontWeight: 500 }}> · {x.fromPhone}</span> : null}</strong>
-        <span className="tiny muted">{SRC_LABEL[x.wallet] || ''} · {when(x.atMs)}{x.shopNames.length ? ` · ${x.shopNames.join('، ')}` : ''}</span>
-        {note}
+  const when = (ms) => (ms ? new Date(ms).toLocaleString('ar-EG', { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : '');
+  const branches = (x) => (x.shopNames.length && shops.length > 1 ? ` · ${x.shopNames.join('، ')}` : '');
+  const Row = ({ x, sub, children }) => (
+    <div className={'wt-row' + (now - (x.releasedAtMs || x.atMs || 0) < 120000 ? ' wt-new' : '')}>
+      <WalletMark k={x.wallet} size={32} />
+      <span className="wt-main">
+        <span className="wt-top">{fmt(x.amount)} ج · {x.fromName || 'عميل'}</span>
+        <span className="wt-sub">{sub}</span>
       </span>
-      <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{children}</span>
+      <span className="wt-btns">{children}</span>
     </div>
   );
-  const Sec = ({ title, hint, list, empty, children }) => (
-    <section className="card" style={{ gap: 6 }}>
-      <h2 className="h2">{title} <span className="tiny muted" style={{ fontWeight: 500 }}>· {list.length}{hint ? ` · ${hint}` : ''}</span></h2>
-      {list.length ? children : <span className="tiny muted">{empty}</span>}
+  const Sec = ({ title, hint, list, children }) => (list.length ? (
+    <section className="card" style={{ gap: 0, paddingBlock: 14 }}>
+      <h2 className="h2" style={{ fontSize: 17, marginBottom: 4 }}>{title} <span className="tiny muted" style={{ fontWeight: 500 }}>· {list.length}{hint ? ` · ${hint}` : ''}</span></h2>
+      {children}
     </section>
-  );
+  ) : null);
+  const doneText = (x) => (x.status === 'approved' ? `✓ تبع المحل${x.decidedByName ? ` · ${x.decidedByName}` : ''} · أكّده ${x.claimedByName || ''}`
+    : x.status === 'rejected' ? `❌ اترفض${x.decidedByName ? ` · ${x.decidedByName}` : ''} · كان أكّده ${x.claimedByName || ''}`
+      : x.status === 'personal' ? `شخصي${x.decidedByName ? ` · ${x.decidedByName}` : ''}` : 'عدّى وقته ومحدش أكّده');
+  const nothing = !live.length && !big.length && !claimed.length;
   return (
-    <div className="wrap stack" style={{ gap: 16 }}>
+    <div className="wrap stack" style={{ gap: 14 }}>
       <div className="stack" style={{ gap: 2 }}>
         <h1 className="title" style={{ fontSize: 28 }}>التحويلات</h1>
         <span className="small muted">تحويلات انستاباي اللي وصلت لصاحب المحل، ومين أكّدها من الكاشيرية</span>
       </div>
-      <Sec title="⚠️ مستنية قرارك" hint="أكبر من الحد · مش ظاهرة للكاشير" list={big} empty="مفيش">
-        {big.map((x) => (
-          <Row key={x.id} x={x}>
-            <button type="button" className="btn sm" onClick={() => release(x)}>ابعته للكاشير</button>
-            {x.allowPersonal !== false && <button type="button" className="btn sm soft" style={{ height: 44 }} onClick={() => personal(x)}>شخصي</button>}
-          </Row>
-        ))}
-      </Sec>
-      <Sec title="✋ اتأكّدت من الكاشيرية" hint="طابقها بالفاتورة على البرنامج" list={claimed} empty="مفيش">
-        {claimed.map((x) => (
-          <Row key={x.id} x={x} note={<span className="small" style={{ fontWeight: 700 }}>أكّده {x.claimedByName} · فاتورة رقم <b dir="ltr">{x.claimInvoice || '—'}</b> · {when(x.claimedAtMs)}</span>}>
-            <button type="button" className="btn sm soft" style={{ height: 44, color: '#C62828' }} onClick={() => refuse(x)}>مش بتاع المحل</button>
-          </Row>
-        ))}
-      </Sec>
-      <Sec title="⏳ ظاهرة للكاشير دلوقتي" hint="بتختفي لما وقتها يخلص" list={live} empty="مفيش">
+      {nothing && <section className="card empty">مفيش تحويلات مستنية حاجة دلوقتي ✓</section>}
+      <Sec title="⏳ وصلت دلوقتي" hint="ظاهرة للكاشيرية" list={live}>
         {live.map((x) => (
-          <Row key={x.id} x={x}>
-            {x.allowPersonal !== false && <button type="button" className="btn sm soft" style={{ height: 44 }} onClick={() => personal(x)}>شخصي</button>}
+          <Row key={x.id} x={x} sub={`${when(x.releasedAtMs || x.atMs)}${branches(x)}${x.fromPhone ? ` · ${x.fromPhone}` : ''}`}>
+            {x.allowPersonal !== false && <button type="button" className="wt-btn" onClick={() => personal(x)}>شخصي</button>}
           </Row>
         ))}
       </Sec>
-      <section className="card" style={{ gap: 6 }}>
+      <Sec title="⚠️ مستنية قرارك" hint="أكبر من الحد · مش ظاهرة للكاشير" list={big}>
+        {big.map((x) => (
+          <Row key={x.id} x={x} sub={`${when(x.atMs)}${branches(x)}`}>
+            <button type="button" className="wt-btn ok" onClick={() => release(x)}>ابعته للكاشير</button>
+            {x.allowPersonal !== false && <button type="button" className="wt-btn" onClick={() => personal(x)}>شخصي</button>}
+          </Row>
+        ))}
+      </Sec>
+      <Sec title="✋ أكّدها الكاشير" hint="طابقها بالفاتورة على البرنامج" list={claimed}>
+        {claimed.map((x) => (
+          <Row key={x.id} x={x} sub={<>{x.claimedByName} · فاتورة <b dir="ltr">{x.claimInvoice || '—'}</b> · {when(x.claimedAtMs)}{branches(x)}</>}>
+            <button type="button" className="wt-btn ok" onClick={() => approve(x)} aria-label="تبع المحل">✓ تبع المحل</button>
+            <button type="button" className="wt-btn no" onClick={() => refuse(x)} aria-label="مش بتاع المحل">✗ مش بتاعه</button>
+          </Row>
+        ))}
+      </Sec>
+      <section className="card" style={{ gap: 6, paddingBlock: 14 }}>
         <details>
-          <summary className="h2" style={{ cursor: 'pointer' }}>اللي خلص <span className="tiny muted" style={{ fontWeight: 500 }}>· {done.length} · مرفوض / شخصي / عدّى وقته</span></summary>
+          <summary className="h2" style={{ cursor: 'pointer', fontSize: 17 }}>اللي خلص <span className="tiny muted" style={{ fontWeight: 500 }}>· {done.length} · تبع المحل / مرفوض / شخصي / عدّى وقته</span></summary>
           {done.map((x) => (
-            <Row key={x.id} x={x} note={<span className="tiny" style={{ fontWeight: 700 }}>{x.status === 'rejected' ? `❌ اترفض${x.decidedByName ? ` من ${x.decidedByName}` : ''} · كان أكّده ${x.claimedByName || ''}` : x.status === 'personal' ? `شخصي${x.decidedByName ? ` · ${x.decidedByName}` : ''}` : 'عدّى وقته ومحدش أكّده'}</span>}>
-              {x.status === 'personal' && <button type="button" className="btn sm soft" style={{ height: 40 }} onClick={() => release(x)}>ابعته للكاشير</button>}
-              {(x.status === 'expired' || x.status === 'new') && <button type="button" className="btn sm soft" style={{ height: 40 }} onClick={() => release(x)}>اظهره للكاشير تاني</button>}
+            <Row key={x.id} x={x} sub={`${doneText(x)} · ${when(x.decidedAtMs || x.atMs)}`}>
+              {x.status === 'approved' && <button type="button" className="wt-btn" onClick={() => setOne(x, 'claimed', 'رجع لـ«أكّدها الكاشير»')}>رجّعه</button>}
+              {x.status === 'rejected' && <button type="button" className="wt-btn" onClick={() => unrefuse(x)}>رجّعه</button>}
+              {x.status === 'personal' && <button type="button" className="wt-btn" onClick={() => release(x)}>ابعته للكاشير</button>}
+              {(x.status === 'expired' || x.status === 'new') && <button type="button" className="wt-btn" onClick={() => release(x)}>اظهره تاني</button>}
             </Row>
           ))}
         </details>
