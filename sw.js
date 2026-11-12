@@ -1,5 +1,5 @@
 // Keeps the app shell on the device so it opens fast and works when the internet drops.
-const CACHE = 'mdq-shifts-v8';
+const CACHE = 'mdq-shifts-v9';
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['./', './index.html', './modaqqeq-logo.png', './icon-192.png'])).then(() => self.skipWaiting()));
 });
@@ -27,7 +27,7 @@ self.addEventListener('notificationclick', (e) => {
   const note = e.notification.data?.note;
   // «شخصي» من الإشعار نفسه: التحويل يختفي من عند الكاشيرية من غير ما التطبيق يفتح.
   if (e.action === 'personal' && e.notification.data?.actUrl) {
-    const say = (title, body) => self.registration.showNotification(title, { body, icon: './icon-192.png', badge: './icon-192.png', dir: 'rtl', lang: 'ar', tag: 'act-' + Date.now(), data: { note } });
+    const say = (title, body) => self.registration.showNotification(title, { body, icon: './icon-192.png', badge: './badge-96.png', dir: 'rtl', lang: 'ar', tag: 'act-' + Date.now(), data: { note } });
     e.waitUntil(fetch(e.notification.data.actUrl).then((r) => r.json()).then((j) => {
       if (j.ok) return say('اتعلّم شخصي ✓', j.already ? 'كان متعلّم شخصي قبل كده' : 'التحويل اختفى من عند الكاشيرية');
       if (j.claimed) return say('الكاشير أكّده خلاص ✋', `${j.by} أكّد التحويل ده · لو مش بتاع المحل ارفضه من «التحويلات»`);
@@ -50,7 +50,7 @@ self.addEventListener('push', (e) => {
   const title = d.title || 'مدقق';
   if (['close_report', 'sms_claim', 'sms_big', 'sms_refused', 'sms_owner'].includes(d.type)) self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cs) => cs.forEach((c) => c.postMessage({ type: 'mdq-push', data: d })));
   e.waitUntil(self.registration.showNotification(title, {
-    body: d.body || '', icon: './icon-192.png', badge: './icon-192.png', tag: d.tag || undefined, dir: 'rtl', lang: 'ar',
+    body: d.body || '', icon: './icon-192.png', badge: './badge-96.png', tag: d.tag || undefined, dir: 'rtl', lang: 'ar',
     requireInteraction: d.alarm === '1', renotify: !!d.tag, silent: false, vibrate: d.alarm === '1' ? [400, 150, 400, 150, 400, 150, 800] : [200, 80, 200],
     ...(d.actUrl ? { actions: [{ action: 'personal', title: 'شخصي' }, { action: 'open', title: 'افتح' }] } : {}),
     data: { actUrl: d.actUrl || '', note: { id: d.tag || String(Date.now()), key: d.tag || '', title, body: d.body || '', shiftId: d.shiftId || null, shopId: d.shopId || null, go: d.go || null } },
