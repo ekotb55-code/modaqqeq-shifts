@@ -1,5 +1,5 @@
 // Keeps the app shell on the device so it opens fast and works when the internet drops.
-const CACHE = 'mdq-shifts-v6';
+const CACHE = 'mdq-shifts-v7';
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['./', './index.html', './modaqqeq-logo.png', './icon-192.png'])).then(() => self.skipWaiting()));
 });
@@ -38,7 +38,7 @@ self.addEventListener('push', (e) => {
   try { p = e.data ? e.data.json() : {}; } catch { p = { data: { title: 'مدقق', body: e.data ? e.data.text() : '' } }; }
   const d = p.data || p.notification || p;
   const title = d.title || 'مدقق';
-  if (d.type === 'close_report') self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cs) => cs.forEach((c) => c.postMessage({ type: 'mdq-push', data: d })));
+  if (['close_report', 'sms_claim', 'sms_big', 'sms_refused'].includes(d.type)) self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cs) => cs.forEach((c) => c.postMessage({ type: 'mdq-push', data: d })));
   e.waitUntil(self.registration.showNotification(title, {
     body: d.body || '', icon: './icon-192.png', badge: './icon-192.png', tag: d.tag || undefined, dir: 'rtl', lang: 'ar',
     requireInteraction: d.alarm === '1', renotify: !!d.tag, silent: false, vibrate: d.alarm === '1' ? [400, 150, 400, 150, 400, 150, 800] : [200, 80, 200],
