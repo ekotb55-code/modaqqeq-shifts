@@ -17,7 +17,7 @@ export function smsDir(t) {
   return null;
 }
 export function smsBalance(t) {
-  const m = t.match(/رصيد(?:ك|كم)?(?:\s*(?:الحالي|المتاح|الجديد))?(?:\s*(?:هو|اصبح|أصبح))?\s*:?\s*([\d,]+(?:\.\d+)?)/) || t.match(/balance(?: is)?\s*:?\s*(?:EGP|LE)?\s*([\d,]+(?:\.\d+)?)/i);
+  const m = t.match(/رصيد[^\d]{0,40}?([\d,]*\d(?:\.\d+)?)/) || t.match(/balance(?: is)?\s*:?\s*(?:EGP|LE)?\s*([\d,]+(?:\.\d+)?)/i);
   return m ? Number(m[1].replace(/,/g, '')) : null;
 }
 export function parseBuiltIn(text) {
@@ -35,7 +35,8 @@ export function parseBuiltIn(text) {
   const tm = t.match(/(\d{1,2}:\d{2})/);
   const rf = t.match(/(?:رقم المعاملة|رقم العملية|الرقم المرجعي|المرجع|Ref(?:erence)?(?: No)?\.?|Transaction ID)\s*:?\s*([A-Za-z0-9]{4,})/i);
   const name = nm ? nm[1].trim() : '';
-  return { dir, amount, balance: smsBalance(t), fromName: /^\+?\d+$/.test(name) ? '' : name.slice(0, 80), fromPhone: ph ? ph[1] : '', smsDate: dt ? dt[1] : '', smsTime: tm ? tm[1] : '', ref: rf ? rf[1] : '', text: t.slice(0, 400) };
+  const ch = t.match(/مصاريف(?:\s*الخدمة)?\s*:?\s*([\d,]+(?:\.\d+)?)/);
+  return { dir, amount, charge: ch ? Number(ch[1].replace(/,/g, '')) : 0, balance: smsBalance(t), fromName: /^\+?\d+$/.test(name) ? '' : name.slice(0, 80), fromPhone: ph ? ph[1] : '', smsDate: dt ? dt[1] : '', smsTime: tm ? tm[1] : '', ref: rf ? rf[1] : '', text: t.slice(0, 400) };
 }
 
 // A format taught from the app: { key, amount:{before}, name:{before,after}, phone:{before}, ref:{before} }

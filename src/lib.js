@@ -290,13 +290,13 @@ export function splitWalletSms(sms, tiers) {
 }
 // Messages of one wallet → totals.
 export function walletSmsTotals(list, tiers) {
-  const t = { inCount: 0, inTotal: 0, inBase: 0, inFees: 0, outCount: 0, outTotal: 0, outBase: 0, outFees: 0, fees: 0, lastBalance: null, lastAtMs: 0, rows: [] };
+  const t = { inCount: 0, inTotal: 0, inBase: 0, inFees: 0, outCount: 0, outTotal: 0, outBase: 0, outFees: 0, charges: 0, fees: 0, lastBalance: null, lastAtMs: 0, rows: [] };
   list.slice().sort((a, b) => (a.atMs || 0) - (b.atMs || 0)).forEach((sms) => {
     const sp = splitWalletSms(sms, tiers);
     t.rows.push({ ...sms, ...sp });
     if (sms.balance !== null && sms.balance !== undefined && (sms.atMs || 0) >= t.lastAtMs) { t.lastBalance = num(sms.balance); t.lastAtMs = sms.atMs || 0; }
     if (sms.ignored || sms.status === 'ignored') return;
-    if (sms.dir === 'out') { t.outCount++; t.outTotal = r2(t.outTotal + num(sms.amount)); t.outBase = r2(t.outBase + sp.base); t.outFees = r2(t.outFees + sp.fee); }
+    if (sms.dir === 'out') { t.outCount++; t.outTotal = r2(t.outTotal + num(sms.amount)); t.outBase = r2(t.outBase + sp.base); t.outFees = r2(t.outFees + sp.fee); t.charges = r2(t.charges + num(sms.charge)); }
     else { t.inCount++; t.inTotal = r2(t.inTotal + num(sms.amount)); t.inBase = r2(t.inBase + sp.base); t.inFees = r2(t.inFees + sp.fee); }
     t.fees = r2(t.fees + sp.fee);
   });

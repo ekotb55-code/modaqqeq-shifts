@@ -259,7 +259,7 @@ const IN_RE_ = /استقبلت|استلمت|[اإأ]ستلام|[اإأ]يداع|
 const OUT_RE_ = /تم تحويل|تم سحب|تم دفع|تم شراء|حولت|سحبت|دفعت|sent|transferred to|debited|withdraw/i;
 function smsDir_(t) { if (IN_RE_.test(t)) return 'in'; if (OUT_RE_.test(t)) return 'out'; return null; }
 function smsBalance_(t) {
-  const m = t.match(/رصيد(?:ك|كم)?(?:\s*(?:الحالي|المتاح|الجديد))?(?:\s*(?:هو|اصبح|أصبح))?\s*:?\s*([\d,]+(?:\.\d+)?)/) || t.match(/balance(?: is)?\s*:?\s*(?:EGP|LE)?\s*([\d,]+(?:\.\d+)?)/i);
+  const m = t.match(/رصيد[^\d]{0,40}?([\d,]*\d(?:\.\d+)?)/) || t.match(/balance(?: is)?\s*:?\s*(?:EGP|LE)?\s*([\d,]+(?:\.\d+)?)/i);
   return m ? Number(m[1].replace(/,/g, '')) : null;
 }
 function parseSms_(text) {
@@ -277,7 +277,8 @@ function parseSms_(text) {
   const tm = t.match(/(\d{1,2}:\d{2})/);
   const rf = t.match(/(?:رقم المعاملة|رقم العملية|الرقم المرجعي|المرجع|Ref(?:erence)?(?: No)?\.?|Transaction ID)\s*:?\s*([A-Za-z0-9]{4,})/i);
   const name = nm ? nm[1].trim() : '';
-  return { dir: dir, amount: amount, balance: smsBalance_(t), fromName: /^\+?\d+$/.test(name) ? '' : name.slice(0, 80), fromPhone: ph ? ph[1] : '', smsDate: dt ? dt[1] : '', smsTime: tm ? tm[1] : '', ref: rf ? rf[1] : '', text: t.slice(0, 400) };
+  const ch = t.match(/مصاريف(?:\s*الخدمة)?\s*:?\s*([\d,]+(?:\.\d+)?)/);
+  return { dir: dir, amount: amount, charge: ch ? Number(ch[1].replace(/,/g, '')) : 0, balance: smsBalance_(t), fromName: /^\+?\d+$/.test(name) ? '' : name.slice(0, 80), fromPhone: ph ? ph[1] : '', smsDate: dt ? dt[1] : '', smsTime: tm ? tm[1] : '', ref: rf ? rf[1] : '', text: t.slice(0, 400) };
 }
 // صيغة اتعلّمت من التطبيق (الإعداد ← رسايل البنك ← علّم السيستم رسالة جديدة)
 function applyFormat_(f, text) {
@@ -335,7 +336,7 @@ function sms_(key, text) {
   if (!okMsg) return { ok: true, skipped: true };
   const id = k.shopId + '_' + (p.ref || Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, p.text).map(function (b) { return ((b + 256) % 256).toString(16); }).join('').slice(0, 16));
   const now = new Date();
-  const doc = { shopId: k.shopId, wallet: wallet, dir: p.dir, amount: p.amount, balance: p.balance, fromName: p.fromName, fromPhone: p.fromPhone, ref: p.ref, smsDate: p.smsDate, smsTime: p.smsTime, text: p.text,
+  const doc = { shopId: k.shopId, wallet: wallet, dir: p.dir, amount: p.amount, charge: p.charge || 0, balance: p.balance, fromName: p.fromName, fromPhone: p.fromPhone, ref: p.ref, smsDate: p.smsDate, smsTime: p.smsTime, text: p.text,
     atMs: now.getTime(), day: Utilities.formatDate(now, 'Africa/Cairo', 'yyyy-MM-dd'), status: shopMode ? 'auto' : 'new' };
   const r = req_('post', FS + '/walletIn?documentId=' + encodeURIComponent(id), { fields: toFields_(doc) });
   if (r.code === 409) return { ok: true, dup: true }; // نفس الرسالة وصلت مرتين

@@ -59,7 +59,7 @@ function Rows({ t, canIgnore }) {
           <span className={'badge ' + (x.dir === 'out' ? 'bad' : 'ok')} style={{ minWidth: 54, justifyContent: 'center' }}>{x.dir === 'out' ? 'طالع' : 'داخل'}</span>
           <span className="stack" style={{ gap: 1, flex: 1, minWidth: 0 }}>
             <strong style={{ fontSize: 14 }}>{fmt(x.amount)} ج <span className="tiny muted" style={{ fontWeight: 500 }}>· {x.dir === 'out' ? `العميل دفع ${fmt(x.base + x.fee)} كاش` : `بيع/كاش ${fmt(x.base)}`}{x.fee ? ` + خدمة ${fmt(x.fee)}` : ''}</span></strong>
-            <span className="tiny muted">{timeOf(x)}{x.fromName ? ` · ${x.fromName}` : ''}{x.fromPhone ? ` · ${x.fromPhone}` : ''}{x.balance !== null && x.balance !== undefined ? ` · الرصيد بعدها ${fmt(x.balance)}` : ''}</span>
+            <span className="tiny muted">{timeOf(x)}{x.fromName ? ` · ${x.fromName}` : ''}{x.fromPhone ? ` · ${x.fromPhone}` : ''}{x.charge ? ` · مصاريف ${fmt(x.charge)}` : ''}{x.balance !== null && x.balance !== undefined ? ` · الرصيد بعدها ${fmt(x.balance)}` : ''}</span>
           </span>
           {canIgnore && <button type="button" className="btn sm soft" style={{ height: 36 }} onClick={() => toggle(x)} title={x.ignored ? 'رجّعها للحساب' : 'مش عملية بيع/كاش (مثلًا إيداع من صاحب المحل)'}>{x.ignored ? 'رجّعها' : 'استبعد'}</button>}
         </div>
@@ -70,7 +70,7 @@ function Rows({ t, canIgnore }) {
 }
 
 function Totals({ t, open }) {
-  const expectNow = open !== null && open !== undefined ? Math.round((num(open) + t.inTotal - t.outTotal) * 100) / 100 : null;
+  const expectNow = open !== null && open !== undefined ? Math.round((num(open) + t.inTotal - t.outTotal - t.charges) * 100) / 100 : null;
   const box = (label, v, sub, bg) => (
     <div className="stack" style={{ flex: '1 1 140px', background: bg, borderRadius: 18, padding: '10px 14px', gap: 2 }}>
       <span className="tiny" style={{ fontWeight: 700 }}>{label}</span>
@@ -84,7 +84,7 @@ function Totals({ t, open }) {
       {box(`داخل · ${t.inCount}`, `${fmt(t.inTotal)} ج`, `بيع/كاش ${fmt(t.inBase)} · الدرج طلع منه`, '#EAFBC2')}
       {box(`طالع · ${t.outCount}`, `${fmt(t.outTotal)} ج`, `العميل دفع كاش ${fmt(t.outBase + t.outFees)}`, '#FFE9DC')}
       {box('مقابل الخدمة', `${fmt(t.fees)} ج`, 'مكسب المحل · فضل في الدرج', '#E4F4FF')}
-      {expectNow !== null && box('المحفظة المفروض فيها', `${fmt(expectNow)} ج`, 'استلام + داخل − طالع', '#FFF6C9')}
+      {expectNow !== null && box('المحفظة المفروض فيها', `${fmt(expectNow)} ج`, t.charges ? `استلام + داخل − طالع − مصاريف فودافون ${fmt(t.charges)}` : 'استلام + داخل − طالع', '#FFF6C9')}
     </div>
   );
 }
