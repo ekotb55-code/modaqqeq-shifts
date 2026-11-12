@@ -100,7 +100,7 @@ async function systemNotify(note) {
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   // with push on, the script already sends a system notification for this: don't show it twice
   if (pushOn()) return;
-  const opts = { body: note.body, icon: './icon-192.png', badge: './icon-192.png', tag: note.key, data: { note }, dir: 'rtl', lang: 'ar' };
+  const opts = { body: note.body, icon: './icon-192.png', badge: './badge-96.png', tag: note.key, data: { note }, dir: 'rtl', lang: 'ar' };
   try {
     const reg = await navigator.serviceWorker?.getRegistration();
     if (reg) { await reg.showNotification(note.title, opts); return; }
