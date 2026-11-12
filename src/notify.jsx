@@ -166,7 +166,7 @@ export function NotifyBell({ uid, onOpen, alarmable = false, settings = null }) 
       if (e.data?.type === 'mdq-push' && e.data.data) {
         const d = e.data.data;
         if (cur.list.some((n) => n.key === d.tag)) return;
-        cur.list = [{ key: d.tag, id: `${d.tag}-${Date.now()}`, title: d.title, body: d.body, emoji: '📊', color: '#0E9F6E', shiftId: d.shiftId, shopId: d.shopId, atMs: Date.now(), read: false }, ...cur.list].slice(0, 60);
+        cur.list = [{ key: d.tag, id: `${d.tag}-${Date.now()}`, title: d.title, body: d.body, emoji: '📊', color: '#0E9F6E', shiftId: d.shiftId, shopId: d.shopId, go: d.go || null, atMs: Date.now(), read: false }, ...cur.list].slice(0, 60);
         save();
       }
     };

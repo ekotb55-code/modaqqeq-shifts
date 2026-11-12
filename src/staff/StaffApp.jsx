@@ -39,6 +39,11 @@ export default function StaffApp({ profile }) {
     canSeeLog && { id: 'activity', label: 'سجل الدخول' },
   ].filter(Boolean);
   const [tab, setTab] = useState(tabs[0].id);
+  // opened from a transfer notification (./#wallet): go to «التحويلات» once the shops are known
+  const hasWallet = tabs.some((t) => t.id === 'wallet');
+  useEffect(() => {
+    if (hasWallet && location.hash === '#wallet') { setTab('wallet'); history.replaceState(null, '', location.pathname + location.search); }
+  }, [hasWallet]);
   const [theme, setTheme] = useTheme(profile);
   const [photoOpen, setPhotoOpen] = useState(false);
   const [myPhoto, setMyPhoto] = useState(profile.photo || null);
@@ -85,6 +90,7 @@ export default function StaffApp({ profile }) {
     return () => clearTimeout(t);
   }, [live]); // eslint-disable-line react-hooks/exhaustive-deps
   const openNote = (n) => {
+    if (n.go === 'wallet' && tabs.some((t) => t.id === 'wallet')) { if (effSel && effSel !== 'all' && n.shopId && effSel !== n.shopId) setShopSel(n.shopId); setTab('wallet'); return; }
     if (!n.shiftId) return;
     if (effSel && effSel !== 'all' && effSel !== n.shopId) setShopSel(n.shopId);
     try { sessionStorage.setItem('mdq-open-shift', n.shiftId); } catch { /* ignore */ }

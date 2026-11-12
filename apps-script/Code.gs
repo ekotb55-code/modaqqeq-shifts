@@ -15,7 +15,7 @@ const PROJECT = 'modaqqeq-shifts';
 const FS = 'https://firestore.googleapis.com/v1/projects/' + PROJECT + '/databases/(default)/documents';
 const KEEP_DAYS = 60; // الصور بتتمسح بعد كده
 // مين يوصله إيه — كل واحد يقدر يغيّر اختياره من الجرس جوّه التطبيق (نفس الجدول في src/notifyPrefs.js)
-const PREF_OF = { handover: 'handover', reopen_done: 'handover', dispute: 'request', ack: 'request', msg: 'msg', close_report: 'close', sms_claim: 'wallet', sms_big: 'wallet', sms_refused: 'wallet' };
+const PREF_OF = { handover: 'handover', reopen_done: 'handover', dispute: 'request', ack: 'request', msg: 'msg', close_report: 'close', sms_claim: 'wallet', sms_big: 'wallet', sms_refused: 'wallet', sms_owner: 'wallet' };
 const DEFAULTS = {
   accountant: { handover: true, request: true, msg: true, close: false },
   reviewer: { handover: true, request: true, msg: true, close: false },
@@ -93,7 +93,7 @@ function sendNotifications_() {
       messages.push({
         message: {
           token: t.token,
-          data: { title: String(ev.title || 'مدقق'), body: String(ev.body || ''), tag: (ev.shiftId || '') + ':' + (ev.type || '') + ':' + (ev.atMs || ''), shiftId: String(ev.shiftId || ''), shopId: String(ev.shopId || ''), type: String(ev.type || ''), go: go, alarm: ['handover', 'reopen_done', 'dispute'].indexOf(ev.type) >= 0 ? '1' : '0' },
+          data: { title: String(ev.title || 'مدقق'), body: String(ev.body || ''), tag: (ev.shiftId || '') + ':' + (ev.type || '') + ':' + (ev.atMs || ''), shiftId: String(ev.shiftId || ''), shopId: String(ev.shopId || ''), type: String(ev.type || ''), go: go || String(ev.go || ''), actUrl: String(ev.actUrl || ''), alarm: ['handover', 'reopen_done', 'dispute'].indexOf(ev.type) >= 0 ? '1' : '0' },
           webpush: { headers: { Urgency: 'high', TTL: '86400' } },
         },
       });
@@ -229,12 +229,14 @@ function cleanup() {
 function doPost(e) {
   try {
     if (e.parameter && e.parameter.k) return json_(sms_(e.parameter.k, smsText_(e)));
+    if (e.parameter && e.parameter.a === 'personal') return json_(personalFromNote_(e.parameter.g, e.parameter.t));
     const body = JSON.parse(e.postData.contents);
     if (body.action === 'img') return json_(getImg_(body));
     return json_({ ok: false, error: 'unknown action' });
   } catch (err) { return json_({ ok: false, error: String(err) }); }
 }
 function doGet(e) {
+  if (e && e.parameter && e.parameter.a === 'personal') return json_(personalFromNote_(e.parameter.g, e.parameter.t));
   if (e && e.parameter && e.parameter.k && e.parameter.t) return json_(sms_(e.parameter.k, e.parameter.t));
   return json_({ ok: true, app: 'modaqqeq-shifts' });
 }
@@ -361,13 +363,43 @@ function sms_(key, text) {
     if (r.code === 200) saved++;
   });
   if (!saved) return { ok: true, dup: true }; // نفس الرسالة وصلت مرتين
+  // صاحب المحل: إشعار لكل تحويل، فيه زرار «شخصي» يشيله من عند الكاشيرية من غير ما يفتح التطبيق (أندرويد).
+  // sms_big القديم بقى جوّه الإشعار ده.
+  const actUrl = ScriptApp.getService().getUrl() + '?a=personal&g=' + encodeURIComponent(group) + '&t=' + actToken_(group);
+  req_('post', FS + '/outbox', { fields: toFields_({ type: 'sms_owner', shopId: shopIds[0], shiftId: '', to: 'staff', toUid: '', byUid: '', atMs: now.getTime(), go: 'wallet', actUrl: g.personal ? actUrl : '',
+    title: (big ? '⚠️ تحويل كبير ' : '💰 وصل ') + p.amount + ' ج' + (p.fromName ? ' من ' + p.fromName : ''),
+    body: big ? 'أكبر من الحد · مش ظاهر للكاشير · ابعته للكاشير من «التحويلات» أو دوس «شخصي»' : (g.personal ? 'ظاهر للكاشيرية دلوقتي · لو بتاعك إنت دوس «شخصي»' : 'ظاهر للكاشيرية دلوقتي') }) });
   shopIds.forEach(function (sid) {
+    if (big) return;
     const ev = big
       ? { type: 'sms_big', shopId: sid, shiftId: '', to: 'staff', toUid: '', byUid: '', atMs: now.getTime(), title: '⚠️ تحويل كبير ' + p.amount + ' ج', body: (p.fromName ? 'من ' + p.fromName + ' · ' : '') + 'أكبر من الحد · مش هيظهر للكاشير إلا لو بعته من «التحويلات»' }
       : { type: 'sms', shopId: sid, shiftId: '', to: 'shopCashiers', toUid: '', byUid: '', atMs: now.getTime(), title: '💰 وصل تحويل ' + p.amount + ' ج', body: (p.fromName ? 'من ' + p.fromName + ' · ' : '') + (base.windowMin ? 'لو ده عميلك أكّده في التطبيق خلال ' + base.windowMin + ' دقيقة' : 'لو ده عميلك أكّده في التطبيق') };
     req_('post', FS + '/outbox', { fields: toFields_(ev) });
   });
   return { ok: true };
+}
+// مفتاح سري للزرار اللي في الإشعار: محدش يقدر يعلّم تحويل «شخصي» غير من الإشعار نفسه.
+function actToken_(group) {
+  const props = PropertiesService.getScriptProperties();
+  let sec = props.getProperty('ACT_SECRET');
+  if (!sec) { sec = Utilities.getUuid() + Utilities.getUuid(); props.setProperty('ACT_SECRET', sec); }
+  return Utilities.computeHmacSha256Signature(String(group), sec).map(function (b) { return ((b + 256) % 256).toString(16).padStart(2, '0'); }).join('').slice(0, 32);
+}
+function personalFromNote_(group, token) {
+  if (!group || !token || token !== actToken_(group)) return { ok: false, error: 'bad token' };
+  const r = req_('post', FS + ':runQuery', { structuredQuery: { from: [{ collectionId: 'walletIn' }], where: { fieldFilter: { field: { fieldPath: 'group' }, op: 'EQUAL', value: { stringValue: String(group) } } } } });
+  const docs = (r.json || []).filter(function (x) { return x.document; }).map(function (x) { const f = fields_(x.document); f.name = x.document.name; return f; });
+  if (!docs.length) return { ok: false, error: 'not found' };
+  const taken = docs.filter(function (x) { return x.status === 'claimed'; })[0];
+  if (taken) return { ok: false, claimed: true, by: taken.claimedByName || 'الكاشير', amount: taken.amount };
+  if (docs.every(function (x) { return x.status === 'personal'; })) return { ok: true, already: true, amount: docs[0].amount };
+  const now = Date.now();
+  docs.forEach(function (x) {
+    if (['new', 'big', 'expired'].indexOf(x.status) < 0) return;
+    req_('patch', 'https://firestore.googleapis.com/v1/' + x.name + '?updateMask.fieldPaths=status&updateMask.fieldPaths=decidedByName&updateMask.fieldPaths=decidedAtMs',
+      { fields: toFields_({ status: 'personal', decidedByName: 'صاحب المحل (من الإشعار)', decidedAtMs: now }) });
+  });
+  return { ok: true, amount: docs[0].amount };
 }
 function toFields_(o) {
   const out = {};
