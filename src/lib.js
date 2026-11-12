@@ -200,6 +200,21 @@ export async function createAccount(email, password) {
   }
 }
 
+// An email that already has a login but no account in the app: if the typed password is its password,
+// we get its id and can link it again.
+export async function uidByLogin(email, password) {
+  const tmp = initializeApp(firebaseConfig, 'link-' + Date.now());
+  try {
+    const a = getAuth(tmp);
+    const cred = await signInWithEmailAndPassword(a, email, password);
+    const uid = cred.user.uid;
+    await signOut(a);
+    return uid;
+  } finally {
+    await deleteApp(tmp);
+  }
+}
+
 // Change another account's password from the admin's screen (free plan has no server):
 // sign in as that account in a separate app using the old password, then set the new one.
 export async function changeAccountPassword(email, oldPassword, newPassword) {

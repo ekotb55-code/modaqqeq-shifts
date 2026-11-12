@@ -3,7 +3,7 @@ import { collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, query, serverT
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { Avatar, Icon, Modal, useToast } from '../ui.jsx';
-import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, MACHINE_PRESETS, REG_KIND, allOpen, isAdminRole, newRegister, newExpenseType, RATE_FROM, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, matches, normUsername, DEFAULT_FEE_TIERS, tierFee, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, newVault, num, pickImage } from '../lib';
+import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, MACHINE_PRESETS, REG_KIND, allOpen, isAdminRole, newRegister, newExpenseType, RATE_FROM, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, uidByLogin, matches, normUsername, DEFAULT_FEE_TIERS, tierFee, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, newVault, num, pickImage } from '../lib';
 import { logAct } from '../activity.js';
 import { CLOUD } from '../cloud.js';
 import { applyFormat, buildFormat, firstWords, parseSms } from '../smsFormat.js';
@@ -824,6 +824,34 @@ const PEOPLE_GROUPS = [
   { role: 'accountant', title: 'المحاسبين', hint: 'محاسبين مدقق اللي بيراجعوا ورديات المحل ويقفلوها' },
 ];
 
+// Making an account with an email that is already used:
+// 1) it belongs to an account in the app (maybe stopped) → give it back (turn it on, add the shops);
+// 2) it is only a login with no account in the app → if the typed password is right, link it again.
+async function reuseEmail({ email, pass, data }) {
+  const all = (await getDocs(query(collection(db, 'users'), where('email', '==', email)))).docs.map((d) => ({ id: d.id, ...d.data() }));
+  const u = all[0];
+  if (u) {
+    if (!window.confirm(`الإيميل ده لحساب «${u.name}» (${ROLE_LABEL[u.role] || u.role}${u.disabled ? ' · متوقف' : ''}).\nترجّعه${u.disabled ? ' وتفعّله' : ''} وتضيفه على المحلات دي؟`)) return 'cancel';
+    await updateDoc(doc(db, 'users', u.id), { disabled: false, shopIds: [...new Set([...(u.shopIds || []), ...(data.shopIds || [])])], ...(u.role === 'cashier' ? {} : { role: data.role || u.role }) });
+    logAct('staff_edit', `رجّع حساب ${u.name} (${email})`);
+    return 'reused';
+  }
+  try {
+    const uid = await uidByLogin(email, pass);
+    await setDoc(doc(db, 'users', uid), { ...data, email, createdAt: serverTimestamp() });
+    setDoc(doc(db, 'cashierSecrets', uid), { password: pass, updatedAt: serverTimestamp() }).catch(() => {});
+    logAct('staff_add', `ربط إيميل قديم ${email} بحساب ${data.name}`);
+    return 'linked';
+  } catch {
+    return 'orphan';
+  }
+}
+const REUSE_MSG = {
+  reused: 'الحساب رجع واتضاف على المحلات ✓',
+  linked: 'الإيميل كان متسجل من غير حساب · اتربط بالحساب الجديد ✓',
+  orphan: 'الإيميل متسجل في فايربيز من غير حساب في التطبيق، والباسورد اللي كتبته مش بتاعه. اكتب باسورده القديم، أو استخدم إيميل تاني، أو امسحه من Firebase ← Authentication',
+};
+
 // Owners and branch managers belong to their own shop: the shop shows only its people, and new ones are made from here.
 // Accountants are Modaqqeq's team, so the whole team shows and you tick who follows this shop.
 function ShopPeople({ shop }) {
@@ -909,7 +937,11 @@ function NewPerson({ role, shop, count, onDone }) {
       toast('الحساب اتعمل · ابعتله الإيميل والباسورد');
       onDone();
     } catch (e) {
-      toast(e.code === 'auth/email-already-in-use' ? 'الإيميل ده متسجل قبل كده · دوس «عنده حساب في محل تاني؟»' : 'مش قادرين نعمل الحساب', 'err');
+      if (e.code === 'auth/email-already-in-use') {
+        const r = await reuseEmail({ email: f.email.trim(), pass: f.pass, data: { role, name: f.name.trim(), shopIds: [shop.id], color: AVATAR_BG[count % AVATAR_BG.length] } }).catch(() => 'orphan');
+        if (r !== 'cancel') toast(REUSE_MSG[r], r === 'orphan' ? 'err' : undefined);
+        if (r === 'reused' || r === 'linked') { onDone(); return; }
+      } else toast('مش قادرين نعمل الحساب', 'err');
       setBusy(false);
     }
   };
@@ -957,7 +989,12 @@ function StaffAccounts({ shops, profile }) {
   const [form, setForm] = useState({ name: '', email: '', pass: '', role: 'accountant', shopIds: [] });
   const [passFor, setPassFor] = useState(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => onSnapshot(collection(db, 'users'), (q) => setUsers(q.docs.map((d) => ({ id: d.id, ...d.data() })).filter((u) => u.role !== 'cashier' && !u.disabled)), () => {}), []);
+  const [stopped, setStopped] = useState([]);
+  useEffect(() => onSnapshot(collection(db, 'users'), (q) => {
+    const all = q.docs.map((d) => ({ id: d.id, ...d.data() })).filter((u) => u.role !== 'cashier');
+    setUsers(all.filter((u) => !u.disabled));
+    setStopped(all.filter((u) => u.disabled));
+  }, () => {}), []);
   const shopName = (id) => shops.find((s) => s.id === id)?.name || '؟';
   const toggleShop = (ids, id) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]);
 
@@ -973,7 +1010,11 @@ function StaffAccounts({ shops, profile }) {
       setForm({ name: '', email: '', pass: '', role: 'accountant', shopIds: [] });
       toast('الحساب اتعمل · ابعتله الإيميل والباسورد');
     } catch (e) {
-      toast(e.code === 'auth/email-already-in-use' ? 'الإيميل ده متسجل قبل كده' : 'مش قادرين نعمل الحساب', 'err');
+      if (e.code === 'auth/email-already-in-use') {
+        const r = await reuseEmail({ email: email.trim(), pass, data: { role, name: name.trim(), shopIds, color: AVATAR_BG[users.length % AVATAR_BG.length] } }).catch(() => 'orphan');
+        if (r !== 'cancel') toast(REUSE_MSG[r], r === 'orphan' ? 'err' : undefined);
+        if (r === 'reused' || r === 'linked') setForm({ name: '', email: '', pass: '', role: 'accountant', shopIds: [] });
+      } else toast('مش قادرين نعمل الحساب', 'err');
     }
     setBusy(false);
   };
@@ -1028,6 +1069,25 @@ function StaffAccounts({ shops, profile }) {
           </section>
         );
       })}
+      {stopped.length > 0 && (
+        <section className="card" style={{ gap: 8 }}>
+          <details>
+            <summary className="h2" style={{ cursor: 'pointer' }}>حسابات متوقفة <span className="tiny muted" style={{ fontWeight: 500 }}>· {stopped.length} · مش بيقدروا يدخلوا</span></summary>
+            <div className="stack" style={{ gap: 0, marginTop: 8 }}>
+              {stopped.map((u) => (
+                <div key={u.id} className="list-row" style={{ gap: 10 }}>
+                  <Avatar name={u.name} photo={u.photo} color={u.color || '#B4B2C9'} size={36} />
+                  <span className="stack" style={{ gap: 1, flex: 1, minWidth: 0 }}>
+                    <strong>{u.name} <span className="tiny muted">· {ROLE_LABEL[u.role] || u.role}</span></strong>
+                    <span className="tiny muted" dir="ltr" style={{ textAlign: 'end' }}>{u.email}</span>
+                  </span>
+                  <button type="button" className="btn sm" onClick={() => update(u, { disabled: false })}>فعّله تاني</button>
+                </div>
+              ))}
+            </div>
+          </details>
+        </section>
+      )}
       <section style={{ display: 'contents' }}>
         {passFor && <StaffPassChange u={passFor} onClose={() => setPassFor(null)} />}
       </section>
