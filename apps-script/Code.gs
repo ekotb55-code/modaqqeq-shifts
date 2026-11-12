@@ -345,8 +345,14 @@ function sms_(key, text) {
   }
   // «بتروح لصاحب المحل»: one copy per branch of this account; one lock (smsLocks/group) so only one cashier takes it.
   // Bigger than the limit → not for the cashiers: the owner / accountant decide in «التحويلات».
+  // كل رابط ليه اختياراته (الإعداد ← رسايل البنك ← الحماية). بتتنسخ على كل تحويل علشان التطبيق يعرفها.
+  const g = Object.assign({ limit: true, window: true, invoice: true, notify: true, personal: true }, k.guards || {});
   const max = Number(k.maxAmount) > 0 ? Number(k.maxAmount) : 3000;
-  const big = p.amount > max;
+  const big = g.limit && p.amount > max;
+  base.windowMin = g.window ? (Number(k.windowMin) > 0 ? Number(k.windowMin) : 60) : 0;
+  base.needInvoice = !!g.invoice;
+  base.notifyClaim = !!g.notify;
+  base.allowPersonal = !!g.personal;
   const shopIds = (k.shopIds && k.shopIds.length ? k.shopIds : [k.shopId]).filter(function (x, i, a) { return x && a.indexOf(x) === i; });
   const group = key + '_' + refKey;
   let saved = 0;
@@ -358,7 +364,7 @@ function sms_(key, text) {
   shopIds.forEach(function (sid) {
     const ev = big
       ? { type: 'sms_big', shopId: sid, shiftId: '', to: 'staff', toUid: '', byUid: '', atMs: now.getTime(), title: '⚠️ تحويل كبير ' + p.amount + ' ج', body: (p.fromName ? 'من ' + p.fromName + ' · ' : '') + 'أكبر من الحد · مش هيظهر للكاشير إلا لو بعته من «التحويلات»' }
-      : { type: 'sms', shopId: sid, shiftId: '', to: 'shopCashiers', toUid: '', byUid: '', atMs: now.getTime(), title: '💰 وصل تحويل ' + p.amount + ' ج', body: (p.fromName ? 'من ' + p.fromName + ' · ' : '') + 'لو ده عميلك أكّده في التطبيق خلال ساعة' };
+      : { type: 'sms', shopId: sid, shiftId: '', to: 'shopCashiers', toUid: '', byUid: '', atMs: now.getTime(), title: '💰 وصل تحويل ' + p.amount + ' ج', body: (p.fromName ? 'من ' + p.fromName + ' · ' : '') + (base.windowMin ? 'لو ده عميلك أكّده في التطبيق خلال ' + base.windowMin + ' دقيقة' : 'لو ده عميلك أكّده في التطبيق') };
     req_('post', FS + '/outbox', { fields: toFields_(ev) });
   });
   return { ok: true };

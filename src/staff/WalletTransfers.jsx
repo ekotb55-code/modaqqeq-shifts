@@ -5,7 +5,7 @@ import { WalletMark, useToast } from '../ui.jsx';
 import { SRC_LABEL, fmt, todayKey, walletModeOf } from '../lib';
 import { logAct } from '../activity.js';
 import { pushEvent } from '../cloud.js';
-import { CLAIM_WINDOW } from '../cashier/WalletIn.jsx';
+import { windowOf } from '../cashier/WalletIn.jsx';
 
 // Bank transfers to the owner's wallet (InstaPay…), for the owner and the accountant:
 //  · bigger than the shop's limit → they decide: send it to the cashiers, or «شخصي»;
@@ -39,9 +39,9 @@ export default function WalletTransfers({ shops, profile }) {
   }).sort((a, b) => (b.atMs || 0) - (a.atMs || 0));
   const now = Date.now();
   const big = items.filter((x) => x.status === 'big');
-  const live = items.filter((x) => x.status === 'new' && (x.releasedAtMs || x.atMs || 0) > now - CLAIM_WINDOW);
+  const live = items.filter((x) => x.status === 'new' && (x.releasedAtMs || x.atMs || 0) > now - windowOf(x));
   const claimed = items.filter((x) => x.status === 'claimed');
-  const done = items.filter((x) => ['rejected', 'personal', 'expired'].includes(x.status) || (x.status === 'new' && (x.releasedAtMs || x.atMs || 0) <= now - CLAIM_WINDOW));
+  const done = items.filter((x) => ['rejected', 'personal', 'expired'].includes(x.status) || (x.status === 'new' && (x.releasedAtMs || x.atMs || 0) <= now - windowOf(x)));
 
   const setAll = async (x, patch, what) => {
     const b = writeBatch(db);
@@ -93,7 +93,7 @@ export default function WalletTransfers({ shops, profile }) {
         {big.map((x) => (
           <Row key={x.id} x={x}>
             <button type="button" className="btn sm" onClick={() => release(x)}>ابعته للكاشير</button>
-            <button type="button" className="btn sm soft" style={{ height: 44 }} onClick={() => personal(x)}>شخصي</button>
+            {x.allowPersonal !== false && <button type="button" className="btn sm soft" style={{ height: 44 }} onClick={() => personal(x)}>شخصي</button>}
           </Row>
         ))}
       </Sec>
@@ -104,10 +104,10 @@ export default function WalletTransfers({ shops, profile }) {
           </Row>
         ))}
       </Sec>
-      <Sec title="⏳ ظاهرة للكاشير دلوقتي" hint="بتختفي بعد ساعة" list={live} empty="مفيش">
+      <Sec title="⏳ ظاهرة للكاشير دلوقتي" hint="بتختفي لما وقتها يخلص" list={live} empty="مفيش">
         {live.map((x) => (
           <Row key={x.id} x={x}>
-            <button type="button" className="btn sm soft" style={{ height: 44 }} onClick={() => personal(x)}>شخصي</button>
+            {x.allowPersonal !== false && <button type="button" className="btn sm soft" style={{ height: 44 }} onClick={() => personal(x)}>شخصي</button>}
           </Row>
         ))}
       </Sec>
@@ -115,9 +115,9 @@ export default function WalletTransfers({ shops, profile }) {
         <details>
           <summary className="h2" style={{ cursor: 'pointer' }}>اللي خلص <span className="tiny muted" style={{ fontWeight: 500 }}>· {done.length} · مرفوض / شخصي / عدّى وقته</span></summary>
           {done.map((x) => (
-            <Row key={x.id} x={x} note={<span className="tiny" style={{ fontWeight: 700 }}>{x.status === 'rejected' ? `❌ اترفض${x.decidedByName ? ` من ${x.decidedByName}` : ''} · كان أكّده ${x.claimedByName || ''}` : x.status === 'personal' ? `شخصي${x.decidedByName ? ` · ${x.decidedByName}` : ''}` : 'عدّى الساعة ومحدش أكّده'}</span>}>
+            <Row key={x.id} x={x} note={<span className="tiny" style={{ fontWeight: 700 }}>{x.status === 'rejected' ? `❌ اترفض${x.decidedByName ? ` من ${x.decidedByName}` : ''} · كان أكّده ${x.claimedByName || ''}` : x.status === 'personal' ? `شخصي${x.decidedByName ? ` · ${x.decidedByName}` : ''}` : 'عدّى وقته ومحدش أكّده'}</span>}>
               {x.status === 'personal' && <button type="button" className="btn sm soft" style={{ height: 40 }} onClick={() => release(x)}>ابعته للكاشير</button>}
-              {(x.status === 'expired' || x.status === 'new') && <button type="button" className="btn sm soft" style={{ height: 40 }} onClick={() => release(x)}>اظهره للكاشير ساعة كمان</button>}
+              {(x.status === 'expired' || x.status === 'new') && <button type="button" className="btn sm soft" style={{ height: 40 }} onClick={() => release(x)}>اظهره للكاشير تاني</button>}
             </Row>
           ))}
         </details>

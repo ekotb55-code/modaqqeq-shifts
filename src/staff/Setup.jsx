@@ -1101,23 +1101,49 @@ function StaffAccounts({ shops, profile }) {
 }
 
 // Protections of one «بتروح لصاحب المحل» link: the biggest amount the cashiers see, and the branches it is for.
+const GUARDS = [
+  { k: 'limit', label: 'حد أقصى للمبلغ', hint: 'التحويل الأكبر منه مايظهرش للكاشير، يروح لصاحب المحل يقرر' },
+  { k: 'window', label: 'وقت محدد للتأكيد', hint: 'التحويل يختفي من عند الكاشير بعد المدة دي' },
+  { k: 'invoice', label: 'رقم فاتورة البيع إجباري', hint: 'الكاشير مايأكدش إلا برقم الفاتورة، والمحاسب يطابقها' },
+  { k: 'notify', label: 'إشعار لصاحب المحل مع كل تأكيد', hint: 'ويقدر يرفضه «مش بتاع المحل» فيبقى عجز على الكاشير' },
+  { k: 'personal', label: 'زرار «شخصي» لصاحب المحل', hint: 'يخفي أي تحويل مش للمحل من عند الكاشيرية على طول' },
+];
+// Protections of one «بتروح لصاحب المحل» link, each one on or off as the shop owner likes,
+// plus the branches it is for.
 function KeyGuards({ k, shop, shops }) {
   const toast = useToast();
+  const g = { limit: true, window: true, invoice: true, notify: true, personal: true, ...(k.guards || {}) };
   const [max, setMax] = useState(String(k.maxAmount ?? 3000));
+  const [mins, setMins] = useState(String(k.windowMin ?? 60));
   const ids = k.shopIds && k.shopIds.length ? k.shopIds : [shop.id];
   const save = (patch) => updateDoc(doc(db, 'smsKeys', k.id), patch).then(() => toast('اتحفظ')).catch(() => toast('مش قادرين نحفظ', 'err'));
+  const flip = (key) => save({ guards: { ...g, [key]: !g[key] } });
   return (
-    <div className="stack" style={{ gap: 10, background: '#F7F6FB', borderRadius: 16, padding: '10px 12px' }}>
-      <label className="small" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <b>أقصى مبلغ يظهر للكاشير</b>
-        <input className="input" style={{ width: 110, height: 40 }} inputMode="decimal" dir="ltr" value={max} onChange={(e) => setMax(e.target.value)} onBlur={() => num(max) !== num(k.maxAmount ?? 3000) && save({ maxAmount: num(max) })} />ج
-        <span className="tiny muted">أكبر من كده بيروح لصاحب المحل والمحاسب بس، في «التحويلات»</span>
-      </label>
+    <div className="stack" style={{ gap: 8, background: '#F7F6FB', borderRadius: 16, padding: '10px 12px' }}>
+      <span className="small"><b>🔒 الحماية</b> <span className="tiny muted">· شغّل اللي صاحب المحل عاوزه</span></span>
+      {GUARDS.map((x) => (
+        <div key={x.k} className="stack" style={{ gap: 4, background: '#fff', borderRadius: 12, padding: '8px 10px' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+            <input type="checkbox" checked={!!g[x.k]} onChange={() => flip(x.k)} style={{ width: 20, height: 20, accentColor: 'var(--blue)' }} />
+            <span className="stack" style={{ gap: 0 }}><span className="small" style={{ fontWeight: 700 }}>{x.label}</span><span className="tiny muted">{x.hint}</span></span>
+          </label>
+          {x.k === 'limit' && g.limit && (
+            <label className="small" style={{ display: 'flex', alignItems: 'center', gap: 8, paddingInlineStart: 30 }}>أقصى مبلغ يظهر للكاشير
+              <input className="input" style={{ width: 110, height: 40 }} inputMode="decimal" dir="ltr" value={max} onChange={(e) => setMax(e.target.value)} onBlur={() => num(max) > 0 && num(max) !== num(k.maxAmount ?? 3000) && save({ maxAmount: num(max) })} />ج
+            </label>
+          )}
+          {x.k === 'window' && g.window && (
+            <label className="small" style={{ display: 'flex', alignItems: 'center', gap: 8, paddingInlineStart: 30 }}>المدة
+              <input className="input" style={{ width: 90, height: 40 }} inputMode="numeric" dir="ltr" value={mins} onChange={(e) => setMins(e.target.value)} onBlur={() => num(mins) > 0 && num(mins) !== num(k.windowMin ?? 60) && save({ windowMin: Math.round(num(mins)) })} />دقيقة
+            </label>
+          )}
+        </div>
+      ))}
       <div className="stack" style={{ gap: 4 }}>
         <span className="small"><b>الفروع اللي بتستلم على الحساب ده</b> <span className="tiny muted">· التحويل بيظهر عندهم كلهم، وأول كاشير يأكده ياخده</span></span>
         <ShopsOf shops={shops} ids={ids} onChange={(v) => save({ shopIds: [...new Set([shop.id, ...v])] })} />
       </div>
-      <span className="tiny muted" style={{ lineHeight: 1.7 }}>🔒 التحويل بيظهر للكاشير ساعة بس، ومحتاج رقم فاتورة البيع علشان يأكده، وكل تأكيد بيوصل لصاحب المحل يقدر يرفضه.</span>
+      <span className="tiny muted">التغيير بيسري على التحويلات الجاية.</span>
     </div>
   );
 }

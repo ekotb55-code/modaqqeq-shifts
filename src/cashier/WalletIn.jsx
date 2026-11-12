@@ -15,6 +15,10 @@ const HIDE = 'mdq-sms-hide';
 const readHidden = () => { try { return JSON.parse(localStorage.getItem(HIDE) || '[]'); } catch { return []; } };
 // A transfer shows to the cashiers for one hour only (from when it arrived, or when the owner sent it to them).
 export const CLAIM_WINDOW = 60 * 60 * 1000;
+// Each link has its own choices (Setup → رسايل البنك); the script copies them on every transfer.
+// windowMin 0 = no time limit (a day and a half, like before). Old transfers without the field: one hour.
+export const windowOf = (s) => (s.windowMin === 0 ? 36 * 60 * 60 * 1000 : (s.windowMin || 60) * 60 * 1000);
+export const needsInvoice = (s) => s.needInvoice !== false;
 const since = (s) => s.releasedAtMs || s.atMs || 0;
 
 export function useWalletIn(shopId, wallets, uid) {
@@ -37,7 +41,7 @@ export function useWalletIn(shopId, wallets, uid) {
     return () => subs.forEach((u) => u());
   }, [groups]);
   const fresh = list
-    .filter((s) => since(s) > Date.now() - CLAIM_WINDOW && (!wallets || wallets.includes(s.wallet)) && !(s.group && locked[s.group]))
+    .filter((s) => since(s) > Date.now() - windowOf(s) && (!wallets || wallets.includes(s.wallet)) && !(s.group && locked[s.group]))
     .sort((a, b) => since(b) - since(a));
   const shown = fresh.filter((s) => !hidden.includes(s.id));
   // A new one: bell + sound like any other notification.
@@ -123,8 +127,8 @@ export function ClaimModal({ s, shop, shift, profile, onClose }) {
   const look = WALLET_LOOK[s.wallet] || WALLET_LOOK.insta;
   const go = async () => {
     if (!navigator.onLine) { toast('لازم يكون فيه نت علشان نأكد التحويل', 'err'); return; }
-    if (!inv.trim()) { toast('اكتب رقم فاتورة البيع من البرنامج', 'err'); return; }
-    if (since(s) < Date.now() - CLAIM_WINDOW) { toast('عدّى أكتر من ساعة على التحويل ده · كلّم صاحب المحل', 'err'); return; }
+    if (needsInvoice(s) && !inv.trim()) { toast('اكتب رقم فاتورة البيع من البرنامج', 'err'); return; }
+    if (since(s) < Date.now() - windowOf(s)) { toast('عدّى وقت التأكيد على التحويل ده · كلّم صاحب المحل', 'err'); return; }
     setBusy(true);
     const b = writeBatch(db);
     const eref = doc(collection(db, 'shifts', shift.id, 'entries'));
@@ -152,7 +156,7 @@ export function ClaimModal({ s, shop, shift, profile, onClose }) {
       }
       logAct('sms_claim', `أكّد تحويل ${SRC_LABEL[s.wallet] || ''} ${fmt(s.amount)} ج من ${s.fromName || 'عميل'} · فاتورة ${inv.trim()} (رسالة البنك)`, { shopId: shift.shopId, shiftId: shift.id });
       // The owner sees every confirmation and can refuse it if the money isn't the shop's.
-      pushEvent({ type: 'sms_claim', shopId: shift.shopId, shiftId: shift.id, to: 'staff', title: `✋ ${profile.name} أكّد تحويل ${fmt(s.amount)} ج`, body: `من ${s.fromName || 'عميل'} · فاتورة ${inv.trim()} · لو مش بتاع المحل ارفضه من «التحويلات»` });
+      if (s.notifyClaim !== false) pushEvent({ type: 'sms_claim', shopId: shift.shopId, shiftId: shift.id, to: 'staff', title: `✋ ${profile.name} أكّد تحويل ${fmt(s.amount)} ج`, body: `من ${s.fromName || 'عميل'} · فاتورة ${inv.trim()} · لو مش بتاع المحل ارفضه من «التحويلات»` });
       toast('اتسجل التحويل ✓');
       onClose();
     } catch (e) {
@@ -170,11 +174,11 @@ export function ClaimModal({ s, shop, shift, profile, onClose }) {
         {s.fromPhone && <span className="small" dir="ltr" style={{ textAlign: 'end' }}>📱 {s.fromPhone}</span>}
         <span className="tiny" style={{ opacity: 0.9 }}>{[s.smsDate, s.smsTime && `الساعة ${s.smsTime}`, s.ref && `رقم العملية ${s.ref}`].filter(Boolean).join(' · ')}</span>
       </div>
-      <label className="field">رقم فاتورة البيع من البرنامج
+      <label className="field">رقم فاتورة البيع من البرنامج{needsInvoice(s) ? '' : ' (لو موجود)'}
         <input className="input" autoFocus inputMode="numeric" dir="ltr" value={inv} onChange={(e) => setInv(e.target.value)} placeholder="مثلًا 10458" />
       </label>
-      <span className="small muted" style={{ lineHeight: 1.7 }}>اتأكد إن العميل اللي قدامك هو اللي حوّل المبلغ ده، وإن الفاتورة اتعملت بنفس المبلغ. صاحب المحل والمحاسب بيوصلهم كل تأكيد وبيطابقوه بالفاتورة.</span>
-      <button type="button" className="btn full lime" onClick={go} disabled={busy || !inv.trim()}>{busy ? 'لحظة…' : 'أيوه، ده تحويل عميل عندي'}</button>
+      <span className="small muted" style={{ lineHeight: 1.7 }}>اتأكد إن العميل اللي قدامك هو اللي حوّل المبلغ ده{needsInvoice(s) ? '، وإن الفاتورة اتعملت بنفس المبلغ' : ''}.{s.notifyClaim !== false ? ' صاحب المحل بيوصله كل تأكيد.' : ''}</span>
+      <button type="button" className="btn full lime" onClick={go} disabled={busy || (needsInvoice(s) && !inv.trim())}>{busy ? 'لحظة…' : 'أيوه، ده تحويل عميل عندي'}</button>
       <button type="button" className="link" onClick={onClose}>رجوع</button>
     </Modal>
   );
