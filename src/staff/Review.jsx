@@ -636,6 +636,7 @@ function systemMoves(shift, sum, cashierSafe) {
   });
   (sum.machineGroups || []).filter((g) => g.affects && g.sales).forEach((g) => {
     list.push({ id: 'm:' + g.machine, title: `فرق ${g.machine} الإجمالي`, from: g.sales < 0 ? g.machine : cashierSafe, to: g.sales < 0 ? cashierSafe : g.machine, amount: Math.abs(g.sales) });
+    if (g.svc) list.push({ id: 's:' + g.machine, title: `مقابل خدمة ${g.machine} (${fmt(g.svcPct)}%)`, from: 'إيراد مقابل خدمة', to: cashierSafe, amount: g.svc });
     if (g.fee) list.push({ id: 'f:' + g.machine, title: `مصاريف ${g.machine} (${fmt(g.rate)}%)`, from: cashierSafe, to: 'مصروف', amount: g.fee });
   });
   if (hnd && hnd.keepDrawer === 'stay' && num(hnd.drawerTotal) > 0) list.push({ id: 'close', title: 'تسليم آخر المدة للي بعده', from: cashierSafe, to: 'خزنة التسليم', amount: num(hnd.drawerTotal) });

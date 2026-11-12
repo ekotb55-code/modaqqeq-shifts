@@ -28,14 +28,14 @@ export const settleOf = (m) => (m?.settle === 'liquidate' || m?.settle === 'dail
 // Machines are configured per shop: name, sub-accounts (or one account), commission rate and how it's settled.
 // startZero: the machine always starts a shift at 0 (the cashier doesn't receive a balance, only hands over what came in during the shift).
 export function newMachine() {
-  return { id: Math.random().toString(36).slice(2, 9), name: '', active: true, hasSubs: false, accounts: [], ratePct: 0, rateFrom: 'posting', settle: 'carry', liqFeePct: 0, inCash: true, startZero: false };
+  return { id: Math.random().toString(36).slice(2, 9), name: '', active: true, hasSubs: false, accounts: [], ratePct: 0, svcPct: 0, rateFrom: 'posting', settle: 'carry', liqFeePct: 0, inCash: true, startZero: false };
 }
 // Ready-made choices shown when adding a machine in the setup screen.
 export const MACHINE_PRESETS = [
   { name: 'فوري', hasSubs: true, accounts: ['الحساب الرئيسي', 'كاش أوت'] },
   { name: 'جيديا', ratePct: 0, settle: 'liquidate', liqFeePct: 2, startZero: true },
-  { name: 'ماجيك باي' },
-  { name: 'ممكن' },
+  { name: 'ماجيك باي', svcPct: 8 },
+  { name: 'ممكن', svcPct: 8 },
 ];
 export function machineListOf(shop) {
   if (Array.isArray(shop?.machineList) && shop.machineList.length) return shop.machineList;
@@ -50,7 +50,7 @@ export function machineListOf(shop) {
 }
 export function flattenMachines(list) {
   return list.filter((m) => m.active && m.name.trim()).flatMap((m) => {
-    const base = { machine: m.name.trim(), machineId: m.id, ratePct: num(m.ratePct), rateFrom: m.rateFrom, settle: settleOf(m), liqFeePct: settleOf(m) === 'liquidate' ? num(m.liqFeePct) : 0, inCash: m.inCash !== false, startZero: !!m.startZero };
+    const base = { machine: m.name.trim(), machineId: m.id, ratePct: num(m.ratePct), svcPct: num(m.svcPct), rateFrom: m.rateFrom, settle: settleOf(m), liqFeePct: settleOf(m) === 'liquidate' ? num(m.liqFeePct) : 0, inCash: m.inCash !== false, startZero: !!m.startZero };
     const accs = m.hasSubs ? m.accounts.map((a) => a.trim()).filter(Boolean) : [];
     return accs.length ? accs.map((a) => ({ ...base, account: a })) : [{ ...base, account: 'الرصيد' }];
   });
@@ -417,6 +417,12 @@ export function computeShift(shift, entries, shop, sales = null) {
     const rate = num(cfg.ratePct);
     const fee = sales === null || !rate ? 0 : r2((Math.abs(sales) * rate) / (100 - rate));
     const affects = cfg.inCash !== false;
+    // Service fee (مقابل خدمة): machines like Momkn / Magic — the customer pays the bill + e.g. 8%.
+    // 1000 gone from the balance means 1080 should be in the drawer.
+    const live = (shop?.machines || []).find((x) => machineKey(x) === s.key);
+    const svcPct = num(cfg.svcPct ?? live?.svcPct);
+    const svc = sales !== null && sales < 0 && affects && svcPct ? r2((-sales * svcPct) / 100) : 0;
+    machineCash += svc;
     // A card sale of 100 at 2% lands 98 on the machine: the POS counted 100, so the drawer
     // expects 100 less — 98 as the machine sale and 2 as the machine's fee.
     let effect = 0, feeEffect = 0;
@@ -426,7 +432,7 @@ export function computeShift(shift, entries, shop, sales = null) {
       machineCash += effect + feeEffect;
       if (cfg.rateFrom === 'cashier') machineFees += feeEffect;
     }
-    machines.push({ ...s, machine: cfg.machine || s.label.split(' · ')[0], account: cfg.account, close, sales, rate, fee, rateFrom: cfg.rateFrom, settle: settleOf(cfg), affects, effect: r2(effect), feeEffect: r2(feeEffect), total: r2(effect + feeEffect) });
+    machines.push({ ...s, machine: cfg.machine || s.label.split(' · ')[0], account: cfg.account, close, sales, rate, fee, svcPct, svc, rateFrom: cfg.rateFrom, settle: settleOf(cfg), affects, effect: r2(effect), feeEffect: r2(feeEffect), total: r2(effect + feeEffect + svc) });
     s.expected = close;
   });
 
@@ -480,13 +486,13 @@ export function groupMachines(list) {
   const map = new Map();
   list.forEach((m) => {
     const k = m.machine || m.label;
-    if (!map.has(k)) map.set(k, { machine: k, accounts: [], open: 0, close: 0, hasClose: true, sales: 0, hasSales: true, fee: 0, effect: 0, feeEffect: 0, rate: m.rate, rateFrom: m.rateFrom, settle: m.settle, affects: m.affects });
+    if (!map.has(k)) map.set(k, { machine: k, accounts: [], open: 0, close: 0, hasClose: true, sales: 0, hasSales: true, fee: 0, effect: 0, feeEffect: 0, svc: 0, svcPct: m.svcPct, rate: m.rate, rateFrom: m.rateFrom, settle: m.settle, affects: m.affects });
     const g = map.get(k);
     g.accounts.push(m);
     g.open = r2(g.open + num(m.open));
     if (m.close === null) g.hasClose = false; else g.close = r2(g.close + m.close);
     if (m.sales === null) g.hasSales = false; else g.sales = r2(g.sales + m.sales);
-    g.fee = r2(g.fee + num(m.fee)); g.effect = r2(g.effect + num(m.effect)); g.feeEffect = r2(g.feeEffect + num(m.feeEffect));
+    g.fee = r2(g.fee + num(m.fee)); g.effect = r2(g.effect + num(m.effect)); g.feeEffect = r2(g.feeEffect + num(m.feeEffect)); g.svc = r2(g.svc + num(m.svc));
   });
   return [...map.values()].map((g) => ({ ...g, close: g.hasClose ? g.close : null, sales: g.hasSales ? g.sales : null }));
 }

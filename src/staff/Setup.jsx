@@ -135,9 +135,11 @@ function MachinesEditor({ list, onChange }) {
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
             <label className="field" style={{ flex: '1 1 200px' }}>اسم المكنة<input className="input" placeholder="مثلًا فوري، ماجيك، أمان" value={m.name} onChange={(e) => upd(m.id, { name: e.target.value })} /></label>
             <label className="field" style={{ width: 130 }}>النسبة %<input className="input" inputMode="decimal" dir="ltr" placeholder="2" value={m.ratePct} onChange={(e) => upd(m.id, { ratePct: e.target.value })} /></label>
+            <label className="field" style={{ width: 150 }} title="العميل بيدفع قيمة الفاتورة + النسبة دي. مثلًا 8%: الرصيد نزل 1000 يبقى الدرج فيه 1080">مقابل الخدمة %<input className="input" inputMode="decimal" dir="ltr" placeholder="0" value={m.svcPct ?? ''} onChange={(e) => upd(m.id, { svcPct: e.target.value })} /></label>
             <button type="button" className={'chip' + (m.active ? ' on' : '')} onClick={() => upd(m.id, { active: !m.active })} aria-pressed={m.active}>{m.active ? '✓ مفعّلة للمحل' : 'مقفولة'}</button>
             <button type="button" className="icon-btn" aria-label={`امسح ${m.name || 'المكنة'}`} onClick={() => window.confirm('تمسح المكنة دي من المحل؟') && onChange(list.filter((x) => x.id !== m.id))}><Icon d="trash" size={18} /></button>
           </div>
+          {num(m.svcPct) > 0 && <span className="tiny" style={{ background: '#EAFBC2', borderRadius: 12, padding: '6px 10px', alignSelf: 'flex-start' }}>العميل بيدفع الفاتورة + {num(m.svcPct)}% · لو الرصيد نزل 1,000 يبقى الدرج المفروض فيه {fmt(1000 + 10 * num(m.svcPct))}</span>}
           <div className="stack">
             <span className="small muted">الحسابات</span>
             <div className="chips">

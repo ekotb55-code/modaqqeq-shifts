@@ -26,6 +26,8 @@ function SafeCard({ title, tint, children, badge }) {
 }
 
 // Statement of every safe for one shift. `c` comes from computeShift().
+const r2s = (x) => Math.round(x * 100) / 100;
+
 export default function Statements({ c, shift, shop, showDrawer = true }) {
   const rcv = shift.receive || {};
   const d = c.drawer;
@@ -45,11 +47,14 @@ export default function Statements({ c, shift, shop, showDrawer = true }) {
             {(c.walletInfo || []).filter((x) => x.mode === 'shop' && x.sales).map((x) => (
               <Line key={x.key} label={`مبيعات اتدفعت على ${x.label} (الفرق)`} amount={-x.sales} />
             ))}
+            {c.machines.filter((m) => m.svc).map((m) => (
+              <Line key={m.key + 's'} label={`مقابل خدمة ${m.machine} (${fmt(m.svcPct)}%)`} amount={m.svc} />
+            ))}
             {c.machines.filter((m) => m.affects && m.sales).map((m) => (m.rateFrom === 'cashier' ? [
               <Line key={m.key} label={`${m.label} · ${m.sales > 0 ? 'مبيعات على المكنة' : 'خدمات اتدفعت كاش'}`} amount={m.effect} />,
               m.fee ? <Line key={m.key + 'f'} label={`مصاريف ${m.machine} (${fmt(m.rate)}%)`} amount={m.feeEffect} tone="bad" /> : null,
             ] : (
-              <Line key={m.key} label={`${m.label} · ${m.sales > 0 ? 'مبيعات على المكنة' : 'خدمات اتدفعت كاش'}${m.fee ? ` (شامل نسبة ${fmt(m.rate)}%)` : ''}`} amount={m.total} />
+              <Line key={m.key} label={`${m.label} · ${m.sales > 0 ? 'مبيعات على المكنة' : 'خدمات اتدفعت كاش'}${m.fee ? ` (شامل نسبة ${fmt(m.rate)}%)` : ''}`} amount={r2s(m.total - (m.svc || 0))} />
             )))}
             <Line label="المفروض يتسلّم" amount={d.expected} strong />
             <Line label="اتسلّم فعلًا" amount={d.close} strong />
@@ -99,7 +104,7 @@ export default function Statements({ c, shift, shop, showDrawer = true }) {
                       <td><b>{g.accounts.length > 1 ? `↳ ${m.account || m.label}` : m.label}</b></td><td>{fmt(m.open)}</td><td>{fmt(m.inn)}</td><td>{fmt(m.out)}</td>
                       <td>{m.close === null ? '—' : fmt(m.close)}</td>
                       <td>{m.sales === null ? '—' : fmt(m.sales)}<CopyBtn value={m.sales === null ? 0 : fmt(Math.abs(m.sales))} /></td>
-                      <td>{m.rate ? `${fmt(m.rate)}% · ${fmt(m.fee)}` : '—'}</td>
+                      <td>{[m.rate ? `${fmt(m.rate)}% · ${fmt(m.fee)}` : '', m.svc ? `خدمة ${fmt(m.svcPct)}% · +${fmt(m.svc)}` : ''].filter(Boolean).join(' / ') || '—'}</td>
                       <td>{m.affects ? fmt(m.total) : 'مش بتأثر'}</td>
                     </tr>
                   )),
@@ -109,7 +114,7 @@ export default function Statements({ c, shift, shop, showDrawer = true }) {
                       <td>{g.close === null ? '—' : fmt(g.close)}</td>
                       <td>{g.sales === null ? '—' : fmt(g.sales)}</td>
                       <td>{g.rate ? fmt(g.fee) : '—'}</td>
-                      <td>{g.affects ? fmt(g.effect + g.feeEffect) : '—'}</td>
+                      <td>{g.affects ? fmt(g.effect + g.feeEffect + (g.svc || 0)) : '—'}</td>
                     </tr>
                   ),
                 ])}
@@ -117,7 +122,7 @@ export default function Statements({ c, shift, shop, showDrawer = true }) {
             </table>
           </div>
           {c.machineGroups.map((g) => (
-            <span key={g.machine} className="tiny"><b>{g.machine}</b> · {g.rate ? `نسبة ${fmt(g.rate)}% ${RATE_FROM[g.rateFrom] || ''}` : 'من غير نسبة'} · {SETTLE[g.settle] || ''}</span>
+            <span key={g.machine} className="tiny"><b>{g.machine}</b> · {g.rate ? `نسبة ${fmt(g.rate)}% ${RATE_FROM[g.rateFrom] || ''}` : 'من غير نسبة'}{g.svcPct ? ` · مقابل خدمة ${fmt(g.svcPct)}% على العميل` : ''} · {SETTLE[g.settle] || ''}</span>
           ))}
           {c.liqFees > 0 && <span className="tiny" style={{ fontWeight: 700 }}>مصاريف تسييل في الوردية: {fmt(c.liqFees)} ج</span>}
         </section>
