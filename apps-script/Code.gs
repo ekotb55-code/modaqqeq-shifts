@@ -278,7 +278,8 @@ function parseSms_(text) {
   const dt = t.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
   const tm = t.match(/(\d{1,2}:\d{2})/);
   const rf = t.match(/(?:رقم المعاملة|رقم العملية|الرقم المرجعي|المرجع|Ref(?:erence)?(?: No)?\.?|Transaction ID)\s*:?\s*([A-Za-z0-9]{4,})/i);
-  const name = nm ? nm[1].trim() : '';
+  const ipa = t.match(/([A-Za-z0-9._-]+@[A-Za-z0-9]+)/);
+  const name = nm ? nm[1].trim() : ipa ? ipa[1] : ''; // إشعار انستاباي: العنوان بدل الاسم
   const ch = t.match(/مصاريف(?:\s*الخدمة)?\s*:?\s*([\d,]+(?:\.\d+)?)/);
   return { dir: dir, amount: amount, charge: ch ? Number(ch[1].replace(/,/g, '')) : 0, balance: smsBalance_(t), fromName: /^\+?\d+$/.test(name) ? '' : name.slice(0, 80), fromPhone: ph ? ph[1] : '', smsDate: dt ? dt[1] : '', smsTime: tm ? tm[1] : '', ref: rf ? rf[1] : '', text: t.slice(0, 400) };
 }
@@ -336,10 +337,34 @@ function sms_(key, text) {
   req_('patch', FS + '/smsKeys/' + key + '?updateMask.fieldPaths=lastAtMs&updateMask.fieldPaths=lastText&updateMask.fieldPaths=lastOk',
     { fields: toFields_({ lastAtMs: Date.now(), lastText: String(text || '').replace(/\s+/g, ' ').slice(0, 200), lastOk: okMsg }) });
   if (!okMsg) return { ok: true, skipped: true };
-  const refKey = p.ref || Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, p.text).map(function (b) { return ((b + 256) % 256).toString(16); }).join('').slice(0, 16);
   const now = new Date();
+  const home = shopMode ? k.shopId : ((k.shopIds && k.shopIds[0]) || k.shopId);
+  // إشعار انستاباي بيوصل أسرع بس من غير رقم عملية، والرسالة النصية بتيجي بعده فيها رقم العملية.
+  // الاتنين يبقوا تحويل واحد: اللي ييجي التاني يكمّل على الأول (نفس المحفظة ونفس المبلغ في آخر 45 دقيقة)، بالترتيب.
+  // الإشعار فيه عنوان انستاباي (xxx@instapay) ومفيهوش رقم عملية؛ رسالة من غير رقم عملية ومن غير عنوان = رسالة بنك عادية (زي الأول)
+  const isNote = !p.ref && /[a-z0-9._-]@[a-z]/i.test(p.text);
+  if (isNote) {
+    // MacroDroid ممكن يبعت نفس الإشعار مرتين ورا بعض — ده بس اللي نعتبره تكرار؛ نفس المبلغ من نفس الشخص بعد كده = تحويل جديد
+    const ck = 'n:' + key + ':' + md5_(p.text);
+    const cache = CacheService.getScriptCache();
+    if (cache.get(ck)) return { ok: true, dup: true };
+    cache.put(ck, '1', 30);
+    const mate = mateOf_(home, wallet, p, now, 'sms');
+    if (mate) { patchGroup_(mate, { noteSeen: true, fromIpa: p.fromName || '' }); return { ok: true, matched: true }; }
+  } else if (p.ref) {
+    // نفس الرسالة وصلت مرتين؟
+    if (req_('post', FS + '/smsRefs?documentId=' + encodeURIComponent(key + '_' + p.ref), { fields: toFields_({ atMs: now.getTime() }) }).code === 409) return { ok: true, dup: true };
+    const mate = mateOf_(home, wallet, p, now, 'note');
+    if (mate) {
+      patchGroup_(mate, { ref: p.ref, fromName: p.fromName || mate.fromName || '', fromIpa: mate.fromName || '', fromPhone: p.fromPhone || mate.fromPhone || '', smsDate: p.smsDate, smsTime: p.smsTime,
+        balance: p.balance, charge: p.charge || 0, smsText: p.text, bankOk: true, bankAtMs: now.getTime() });
+      return { ok: true, matched: true };
+    }
+  }
+  const refKey = p.ref || (isNote ? 'n' + now.getTime().toString(36) + md5_(p.text).slice(0, 6) : md5_(p.text));
   const base = { wallet: wallet, dir: p.dir, amount: p.amount, charge: p.charge || 0, balance: p.balance, fromName: p.fromName, fromPhone: p.fromPhone, ref: p.ref, smsDate: p.smsDate, smsTime: p.smsTime, text: p.text,
-    atMs: now.getTime(), day: Utilities.formatDate(now, 'Africa/Cairo', 'yyyy-MM-dd') };
+    src: isNote ? 'note' : 'sms', bankOk: !isNote, atMs: now.getTime(), day: Utilities.formatDate(now, 'Africa/Cairo', 'yyyy-MM-dd') };
+  if (shopMode) base.group = key + '_' + refKey;
   if (shopMode) {
     const r0 = req_('post', FS + '/walletIn?documentId=' + encodeURIComponent(k.shopId + '_' + refKey), { fields: toFields_(Object.assign({ shopId: k.shopId, status: 'auto' }, base)) });
     if (r0.code === 409) return { ok: true, dup: true };
@@ -377,6 +402,37 @@ function sms_(key, text) {
     req_('post', FS + '/outbox', { fields: toFields_(ev) });
   });
   return { ok: true };
+}
+function md5_(t) { return Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, String(t)).map(function (b) { return ((b + 256) % 256).toString(16).padStart(2, '0'); }).join('').slice(0, 16); }
+// أقدم تحويل لسه مستني نصّه التاني: من «src» التاني، نفس المحفظة ونفس المبلغ، في آخر 45 دقيقة
+function mateOf_(shopId, wallet, p, now, src) {
+  const days = [Utilities.formatDate(now, 'Africa/Cairo', 'yyyy-MM-dd')];
+  if (Number(Utilities.formatDate(now, 'Africa/Cairo', 'H')) < 1) days.push(Utilities.formatDate(new Date(now.getTime() - 3600 * 1000), 'Africa/Cairo', 'yyyy-MM-dd'));
+  let list = [];
+  days.forEach(function (day) {
+    const r = req_('post', FS + ':runQuery', { structuredQuery: { from: [{ collectionId: 'walletIn' }], where: { compositeFilter: { op: 'AND', filters: [
+      { fieldFilter: { field: { fieldPath: 'shopId' }, op: 'EQUAL', value: { stringValue: shopId } } },
+      { fieldFilter: { field: { fieldPath: 'day' }, op: 'EQUAL', value: { stringValue: day } } }] } } } });
+    list = list.concat((r.json || []).filter(function (x) { return x.document; }).map(function (x) { const f = fields_(x.document); f.name = x.document.name; return f; }));
+  });
+  const since = now.getTime() - 45 * 60 * 1000;
+  const cands = list.filter(function (x) {
+    if (x.wallet !== wallet || x.dir !== p.dir || Number(x.amount) !== Number(p.amount) || (x.atMs || 0) < since) return false;
+    if (src === 'note') return x.src === 'note' && !x.bankOk;   // رسالة البنك بتدوّر على إشعار من غير رسالة
+    return x.src === 'sms' && !x.noteSeen;                      // إشعار متأخر بيدوّر على رسالة من غير إشعار
+  }).sort(function (a, b) { return (a.atMs || 0) - (b.atMs || 0); });
+  return cands[0] || null;
+}
+// نفس التعديل على كل نسخ التحويل (كل فرع ليه نسخة)
+function patchGroup_(mate, patch) {
+  let docs = [mate];
+  if (mate.group) {
+    const r = req_('post', FS + ':runQuery', { structuredQuery: { from: [{ collectionId: 'walletIn' }], where: { fieldFilter: { field: { fieldPath: 'group' }, op: 'EQUAL', value: { stringValue: mate.group } } } } });
+    const g = (r.json || []).filter(function (x) { return x.document; }).map(function (x) { return { name: x.document.name }; });
+    if (g.length) docs = g;
+  }
+  const mask = Object.keys(patch).map(function (f) { return 'updateMask.fieldPaths=' + f; }).join('&');
+  docs.forEach(function (d) { req_('patch', 'https://firestore.googleapis.com/v1/' + d.name + '?' + mask, { fields: toFields_(patch) }); });
 }
 // مفتاح سري للزرار اللي في الإشعار: محدش يقدر يعلّم تحويل «شخصي» غير من الإشعار نفسه.
 function actToken_(group) {

@@ -34,7 +34,8 @@ export function parseBuiltIn(text) {
   const dt = t.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
   const tm = t.match(/(\d{1,2}:\d{2})/);
   const rf = t.match(/(?:رقم المعاملة|رقم العملية|الرقم المرجعي|المرجع|Ref(?:erence)?(?: No)?\.?|Transaction ID)\s*:?\s*([A-Za-z0-9]{4,})/i);
-  const name = nm ? nm[1].trim() : '';
+  const ipa = t.match(/([A-Za-z0-9._-]+@[A-Za-z0-9]+)/);
+  const name = nm ? nm[1].trim() : ipa ? ipa[1] : ''; // إشعار انستاباي: العنوان بدل الاسم
   const ch = t.match(/مصاريف(?:\s*الخدمة)?\s*:?\s*([\d,]+(?:\.\d+)?)/);
   return { dir, amount, charge: ch ? Number(ch[1].replace(/,/g, '')) : 0, balance: smsBalance(t), fromName: /^\+?\d+$/.test(name) ? '' : name.slice(0, 80), fromPhone: ph ? ph[1] : '', smsDate: dt ? dt[1] : '', smsTime: tm ? tm[1] : '', ref: rf ? rf[1] : '', text: t.slice(0, 400) };
 }

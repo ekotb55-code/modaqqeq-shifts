@@ -90,6 +90,8 @@ export default function WalletTransfers({ shops, profile }) {
 
   if (!owned.length) return <div className="wrap"><div className="card empty">مفيش محافظ «بتروح لصاحب المحل» في المحلات دي</div></div>;
   const when = (ms) => (ms ? new Date(ms).toLocaleString('ar-EG', { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : '');
+  // جه من إشعار انستاباي (أسرع، من غير رقم عملية): رسالة البنك بتكمّل عليه لما توصل
+  const bank = (x) => (x.src !== 'note' ? '' : x.bankOk ? ' · ✓ رسالة البنك' : now - (x.atMs || 0) > 30 * 60000 ? ' · ⚠️ من غير رسالة بنك' : ' · مستني رسالة البنك');
   const branches = (x) => (x.shopNames.length && shops.length > 1 ? ` · ${x.shopNames.join('، ')}` : '');
   const Row = ({ x, sub, children }) => (
     <div className={'wt-row' + (now - (x.releasedAtMs || x.atMs || 0) < 120000 ? ' wt-new' : '')}>
@@ -120,14 +122,14 @@ export default function WalletTransfers({ shops, profile }) {
       {nothing && <section className="card empty">مفيش تحويلات مستنية حاجة دلوقتي ✓</section>}
       <Sec title="⏳ وصلت دلوقتي" hint="ظاهرة للكاشيرية" list={live}>
         {live.map((x) => (
-          <Row key={x.id} x={x} sub={`${when(x.releasedAtMs || x.atMs)}${branches(x)}${x.fromPhone ? ` · ${x.fromPhone}` : ''}`}>
+          <Row key={x.id} x={x} sub={`${when(x.releasedAtMs || x.atMs)}${branches(x)}${x.fromPhone ? ` · ${x.fromPhone}` : ''}${bank(x)}`}>
             {x.allowPersonal !== false && <button type="button" className="wt-btn" onClick={() => personal(x)}>شخصي</button>}
           </Row>
         ))}
       </Sec>
       <Sec title="⚠️ مستنية قرارك" hint="أكبر من الحد · مش ظاهرة للكاشير" list={big}>
         {big.map((x) => (
-          <Row key={x.id} x={x} sub={`${when(x.atMs)}${branches(x)}`}>
+          <Row key={x.id} x={x} sub={`${when(x.atMs)}${branches(x)}${bank(x)}`}>
             <button type="button" className="wt-btn ok" onClick={() => release(x)}>ابعته للكاشير</button>
             {x.allowPersonal !== false && <button type="button" className="wt-btn" onClick={() => personal(x)}>شخصي</button>}
           </Row>
@@ -135,7 +137,7 @@ export default function WalletTransfers({ shops, profile }) {
       </Sec>
       <Sec title="✋ أكّدها الكاشير" hint="طابقها بالفاتورة على البرنامج" list={claimed}>
         {claimed.map((x) => (
-          <Row key={x.id} x={x} sub={<>{x.claimedByName} · فاتورة <b dir="ltr">{x.claimInvoice || '—'}</b> · {when(x.claimedAtMs)}{branches(x)}</>}>
+          <Row key={x.id} x={x} sub={<>{x.claimedByName} · فاتورة <b dir="ltr">{x.claimInvoice || '—'}</b> · {when(x.claimedAtMs)}{branches(x)}{bank(x)}</>}>
             <button type="button" className="wt-btn ok" onClick={() => approve(x)} aria-label="تبع المحل">✓ تبع المحل</button>
             <button type="button" className="wt-btn no" onClick={() => refuse(x)} aria-label="مش بتاع المحل">✗ مش بتاعه</button>
           </Row>
