@@ -3,7 +3,7 @@ import { collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, query, serverT
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { Avatar, Icon, Modal, useToast } from '../ui.jsx';
-import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, MACHINE_PRESETS, REG_KIND, allOpen, isAdminRole, newRegister, newExpenseType, RATE_FROM, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, uidByLogin, matches, normUsername, DEFAULT_FEE_TIERS, tierFee, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, newVault, num, pickImage } from '../lib';
+import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, MACHINE_PRESETS, REG_KIND, allOpen, isAdminRole, newRegister, newExpenseType, RATE_FROM, RATE_ON, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, uidByLogin, matches, normUsername, DEFAULT_FEE_TIERS, tierFee, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, newVault, num, pickImage } from '../lib';
 import { logAct } from '../activity.js';
 import { CLOUD } from '../cloud.js';
 import { applyFormat, buildFormat, firstWords, parseSms } from '../smsFormat.js';
@@ -162,6 +162,11 @@ function MachinesEditor({ list, onChange }) {
             <div className="stack" style={{ flex: '1 1 240px' }}>
               <span className="small muted">النسبة</span>
               <div className="chips">{Object.entries(RATE_FROM).map(([k, l]) => <button key={k} type="button" className={'chip sm' + (m.rateFrom === k ? ' on' : '')} onClick={() => upd(m.id, { rateFrom: k })}>{l}</button>)}</div>
+              <span className="small muted" style={{ marginTop: 6 }}>النسبة على مين؟</span>
+              <div className="chips">{Object.entries(RATE_ON).map(([k, l]) => <button key={k} type="button" className={'chip sm' + ((m.rateOn || 'shop') === k ? ' on' : '')} onClick={() => upd(m.id, { rateOn: k })}>{l}</button>)}</div>
+              {num(m.ratePct) > 0 && <span className="tiny muted">{(m.rateOn || 'shop') === 'customer'
+                ? `فاتورة بـ ${fmt(100 + num(m.ratePct))} ← وصل المكنة 100 · الدرج ناقص ${fmt(100 + num(m.ratePct))}`
+                : `فاتورة بـ 100 ← وصل المكنة ${fmt(100 - num(m.ratePct))} · الدرج ناقص 100`}</span>}
             </div>
             <div className="stack" style={{ flex: '1 1 200px' }}>
               <span className="small muted">حركتها</span>

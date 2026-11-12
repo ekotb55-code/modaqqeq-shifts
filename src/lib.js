@@ -22,13 +22,15 @@ export const DEFAULT_SHOP = {
 };
 
 export const RATE_FROM = { cashier: 'بتتخصم من درج الكاشير (بند مصاريف)', posting: 'بتتحسب عند الترحيل' };
+// Who pays the machine's %: the shop (100 sale → 98 on the machine) or the customer (invoice 102 → 100 on the machine).
+export const RATE_ON = { shop: 'المحل (بتتخصم من المبلغ)', customer: 'العميل (بتتزود على الفاتورة)' };
 export const SETTLE = { carry: 'مستمرة · بتترحل تلقائي', liquidate: 'بتتسيّل' };
 export const settleOf = (m) => (m?.settle === 'liquidate' || m?.settle === 'daily' ? 'liquidate' : 'carry');
 
 // Machines are configured per shop: name, sub-accounts (or one account), commission rate and how it's settled.
 // startZero: the machine always starts a shift at 0 (the cashier doesn't receive a balance, only hands over what came in during the shift).
 export function newMachine() {
-  return { id: Math.random().toString(36).slice(2, 9), name: '', active: true, hasSubs: false, accounts: [], ratePct: 0, svcPct: 0, rateFrom: 'posting', settle: 'carry', liqFeePct: 0, inCash: true, startZero: false };
+  return { id: Math.random().toString(36).slice(2, 9), name: '', active: true, hasSubs: false, accounts: [], ratePct: 0, svcPct: 0, rateOn: 'shop', rateFrom: 'posting', settle: 'carry', liqFeePct: 0, inCash: true, startZero: false };
 }
 // Ready-made choices shown when adding a machine in the setup screen.
 export const MACHINE_PRESETS = [
@@ -50,7 +52,7 @@ export function machineListOf(shop) {
 }
 export function flattenMachines(list) {
   return list.filter((m) => m.active && m.name.trim()).flatMap((m) => {
-    const base = { machine: m.name.trim(), machineId: m.id, ratePct: num(m.ratePct), svcPct: num(m.svcPct), rateFrom: m.rateFrom, settle: settleOf(m), liqFeePct: settleOf(m) === 'liquidate' ? num(m.liqFeePct) : 0, inCash: m.inCash !== false, startZero: !!m.startZero };
+    const base = { machine: m.name.trim(), machineId: m.id, ratePct: num(m.ratePct), svcPct: num(m.svcPct), rateOn: m.rateOn === 'customer' ? 'customer' : 'shop', rateFrom: m.rateFrom, settle: settleOf(m), liqFeePct: settleOf(m) === 'liquidate' ? num(m.liqFeePct) : 0, inCash: m.inCash !== false, startZero: !!m.startZero };
     const accs = m.hasSubs ? m.accounts.map((a) => a.trim()).filter(Boolean) : [];
     return accs.length ? accs.map((a) => ({ ...base, account: a })) : [{ ...base, account: 'الرصيد' }];
   });
@@ -482,7 +484,11 @@ export function computeShift(shift, allEntries, shop, sales = null) {
     const close = closeRead && closeRead.value !== null && closeRead.value !== undefined ? num(closeRead.value) : null;
     const sales = close === null ? null : r2(close - s.open - s.inn + s.out);
     const rate = num(cfg.ratePct);
-    const fee = sales === null || !rate ? 0 : r2((Math.abs(sales) * rate) / (100 - rate));
+    const live0 = (shop?.machines || []).find((x) => machineKey(x) === s.key);
+    // Customer pays the %: 100 reached the machine, the invoice was 102 → fee 2 = 2% of 100.
+    // Shop pays it: the invoice was 100, 98 reached the machine → fee 2 = 2% of 100 = 98 × 2 / 98.
+    const onCustomer = (cfg.rateOn ?? live0?.rateOn) === 'customer';
+    const fee = sales === null || !rate ? 0 : r2(onCustomer ? (Math.abs(sales) * rate) / 100 : (Math.abs(sales) * rate) / (100 - rate));
     const affects = cfg.inCash !== false;
     // Service fee (مقابل خدمة): machines like Momkn / Magic — the customer pays the bill + e.g. 8%.
     // 1000 gone from the balance means 1080 should be in the drawer.
