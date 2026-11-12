@@ -3,7 +3,7 @@ import { collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, query, serverT
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { Avatar, Icon, Modal, useToast } from '../ui.jsx';
-import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, MACHINE_PRESETS, REG_KIND, allOpen, isAdminRole, newRegister, newExpenseType, RATE_FROM, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, newVault, num, pickImage } from '../lib';
+import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, MACHINE_PRESETS, REG_KIND, allOpen, isAdminRole, newRegister, newExpenseType, RATE_FROM, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, matches, normUsername, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, newVault, num, pickImage } from '../lib';
 import { logAct } from '../activity.js';
 import { CLOUD } from '../cloud.js';
 import { applyFormat, buildFormat, firstWords, parseSms } from '../smsFormat.js';
@@ -794,51 +794,131 @@ function PinChange({ c, info, onClose }) {
 }
 
 const PEOPLE_GROUPS = [
-  { role: 'manager', title: 'مدير الفرع', hint: 'بيوصله تقرير كل وردية بعد التقفيل' },
-  { role: 'owner', title: 'الأونر', hint: 'بيشوف تقارير المحل كلها' },
-  { role: 'accountant', title: 'المحاسبين', hint: 'بيراجعوا ورديات المحل ويقفلوها' },
+  { role: 'owner', title: 'الأونر', hint: 'صاحب المحل · بيشوف تقارير المحل كلها', own: true },
+  { role: 'manager', title: 'مدير الفرع', hint: 'بيوصله تقرير كل وردية بعد التقفيل', own: true },
+  { role: 'accountant', title: 'المحاسبين', hint: 'محاسبين مدقق اللي بيراجعوا ورديات المحل ويقفلوها' },
 ];
 
+// Owners and branch managers belong to their own shop: the shop shows only its people, and new ones are made from here.
+// Accountants are Modaqqeq's team, so the whole team shows and you tick who follows this shop.
 function ShopPeople({ shop }) {
   const toast = useToast();
   const [users, setUsers] = useState([]);
-  useEffect(() => onSnapshot(collection(db, 'users'), (q) => setUsers(q.docs.map((d) => ({ id: d.id, ...d.data() })).filter((u) => !u.disabled)), () => {}), []);
-  const toggle = async (u) => {
+  const [adding, setAdding] = useState(null); // role of the new-account form that is open
+  const [linking, setLinking] = useState(null); // role of the "already has an account" search that is open
+  const [q, setQ] = useState('');
+  useEffect(() => onSnapshot(collection(db, 'users'), (qs) => setUsers(qs.docs.map((d) => ({ id: d.id, ...d.data() })).filter((u) => !u.disabled)), () => {}), []);
+  const setOn = async (u, on) => {
     const ids = u.shopIds || [];
-    const on = ids.includes(shop.id);
     try {
-      await updateDoc(doc(db, 'users', u.id), { shopIds: on ? ids.filter((x) => x !== shop.id) : [...ids, shop.id] });
-      logAct('access', on ? `شال ${u.name} من ${shop.name}` : `ضاف ${u.name} على ${shop.name}`, { shopId: shop.id });
-      toast(on ? `${u.name} اتشال من ${shop.name}` : `${u.name} بقى على ${shop.name}`);
+      await updateDoc(doc(db, 'users', u.id), { shopIds: on ? [...new Set([...ids, shop.id])] : ids.filter((x) => x !== shop.id) });
+      logAct('access', on ? `ضاف ${u.name} على ${shop.name}` : `شال ${u.name} من ${shop.name}`, { shopId: shop.id });
+      toast(on ? `${u.name} بقى على ${shop.name}` : `${u.name} اتشال من ${shop.name}`);
     } catch { toast('مش قادرين نحفظ', 'err'); }
   };
+  const person = (u, on, onClick) => (
+    <button key={u.id} type="button" className={'chip sm' + (on ? ' on' : '')} onClick={onClick} aria-pressed={on} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, paddingInlineStart: 6 }}>
+      <Avatar name={u.name} photo={u.photo} color={u.color || '#4CC3FF'} size={28} />{u.name}{on ? ' ✓' : ''}
+    </button>
+  );
   return (
     <section className="card" style={{ gap: 16 }}>
       <div className="stack" style={{ gap: 2 }}>
         <h2 className="h2">المسؤولين عن المحل</h2>
-        <span className="tiny muted">اختار مين يتابع المحل ده. لو الاسم مش موجود اعمله حساب من «حسابات الموظفين».</span>
+        <span className="tiny muted">الأونر ومدير الفرع بيتعملوا من هنا جوه المحل. ولو حد منهم ليه حساب في محل تاني، دوس «عنده حساب في محل تاني؟».</span>
       </div>
       {PEOPLE_GROUPS.map((g) => {
-        // old «مراجع» accounts now count as accountants
-        const list = users.filter((u) => u.role === g.role || (g.role === 'accountant' && u.role === 'reviewer'));
+        const sameRole = (u) => u.role === g.role || (g.role === 'accountant' && u.role === 'reviewer');
+        const mine = users.filter((u) => sameRole(u) && (u.shopIds || []).includes(shop.id));
+        if (!g.own) {
+          const list = users.filter(sameRole);
+          return (
+            <div key={g.role} className="stack">
+              <span className="small"><b>{g.title}</b> <span className="muted">· {g.hint}</span></span>
+              <div className="chips">
+                {list.map((u) => { const on = (u.shopIds || []).includes(shop.id); return person(u, on, () => setOn(u, !on)); })}
+                {list.length === 0 && <span className="tiny muted">مفيش محاسبين لسه · اعملهم من «حسابات الموظفين»</span>}
+              </div>
+            </div>
+          );
+        }
+        const others = linking === g.role ? users.filter((u) => (u.role === 'owner' || u.role === 'manager') && !(u.shopIds || []).includes(shop.id) && q.trim() && (matches(u.name, q) || matches(u.email, q))).slice(0, 8) : [];
         return (
-          <div key={g.role} className="stack">
+          <div key={g.role} className="stack" style={{ background: 'var(--chip)', borderRadius: 20, padding: '12px 14px', gap: 10 }}>
             <span className="small"><b>{g.title}</b> <span className="muted">· {g.hint}</span></span>
             <div className="chips">
-              {list.map((u) => {
-                const on = (u.shopIds || []).includes(shop.id);
-                return (
-                  <button key={u.id} type="button" className={'chip sm' + (on ? ' on' : '')} onClick={() => toggle(u)} aria-pressed={on} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, paddingInlineStart: 6 }}>
-                    <Avatar name={u.name} photo={u.photo} color={u.color || '#4CC3FF'} size={28} />{u.name}{on ? ' ✓' : ''}
-                  </button>
-                );
-              })}
-              {list.length === 0 && <span className="tiny muted">مفيش حسابات بالدور ده لسه</span>}
+              {mine.map((u) => person(u, true, () => window.confirm(`تشيل ${u.name} من ${shop.name}؟ (الحساب نفسه مش هيتمسح)`) && setOn(u, false)))}
+              {mine.length === 0 && <span className="tiny muted">مفيش {g.title} للمحل ده لسه</span>}
             </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" className="btn sm" onClick={() => { setAdding(adding === g.role ? null : g.role); setLinking(null); }}><Icon d="plus" size={16} />{g.title} جديد</button>
+              <button type="button" className="btn sm soft" style={{ height: 44 }} onClick={() => { setLinking(linking === g.role ? null : g.role); setAdding(null); setQ(''); }}>عنده حساب في محل تاني؟</button>
+            </div>
+            {adding === g.role && <NewPerson role={g.role} shop={shop} count={users.length} onDone={() => setAdding(null)} />}
+            {linking === g.role && (
+              <div className="stack" style={{ gap: 8 }}>
+                <input className="input" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="اكتب اسمه أو إيميله…" />
+                {q.trim() && !others.length && <span className="tiny muted">مفيش حد بالاسم ده · اعمله حساب جديد</span>}
+                <div className="chips">{others.map((u) => person(u, false, () => { setOn(u, true); setLinking(null); }))}</div>
+              </div>
+            )}
           </div>
         );
       })}
     </section>
+  );
+}
+
+function NewPerson({ role, shop, count, onDone }) {
+  const toast = useToast();
+  const [f, setF] = useState({ name: '', email: '', pass: '' });
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    if (!f.name.trim() || !f.email.trim() || f.pass.length < 6) { toast('اكتب الاسم والإيميل وباسورد 6 حروف على الأقل', 'err'); return; }
+    setBusy(true);
+    try {
+      const uid = await createAccount(f.email.trim(), f.pass);
+      await setDoc(doc(db, 'users', uid), { role, name: f.name.trim(), email: f.email.trim(), shopIds: [shop.id], color: AVATAR_BG[count % AVATAR_BG.length], createdAt: serverTimestamp() });
+      setDoc(doc(db, 'cashierSecrets', uid), { password: f.pass, updatedAt: serverTimestamp() }).catch(() => {});
+      logAct('staff_add', `عمل حساب ${ROLE_LABEL[role] || role} لـ ${f.name.trim()} في ${shop.name}`, { shopId: shop.id });
+      toast('الحساب اتعمل · ابعتله الإيميل والباسورد');
+      onDone();
+    } catch (e) {
+      toast(e.code === 'auth/email-already-in-use' ? 'الإيميل ده متسجل قبل كده · دوس «عنده حساب في محل تاني؟»' : 'مش قادرين نعمل الحساب', 'err');
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="row" style={{ gap: 10, alignItems: 'flex-end' }}>
+      <label className="field" style={{ flex: '1 1 160px' }}>الاسم<input className="input" autoFocus value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></label>
+      <label className="field" style={{ flex: '1 1 200px' }}>الإيميل<input className="input" type="email" dir="ltr" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></label>
+      <label className="field" style={{ flex: '1 1 140px' }}>الباسورد<input className="input" dir="ltr" value={f.pass} onChange={(e) => setF({ ...f, pass: e.target.value })} /></label>
+      <button type="button" className="btn" onClick={go} disabled={busy}>{busy ? 'لحظة…' : 'اعمل الحساب'}</button>
+    </div>
+  );
+}
+
+// The shops of one account: only the ones it has, plus a search to add another (instead of all the shops as buttons).
+function ShopsOf({ shops, ids, onChange }) {
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState(false);
+  const mine = ids.map((id) => shops.find((s) => s.id === id)).filter(Boolean);
+  const found = q.trim() ? shops.filter((s) => !ids.includes(s.id) && matches(s.name, q)).slice(0, 8) : [];
+  return (
+    <div className="stack" style={{ gap: 6, flex: '1 1 260px' }}>
+      <div className="chips">
+        {mine.map((s) => <button key={s.id} type="button" className="chip sm on" title="دوس علشان تشيله" onClick={() => onChange(ids.filter((x) => x !== s.id))}>{s.name} ✕</button>)}
+        {!mine.length && <span className="tiny muted">مش على أي محل</span>}
+        <button type="button" className="chip sm" onClick={() => { setOpen(!open); setQ(''); }}>＋ محل</button>
+      </div>
+      {open && (
+        <div className="stack" style={{ gap: 6 }}>
+          <input className="input" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="اكتب اسم المحل…" style={{ height: 44 }} />
+          <div className="chips">{found.map((s) => <button key={s.id} type="button" className="chip sm" onClick={() => { onChange([...ids, s.id]); setQ(''); setOpen(false); }}>{s.name}</button>)}</div>
+          {q.trim() && !found.length && <span className="tiny muted">مفيش محل بالاسم ده</span>}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -891,7 +971,7 @@ function StaffAccounts({ shops, profile }) {
         </div>
         {!isAdminRole(form.role) && (
           <div className="stack"><span className="small muted">المحلات اللي هيشوفها</span>
-            <div className="chips">{shops.map((s) => <button key={s.id} type="button" className={'chip sm' + (form.shopIds.includes(s.id) ? ' on' : '')} onClick={() => setForm({ ...form, shopIds: toggleShop(form.shopIds, s.id) })}>{s.name}</button>)}</div>
+            <ShopsOf shops={shops} ids={form.shopIds} onChange={(ids) => setForm({ ...form, shopIds: ids })} />
           </div>
         )}
         <button type="button" className="btn" style={{ alignSelf: 'flex-start' }} onClick={add} disabled={busy}><Icon d="plus" />{busy ? 'لحظة…' : 'اعمل الحساب'}</button>
@@ -914,9 +994,7 @@ function StaffAccounts({ shops, profile }) {
                   {roleOptions.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
                 </select>
                 {u.role !== 'admin' && (
-                  <div className="chips" style={{ flex: '1 1 260px' }}>
-                    {shops.map((s) => <button key={s.id} type="button" className={'chip sm' + ((u.shopIds || []).includes(s.id) ? ' on' : '')} onClick={() => update(u, { shopIds: toggleShop(u.shopIds || [], s.id) })}>{shopName(s.id)}</button>)}
-                  </div>
+                  <ShopsOf shops={shops} ids={u.shopIds || []} onChange={(ids) => update(u, { shopIds: ids })} />
                 )}
                 {!locked(u) && <button type="button" className="btn sm soft" onClick={() => setPassFor(u)} aria-label={`غيّر باسورد ${u.name}`}><Icon d="lock" size={15} />الباسورد</button>}
                 {!locked(u) && <button type="button" className="copy" aria-label={`اقفل حساب ${u.name}`} title="اقفل الحساب" onClick={() => window.confirm(`تقفل حساب ${u.name}؟`) && update(u, { disabled: true })}><Icon d="trash" size={16} /></button>}

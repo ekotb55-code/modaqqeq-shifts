@@ -6,7 +6,7 @@ import { auth, db, SUPER_ADMINS } from '../firebase';
 import Activity from './Activity.jsx';
 import MyPhoto from '../MyPhoto.jsx';
 import { Avatar, Icon, Modal, useToast } from '../ui.jsx';
-import { DEFAULT_SHOP, ROLE_LABEL, allOpen, dateStr, isAdminRole, toDate } from '../lib';
+import { DEFAULT_SHOP, ROLE_LABEL, allOpen, dateStr, isAdminRole, matches, toDate } from '../lib';
 import Review from './Review.jsx';
 import Ledger from './Ledger.jsx';
 import Reports from './Reports.jsx';
@@ -186,6 +186,9 @@ export function ShopPicker({ shops, value, onChange, onNew }) {
     return () => document.removeEventListener('pointerdown', close);
   }, [open]);
   const cur = shops.find((s) => s.id === value);
+  const [q, setQ] = useState('');
+  useEffect(() => { if (!open) setQ(''); }, [open]);
+  const list = shops.filter((s) => matches(s.name, q));
   return (
     <div className="shop-picker" ref={ref} data-tour="branch">
       <button type="button" className={'sp-btn' + (cur || value === 'all' ? ' on' : '')} onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="listbox">
@@ -198,7 +201,16 @@ export function ShopPicker({ shops, value, onChange, onNew }) {
       </button>
       {open && (
         <div className="sp-menu" role="listbox" aria-label="المحلات">
-          {shops.map((s) => {
+          {shops.length > 4 && (
+            <div className="sp-search">
+              <Icon d="search" size={18} />
+              <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="دوّر على فرع…" aria-label="دوّر على فرع"
+                onKeyDown={(e) => { if (e.key === 'Enter' && list.length === 1) { onChange(list[0].id); setOpen(false); } }} />
+              {q && <button type="button" aria-label="امسح البحث" onClick={() => setQ('')}>✕</button>}
+            </div>
+          )}
+          {q && !list.length && <span className="tiny muted" style={{ padding: '8px 12px' }}>مفيش فرع بالاسم ده</span>}
+          {list.map((s) => {
             const o = allOpen(s);
             return (
               <button key={s.id} type="button" role="option" aria-selected={s.id === value} className={'sp-item' + (s.id === value ? ' on' : '')} onClick={() => { onChange(s.id); setOpen(false); }}>
@@ -207,7 +219,7 @@ export function ShopPicker({ shops, value, onChange, onNew }) {
               </button>
             );
           })}
-          {shops.length > 1 && (
+          {shops.length > 1 && !q && (
             <button type="button" role="option" aria-selected={value === 'all'} className={'sp-item' + (value === 'all' ? ' on' : '')} onClick={() => { onChange('all'); setOpen(false); }}>
               <strong>كل الفروع</strong><span className="tiny">في الورديات والخزن والتقارير</span>
             </button>
@@ -220,14 +232,25 @@ export function ShopPicker({ shops, value, onChange, onNew }) {
 }
 
 export function BranchChooser({ shops, onPick, onNew }) {
+  const [q, setQ] = useState('');
+  const list = shops.filter((s) => matches(s.name, q));
   return (
     <div className="wrap" style={{ maxWidth: 900 }}>
       <div className="stack" style={{ gap: 4 }}>
         <h1 className="title">اختار الفرع</h1>
         <span className="sub">الفرع اللي تختاره هيفضل فوق جنب لوجو مدقق، وكل الصفحات هتشتغل عليه. تقدر تغيّره في أي وقت.</span>
       </div>
+      {shops.length > 4 && (
+        <div className="sp-search big">
+          <Icon d="search" size={20} />
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="دوّر على فرع…" aria-label="دوّر على فرع"
+            onKeyDown={(e) => { if (e.key === 'Enter' && list.length === 1) onPick(list[0].id); }} />
+          {q && <button type="button" aria-label="امسح البحث" onClick={() => setQ('')}>✕</button>}
+        </div>
+      )}
+      {q && !list.length && <div className="empty">مفيش فرع بالاسم ده</div>}
       <div className="branch-grid">
-        {shops.map((s) => {
+        {list.map((s) => {
           const o = allOpen(s);
           return (
             <button key={s.id} type="button" className="branch-card" onClick={() => onPick(s.id)}>
@@ -237,11 +260,11 @@ export function BranchChooser({ shops, onPick, onNew }) {
             </button>
           );
         })}
-        <button type="button" className="branch-card all" onClick={() => onPick('all')}>
+        {!q && <button type="button" className="branch-card all" onClick={() => onPick('all')}>
           <span className="bc-ic"><Icon d="dots" size={26} /></span>
           <strong>كل الفروع</strong>
           <span className="tiny muted">تشوف الفروع كلها مع بعض</span>
-        </button>
+        </button>}
         {onNew && (
           <button type="button" className="branch-card add" onClick={onNew}>
             <span className="bc-ic"><Icon d="plus" size={26} /></span>

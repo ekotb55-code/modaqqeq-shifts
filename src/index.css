@@ -764,3 +764,10 @@ body.net-bad .topbar { background: #FFF4E0; }
   .tb-upd > .upd-btn { display: none; }
   .tb-more { display: inline-flex; }
 }
+
+/* Branch search */
+.sp-search { display: flex; align-items: center; gap: 8px; background: var(--chip); border-radius: 14px; padding: 0 12px; height: 44px; position: sticky; top: 0; z-index: 1; color: var(--muted, #6B6A80); }
+.sp-search input { flex: 1; min-width: 0; border: 0; background: transparent; font: inherit; font-size: 15px; color: var(--ink); outline: none; height: 100%; }
+.sp-search button { border: 0; background: transparent; font-size: 16px; color: inherit; cursor: pointer; padding: 4px; }
+.sp-search.big { height: 54px; border-radius: 18px; background: var(--card); box-shadow: var(--shadow); max-width: 520px; }
+.sp-search.big input { font-size: 17px; }

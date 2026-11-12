@@ -131,6 +131,10 @@ export const fmt = (n) => Math.round(num(n) * 100) / 100 === 0 ? '0' : (Math.rou
 export const billsTotal = (bills) => FACES.reduce((a, f) => a + f * num(bills?.[f]), 0);
 export const emptyBills = () => Object.fromEntries(FACES.map((f) => [f, 0]));
 
+// Search that ignores أ/إ/آ/ا, ة/ه, ى/ي and spaces differences.
+export const arNorm = (t) => String(t || '').toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/[ًٌٍَُِّْـ]/g, '').replace(/\s+/g, ' ').trim();
+export const matches = (text, q) => !q.trim() || arNorm(text).includes(arNorm(q));
+
 export const todayKey = (d = new Date()) => {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
