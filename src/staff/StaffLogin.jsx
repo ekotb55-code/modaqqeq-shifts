@@ -17,6 +17,17 @@ const MSG = {
 };
 
 // One login for everybody: cashiers type their username + PIN, staff type their email + password.
+// When the browser closed badly the app's saved copy on the device can break. This removes only that copy
+// (nothing on the server, and the login stays), then opens the app again.
+async function resetDeviceData() {
+  try {
+    const dbs = (await indexedDB.databases?.()) || [];
+    await Promise.all(dbs.filter((d) => d.name && d.name.startsWith('firestore')).map((d) => new Promise((r) => { const q = indexedDB.deleteDatabase(d.name); q.onsuccess = q.onerror = q.onblocked = () => r(); })));
+  } catch { /* ignore */ }
+  try { const ks = await caches.keys(); await Promise.all(ks.map((k) => caches.delete(k))); } catch { /* ignore */ }
+  location.reload();
+}
+
 export default function Login({ error }) {
   const toast = useToast();
   const saved = (() => { try { return JSON.parse(localStorage.getItem('mdq-remember') || 'null'); } catch { return null; } })();
@@ -123,6 +134,9 @@ export default function Login({ error }) {
               <span className="muted small">{setup ? 'أول مرة بس. بعدها هتعمل باقي الحسابات من جوه.' : 'الكاشير: اسم الدخول والرقم السري · المحاسبين والإدارة: الإيميل والباسورد'}</span>
             </div>
             {(msg || error) && <span className="badge bad" style={{ fontSize: 14, padding: '8px 14px', whiteSpace: 'normal' }}>{msg || error}</span>}
+            {!msg && error && error.includes('بيانات الحساب') && (
+              <button type="button" className="btn sm soft" style={{ height: 44, alignSelf: 'flex-start' }} onClick={resetDeviceData}>🧹 صلّح بيانات التطبيق على الجهاز ده وافتح من جديد</button>
+            )}
             <label className="field">{setup ? 'الإيميل' : 'اسم الدخول أو الإيميل'}
               <input className="input" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} dir="auto" value={user} onChange={(e) => setUser(e.target.value)} required />
             </label>

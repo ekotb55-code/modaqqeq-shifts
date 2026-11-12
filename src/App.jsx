@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, getDocFromCache, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db, SUPER_ADMINS } from './firebase';
 import { Spinner } from './ui.jsx';
 import CashierApp from './cashier/CashierApp.jsx';
@@ -21,7 +21,13 @@ export default function App() {
     if (!u) { setUser(null); setProfile(null); return; }
     try {
       const ref = doc(db, 'users', u.uid);
-      let snap = await getDoc(ref);
+      // Weak internet or a browser that closed badly: try a few times, then use the copy saved on the device.
+      let snap = null;
+      let lastErr = null;
+      for (let i = 0; i < 3 && !snap; i++) {
+        try { snap = await getDoc(ref); } catch (e) { lastErr = e; await new Promise((r) => setTimeout(r, 1200 * (i + 1))); }
+      }
+      if (!snap) { try { snap = await getDocFromCache(ref); } catch { throw lastErr; } }
       if (!snap.exists() && SUPER_ADMINS.includes((u.email || '').toLowerCase())) {
         await setDoc(ref, { role: 'admin', name: 'إدارة مدقق', email: u.email, shopIds: [], createdAt: serverTimestamp() });
         snap = await getDoc(ref);
@@ -34,7 +40,7 @@ export default function App() {
       setUser(u);
     } catch (e) {
       console.error(e);
-      setErr('مش قادرين نحمّل بيانات الحساب. اتأكد من النت وجرّب تاني.');
+      setErr(`مش قادرين نحمّل بيانات الحساب. اتأكد من النت وجرّب تاني.${e?.code ? ` (${e.code})` : ''}`);
       setUser(null);
     }
   }), []);
