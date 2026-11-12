@@ -86,18 +86,7 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
   const needsPhoto = type === 'transfer' || (type === 'expense' && ((kind === 'supplier' && invoice === 'invoice') || kd.needPhoto));
 
   const subValue = sub === '__new' ? custom.trim() : sub;
-  // «إيراد مكنة»: some bills earn the shop an extra % on top (e.g. 8%): 1000 taken from the machine balance → 80 more in the drawer.
-  const [mKey, setMKey] = useState(machineSafes.length === 1 ? machineSafes[0].key : '');
-  const [mBase, setMBase] = useState('');
-  const [mPct, setMPct] = useState('8');
-  const mSel = machineSafes.find((x) => x.key === mKey);
-  const isMachineIncome = type === 'income' && reason === '__machine';
-  useEffect(() => {
-    if (!isMachineIncome) return;
-    const v = Math.round(num(mBase) * num(mPct)) / 100;
-    setAmount(v > 0 ? String(v) : '');
-  }, [isMachineIncome, mBase, mPct]);
-  const reasonValue = reason === '__new' ? custom.trim() : isMachineIncome ? (mSel ? `مكنة ${mSel.m?.machine || mSel.label}` : '') : reason;
+  const reasonValue = reason === '__new' ? custom.trim() : reason;
 
 
   const takePhoto = async () => {
@@ -123,8 +112,6 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
     if (type === 'expense' && kd.subs !== undefined && kd.q && !subValue) return kd.q;
     if (type === 'expense' && ['refund', 'other'].includes(kind) && !note.trim()) return kind === 'refund' ? 'اكتب رقم فاتورة البيع' : 'اكتب المصروف ده إيه';
     if (type === 'expense' && kd.needNote && !note.trim()) return 'اكتب ملاحظة';
-    if (isMachineIncome && !mSel) return 'اختار المكنة';
-    if (isMachineIncome && (num(mBase) <= 0 || num(mPct) <= 0)) return 'اكتب مبلغ الفواتير والنسبة';
     if (type === 'income' && !reasonValue) return 'اختار سبب الإيراد';
     if (type === 'withdraw' && !subValue) return 'اختار مين اللي سحب';
     if (type === 'topup' && !machine) return 'اختار المكنة';
@@ -159,7 +146,6 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
     }
     if (type === 'income') {
       Object.assign(entry, { src, reason: reasonValue, note: note.trim(), newItem: reason === '__new' });
-      if (isMachineIncome) Object.assign(entry, { machineIncome: true, machineKey: mKey, machine: mSel?.m?.machine || '', account: mSel?.m?.account || '', base: num(mBase), pct: num(mPct), note: [`${num(mPct)}% من فواتير ${fmt(num(mBase))} ج`, note.trim()].filter(Boolean).join(' · ') });
       // لو كتب سبب إيراد جديد
       if (reason === '__new' && custom.trim()) {
         shopUpdate = { incomeReasons: [...(shop.incomeReasons || []), custom.trim()] };
@@ -286,30 +272,10 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
         <div className="stack" style={{ background: '#F7F6FB', borderRadius: 22, padding: '12px 14px' }}>
           <span className="small muted">سبب الإيراد</span>
           <div className="chips">
-            {machineSafes.length > 0 && <button type="button" className={'chip sm' + (reason === '__machine' ? ' on' : '')} onClick={() => setReason('__machine')}>🏧 إيراد مكنة (فواتير بنسبة)</button>}
             {reasons.map((x) => <button key={x} type="button" className={'chip sm' + (reason === x ? ' on' : '')} onClick={() => setReason(x)}>{x}</button>)}
             <button type="button" className={'chip sm' + (reason === '__new' ? ' on' : '')} onClick={() => setReason('__new')}>+ سبب تاني</button>
           </div>
           {reason === '__new' && <input className="input white" placeholder="اكتب السبب" value={custom} onChange={(e) => setCustom(e.target.value)} autoFocus />}
-          {isMachineIncome && (
-            <div className="stack" style={{ gap: 10, marginTop: 4 }}>
-              {machineSafes.length > 1 && (
-                <div className="stack" style={{ gap: 6 }}>
-                  <span className="small muted">أنهي مكنة؟</span>
-                  <div className="chips">{machineSafes.map((x) => <button key={x.key} type="button" className={'chip sm' + (mKey === x.key ? ' on' : '')} onClick={() => setMKey(x.key)}>{x.label}</button>)}</div>
-                </div>
-              )}
-              <div className="row" style={{ gap: 10 }}>
-                <label className="field" style={{ flex: '2 1 160px' }}>مبلغ الفواتير (اللي اتسحب من رصيد المكنة)
-                  <input className="input white" inputMode="decimal" dir="ltr" value={mBase} onChange={(e) => setMBase(e.target.value)} placeholder="1000" autoFocus />
-                </label>
-                <label className="field" style={{ flex: '1 1 90px' }}>النسبة %
-                  <input className="input white" inputMode="decimal" dir="ltr" value={mPct} onChange={(e) => setMPct(e.target.value)} />
-                </label>
-              </div>
-              {num(amount) > 0 && <span className="small" style={{ background: '#EAFBC2', borderRadius: 14, padding: '8px 12px', lineHeight: 1.7 }}>الإيراد = {num(mPct)}% من {fmt(num(mBase))} = <b>{fmt(num(amount))} ج</b> · بيزوّد الدرج</span>}
-            </div>
-          )}
         </div>
       )}
 

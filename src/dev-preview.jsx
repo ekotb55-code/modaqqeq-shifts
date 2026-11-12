@@ -49,7 +49,6 @@ else if (v === 'ddash') body = <Dash shop={dshop} shift={dshift} entries={[{ id:
 else if (v === 'dhand') body = <Handover shop={dshop} shift={dshift} entries={[]} profile={profile} onBack={() => {}} onDone={() => {}} />;
 else if (v === 'send') body = <SendModal shop={shopForRegister(shop, 'main')} shift={shift} profile={profile} balances={{ side: 5000 }} onClose={() => {}} />;
 else if (v === 'expense') body = <EntryModal type="expense" shop={shop} shift={shift} profile={profile} balances={{ side: 5000 }} onClose={() => {}} />;
-else if (v === 'income') body = <EntryModal type="income" shop={shop} shift={shift} profile={profile} balances={{ side: 5000 }} onClose={() => {}} />;
 else if (v === 'receive') body = <Receive shop={shop} profile={profile} onStarted={() => {}} />;
 else if (v === 'handover') body = <Handover shop={shop} shift={{ ...shift, handover: null }} entries={entries} profile={profile} onBack={() => {}} onDone={() => {}} />;
 else if (v === 'review') body = <div className="wrap"><ShiftDetail shift={{ ...shift, status: 'submitted', shopId: 's1', handover: { ...(shift.handover || {}), keepDrawer: 'stay', drawerTotal: 2400, bills: { 200: 10, 100: 4 }, walletsTyped: { insta: 100 }, walletModes: { insta: 'shop', vf: 'owner' } } }} shop={shop} profile={{ ...profile, role: 'accountant' }} canReview /></div>;
