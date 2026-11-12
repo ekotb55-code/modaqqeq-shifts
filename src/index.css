@@ -783,3 +783,13 @@ body.net-bad .topbar { background: #FFF4E0; }
   .topbar.staff .shop-picker .sp-btn strong { max-width: none; }
   .topbar.staff .tabs { grid-row: 3; }
 }
+
+/* «احسب للعميل»: a counter tile on the computer, a floating button on phones */
+.calc-tile { font: inherit; transition: transform .15s ease; }
+.calc-tile:hover { transform: translateY(-2px); }
+.calc-fab { display: none; }
+@media (max-width: 700px) {
+  .calc-tile { display: none !important; }
+  .calc-fab { display: flex; position: fixed; left: 16px; bottom: calc(18px + env(safe-area-inset-bottom)); width: 60px; height: 60px; border: 0; border-radius: 22px; background: var(--sky); color: var(--ink); align-items: center; justify-content: center; box-shadow: 0 10px 24px rgba(76, 195, 255, .5); z-index: 40; }
+}
+@media print { .calc-fab, .calc-tile { display: none !important; } }

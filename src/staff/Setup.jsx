@@ -134,8 +134,8 @@ function MachinesEditor({ list, onChange }) {
         <div key={m.id} style={{ background: '#fff', borderRadius: 24, padding: 16, display: 'flex', flexDirection: 'column', gap: 14, opacity: m.active ? 1 : 0.6 }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
             <label className="field" style={{ flex: '1 1 200px' }}>اسم المكنة<input className="input" placeholder="مثلًا فوري، ماجيك، أمان" value={m.name} onChange={(e) => upd(m.id, { name: e.target.value })} /></label>
-            <label className="field" style={{ width: 130 }}>النسبة %<input className="input" inputMode="decimal" dir="ltr" placeholder="2" value={m.ratePct} onChange={(e) => upd(m.id, { ratePct: e.target.value })} /></label>
-            <label className="field" style={{ width: 150 }} title="العميل بيدفع قيمة الفاتورة + النسبة دي. مثلًا 8%: الرصيد نزل 1000 يبقى الدرج فيه 1080">مقابل الخدمة %<input className="input" inputMode="decimal" dir="ltr" placeholder="0" value={m.svcPct ?? ''} onChange={(e) => upd(m.id, { svcPct: e.target.value })} /></label>
+            <label className="field" style={{ width: 150 }} title="لما رصيد المكنة يزيد (العميل دفع بالكارت · كاش أوت)">نسبة الكارت %<input className="input" inputMode="decimal" dir="ltr" placeholder="2" value={m.ratePct} onChange={(e) => upd(m.id, { ratePct: e.target.value })} /></label>
+            <label className="field" style={{ width: 150 }} title="لما رصيد المكنة ينزل (فواتير اتدفعت كاش): العميل بيدفع قيمة الفاتورة + النسبة دي. مثلًا 8%: الرصيد نزل 1000 يبقى الدرج فيه 1080">مقابل الخدمة على الفواتير %<input className="input" inputMode="decimal" dir="ltr" placeholder="0" value={m.svcPct ?? ''} onChange={(e) => upd(m.id, { svcPct: e.target.value })} /></label>
             <button type="button" className={'chip' + (m.active ? ' on' : '')} onClick={() => upd(m.id, { active: !m.active })} aria-pressed={m.active}>{m.active ? '✓ مفعّلة للمحل' : 'مقفولة'}</button>
             <button type="button" className="icon-btn" aria-label={`امسح ${m.name || 'المكنة'}`} onClick={() => window.confirm('تمسح المكنة دي من المحل؟') && onChange(list.filter((x) => x.id !== m.id))}><Icon d="trash" size={18} /></button>
           </div>
@@ -165,7 +165,7 @@ function MachinesEditor({ list, onChange }) {
               <span className="small muted" style={{ marginTop: 6 }}>النسبة على مين؟</span>
               <div className="chips">{Object.entries(RATE_ON).map(([k, l]) => <button key={k} type="button" className={'chip sm' + ((m.rateOn || 'shop') === k ? ' on' : '')} onClick={() => upd(m.id, { rateOn: k })}>{l}</button>)}</div>
               {num(m.ratePct) > 0 && <span className="tiny muted">{(m.rateOn || 'shop') === 'customer'
-                ? `فاتورة بـ ${fmt(100 + num(m.ratePct))} ← وصل المكنة 100 · الدرج ناقص ${fmt(100 + num(m.ratePct))}`
+                ? `فاتورة 100 على السيستم ← الكاشير يضرب ${fmt(100 + num(m.ratePct))} على المكنة ← وصل المكنة 100 · الدرج ناقص 100 بس ومفيش مصروف`
                 : `فاتورة بـ 100 ← وصل المكنة ${fmt(100 - num(m.ratePct))} · الدرج ناقص 100`}</span>}
             </div>
             <div className="stack" style={{ flex: '1 1 200px' }}>
@@ -297,7 +297,7 @@ function ShopEditor({ shop, shops = [] }) {
 
   const save = async () => {
     try {
-      const machineList = f.machineList.filter((m) => m.name.trim()).map((m) => ({ ...m, name: m.name.trim(), ratePct: num(m.ratePct), liqFeePct: num(m.liqFeePct), settle: settleOf(m), startZero: !!m.startZero, accounts: m.accounts.map((a) => a.trim()).filter(Boolean) }));
+      const machineList = f.machineList.filter((m) => m.name.trim()).map((m) => ({ ...m, name: m.name.trim(), ratePct: num(m.ratePct), svcPct: num(m.svcPct), liqFeePct: num(m.liqFeePct), settle: settleOf(m), startZero: !!m.startZero, accounts: m.accounts.map((a) => a.trim()).filter(Boolean) }));
       const registers = f.registers.filter((r) => r.name.trim()).map((r) => ({ ...r, name: r.name.trim() }));
       const vaults = f.vaults.filter((v) => v.name.trim()).map((v) => ({ ...v, name: v.name.trim() }));
       const vaultUpd = Object.fromEntries(Object.entries(vaultEdits).map(([id, v]) => [`vaultBalances.${id}`, num(v)]));

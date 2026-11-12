@@ -1,4 +1,5 @@
 import { WalletSmsCard } from '../walletSms.jsx';
+import { CalcEntry } from './CalcCustomer.jsx';
 import { addDebtChange } from '../repDebt.js';
 import { useTour } from '../Tour.jsx';
 import { CASHIER_DASH } from '../tours.js';
@@ -124,6 +125,7 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
               <span className="v">{fmt(c.value)}<span className="small muted" style={{ fontWeight: 500 }}> ج</span></span>
             </div>
           ))}
+          <CalcEntry shop={shop} />
         </div>
       </div>
 

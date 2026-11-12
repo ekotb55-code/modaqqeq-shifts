@@ -34,7 +34,8 @@ export function newMachine() {
 }
 // Ready-made choices shown when adding a machine in the setup screen.
 export const MACHINE_PRESETS = [
-  { name: 'فوري', hasSubs: true, accounts: ['الحساب الرئيسي', 'كاش أوت'] },
+  // Fawry: bills from the main account (customer pays +2% cash), card payments land on «كاش أوت» (customer pays the 2% on the card).
+  { name: 'فوري', hasSubs: true, accounts: ['الحساب الرئيسي', 'كاش أوت'], svcPct: 2, ratePct: 2, rateOn: 'customer' },
   { name: 'جيديا', ratePct: 0, settle: 'liquidate', liqFeePct: 2, startZero: true },
   { name: 'ماجيك باي', svcPct: 8 },
   { name: 'ممكن', svcPct: 8 },
@@ -485,10 +486,11 @@ export function computeShift(shift, allEntries, shop, sales = null) {
     const sales = close === null ? null : r2(close - s.open - s.inn + s.out);
     const rate = num(cfg.ratePct);
     const live0 = (shop?.machines || []).find((x) => machineKey(x) === s.key);
-    // Customer pays the %: 100 reached the machine, the invoice was 102 → fee 2 = 2% of 100.
+    // Customer pays the % (Fawry cash-out): the POS invoice is 100, the cashier charges 102 on the card,
+    // 100 lands on the machine → the drawer is short exactly 100. Nothing is an expense for the shop.
     // Shop pays it: the invoice was 100, 98 reached the machine → fee 2 = 2% of 100 = 98 × 2 / 98.
     const onCustomer = (cfg.rateOn ?? live0?.rateOn) === 'customer';
-    const fee = sales === null || !rate ? 0 : r2(onCustomer ? (Math.abs(sales) * rate) / 100 : (Math.abs(sales) * rate) / (100 - rate));
+    const fee = sales === null || !rate || onCustomer ? 0 : r2((Math.abs(sales) * rate) / (100 - rate));
     const affects = cfg.inCash !== false;
     // Service fee (مقابل خدمة): machines like Momkn / Magic — the customer pays the bill + e.g. 8%.
     // 1000 gone from the balance means 1080 should be in the drawer.
