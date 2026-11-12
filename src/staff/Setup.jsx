@@ -410,7 +410,7 @@ function ShopEditor({ shop, shops = [] }) {
         })}
       </section>
 
-      <SmsForward shop={shop} wallets={WALLETS.filter((w) => f.wallets.includes(w.key)).map((w) => ({ ...w, mode: f.walletModes[w.key] || 'owner' }))} />
+      <SmsForward shop={shop} shops={shops} wallets={WALLETS.filter((w) => f.wallets.includes(w.key)).map((w) => ({ ...w, mode: f.walletModes[w.key] || 'owner' }))} />
 
       <MachinesEditor list={f.machineList} onChange={(v) => set('machineList', v)} />
 
@@ -1100,6 +1100,28 @@ function StaffAccounts({ shops, profile }) {
   );
 }
 
+// Protections of one «بتروح لصاحب المحل» link: the biggest amount the cashiers see, and the branches it is for.
+function KeyGuards({ k, shop, shops }) {
+  const toast = useToast();
+  const [max, setMax] = useState(String(k.maxAmount ?? 3000));
+  const ids = k.shopIds && k.shopIds.length ? k.shopIds : [shop.id];
+  const save = (patch) => updateDoc(doc(db, 'smsKeys', k.id), patch).then(() => toast('اتحفظ')).catch(() => toast('مش قادرين نحفظ', 'err'));
+  return (
+    <div className="stack" style={{ gap: 10, background: '#F7F6FB', borderRadius: 16, padding: '10px 12px' }}>
+      <label className="small" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <b>أقصى مبلغ يظهر للكاشير</b>
+        <input className="input" style={{ width: 110, height: 40 }} inputMode="decimal" dir="ltr" value={max} onChange={(e) => setMax(e.target.value)} onBlur={() => num(max) !== num(k.maxAmount ?? 3000) && save({ maxAmount: num(max) })} />ج
+        <span className="tiny muted">أكبر من كده بيروح لصاحب المحل والمحاسب بس، في «التحويلات»</span>
+      </label>
+      <div className="stack" style={{ gap: 4 }}>
+        <span className="small"><b>الفروع اللي بتستلم على الحساب ده</b> <span className="tiny muted">· التحويل بيظهر عندهم كلهم، وأول كاشير يأكده ياخده</span></span>
+        <ShopsOf shops={shops} ids={ids} onChange={(v) => save({ shopIds: [...new Set([shop.id, ...v])] })} />
+      </div>
+      <span className="tiny muted" style={{ lineHeight: 1.7 }}>🔒 التحويل بيظهر للكاشير ساعة بس، ومحتاج رقم فاتورة البيع علشان يأكده، وكل تأكيد بيوصل لصاحب المحل يقدر يرفضه.</span>
+    </div>
+  );
+}
+
 // Service fee the customer pays on each wallet operation: up to 500 → 5, up to 800 → 10 …
 function FeeTiers({ tiers, onChange }) {
   const list = tiers && tiers.length ? tiers : DEFAULT_FEE_TIERS;
@@ -1132,7 +1154,7 @@ function FeeTiers({ tiers, onChange }) {
 // Each wallet gets a secret link. A small app on the owner's Android phone (MacroDroid) sends every
 // "you received a transfer" SMS to that link; the cashier then confirms which ones are his customers'.
 const newKey = () => Array.from(crypto.getRandomValues(new Uint8Array(18)), (b) => 'abcdefghijkmnpqrstuvwxyz23456789'[b % 32]).join('');
-function SmsForward({ shop, wallets }) {
+function SmsForward({ shop, shops = [], wallets }) {
   const toast = useToast();
   const [keys, setKeys] = useState([]);
   const [show, setShow] = useState(null);
@@ -1172,6 +1194,7 @@ function SmsForward({ shop, wallets }) {
             {k && <>
               {k.lastText && <span className="tiny" style={{ background: 'var(--chip)', borderRadius: 12, padding: '6px 10px', lineHeight: 1.7 }}>{k.lastOk ? '✓ ' : '✗ مفهمناش الرسالة دي: '}{k.lastText}</span>}
               {k.lastText && !k.lastOk && <button type="button" className="btn sm" style={{ alignSelf: 'flex-start' }} onClick={() => setTeach(k.lastText)}>🎓 علّم السيستم الرسالة دي</button>}
+              {w.mode !== 'shop' && <KeyGuards k={k} shop={shop} shops={shops} />}
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button type="button" className="btn sm" onClick={() => copy(linkOf(k))}>انسخ الرابط</button>
                 <button type="button" className="btn sm soft" style={{ height: 44 }} onClick={() => setShow(show === k.id ? null : k.id)}>{show === k.id ? 'اقفل الخطوات' : 'خطوات تجهيز الموبايل'}</button>

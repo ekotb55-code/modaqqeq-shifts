@@ -6,7 +6,7 @@ import { auth, db, SUPER_ADMINS } from '../firebase';
 import Activity from './Activity.jsx';
 import MyPhoto from '../MyPhoto.jsx';
 import { Avatar, Icon, Modal, useToast } from '../ui.jsx';
-import { DEFAULT_SHOP, ROLE_LABEL, allOpen, dateStr, isAdminRole, matches, toDate } from '../lib';
+import { DEFAULT_SHOP, ROLE_LABEL, allOpen, dateStr, isAdminRole, matches, toDate, walletModeOf } from '../lib';
 import Review from './Review.jsx';
 import Ledger from './Ledger.jsx';
 import Reports from './Reports.jsx';
@@ -19,6 +19,7 @@ import { logAct, logout } from '../activity.js';
 import { NotifyBell, feed } from '../notify.jsx';
 import { UpdateButton } from '../update.jsx';
 import { MoreMenu, shareApp } from '../cashier/parts.jsx';
+import WalletTransfers from './WalletTransfers.jsx';
 import { wants } from '../notifyPrefs.js';
 import { useShopShifts } from './Review.jsx';
 
@@ -33,6 +34,7 @@ export default function StaffApp({ profile }) {
     canReview && { id: 'safes', label: 'الخزن' },
     { id: 'reports', label: 'التقارير' },
     { id: 'ledger', label: 'العجز والزيادة' },
+    shops.some((sh) => (sh.wallets || []).some((w) => walletModeOf(sh, w) === 'owner')) && { id: 'wallet', label: 'التحويلات' },
     isAdmin && { id: 'setup', label: 'الإعداد' },
     canSeeLog && { id: 'activity', label: 'سجل الدخول' },
   ].filter(Boolean);
@@ -177,6 +179,7 @@ export default function StaffApp({ profile }) {
           {tab === 'safes' && <Safes key={effSel} shops={viewShops} />}
           {tab === 'reports' && <Reports key={effSel} profile={profile} shops={viewShops} />}
           {tab === 'ledger' && <Ledger key={effSel} profile={profile} shops={viewShops} canReview={canReview} />}
+          {tab === 'wallet' && <WalletTransfers key={effSel} profile={profile} shops={viewShops} />}
           {tab === 'activity' && canSeeLog && <Activity shops={shops} branch={effSel} />}
           {tab === 'setup' && <Setup profile={profile} shops={shops} sel={setupShop} setSel={setShopSel} />}
         </>

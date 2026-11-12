@@ -423,7 +423,9 @@ export function flows(e, shop) {
 const r2 = (v) => Math.round(v * 100) / 100;
 
 // Full shift computation. `sales` is the POS sales number (accountant only); pass null if unknown.
-export function computeShift(shift, entries, shop, sales = null) {
+export function computeShift(shift, allEntries, shop, sales = null) {
+  // A bank transfer the owner refused («مش بتاع المحل») doesn't count: the drawer must have that money.
+  const entries = (allEntries || []).filter((e) => !(e.type === 'transfer' && e.smsRejected));
   const rcv = shift?.receive || {};
   const hnd = shift?.handover || null;
   const rm = (list, k) => (list || []).find((x) => machineKey(x) === k);

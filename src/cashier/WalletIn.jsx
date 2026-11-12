@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { collection, doc, onSnapshot, query, serverTimestamp, where, writeBatch } from 'firebase/firestore';
+import { pushEvent } from '../cloud.js';
 import { db } from '../firebase';
 import { Icon, Modal, WALLET_LOOK, WalletMark, useToast } from '../ui.jsx';
 import { SRC_LABEL, fmt } from '../lib';
@@ -12,7 +13,9 @@ import { feed } from '../notify.jsx';
 
 const HIDE = 'mdq-sms-hide';
 const readHidden = () => { try { return JSON.parse(localStorage.getItem(HIDE) || '[]'); } catch { return []; } };
-const DAY = 24 * 3600 * 1000;
+// A transfer shows to the cashiers for one hour only (from when it arrived, or when the owner sent it to them).
+export const CLAIM_WINDOW = 60 * 60 * 1000;
+const since = (s) => s.releasedAtMs || s.atMs || 0;
 
 export function useWalletIn(shopId, wallets, uid) {
   const [list, setList] = useState([]);
@@ -23,9 +26,19 @@ export function useWalletIn(shopId, wallets, uid) {
       (q) => setList(q.docs.map((d) => ({ id: d.id, ...d.data() }))),
       (e) => console.warn('walletIn', e.code));
   }, [shopId]);
+  // Time passes → hide the ones older than an hour without waiting for a new message.
+  const [, tick] = useState(0);
+  useEffect(() => { const t = setInterval(() => tick((x) => x + 1), 60 * 1000); return () => clearInterval(t); }, []);
+  // Same transfer for several branches: once a cashier in any branch takes it, it disappears everywhere.
+  const [locked, setLocked] = useState({});
+  const groups = list.map((s) => s.group).filter(Boolean).join(',');
+  useEffect(() => {
+    const subs = groups ? groups.split(',').map((g) => onSnapshot(doc(db, 'smsLocks', g), (d) => setLocked((o) => ({ ...o, [g]: d.exists() })), () => {})) : [];
+    return () => subs.forEach((u) => u());
+  }, [groups]);
   const fresh = list
-    .filter((s) => (s.atMs || 0) > Date.now() - 1.5 * DAY && (!wallets || wallets.includes(s.wallet)))
-    .sort((a, b) => (b.atMs || 0) - (a.atMs || 0));
+    .filter((s) => since(s) > Date.now() - CLAIM_WINDOW && (!wallets || wallets.includes(s.wallet)) && !(s.group && locked[s.group]))
+    .sort((a, b) => since(b) - since(a));
   const shown = fresh.filter((s) => !hidden.includes(s.id));
   // A new one: bell + sound like any other notification.
   const keys = fresh.map((s) => s.id).join(',');
@@ -106,29 +119,36 @@ export function WalletInPick({ list, onPick }) {
 export function ClaimModal({ s, shop, shift, profile, onClose }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
+  const [inv, setInv] = useState('');
   const look = WALLET_LOOK[s.wallet] || WALLET_LOOK.insta;
   const go = async () => {
     if (!navigator.onLine) { toast('لازم يكون فيه نت علشان نأكد التحويل', 'err'); return; }
+    if (!inv.trim()) { toast('اكتب رقم فاتورة البيع من البرنامج', 'err'); return; }
+    if (since(s) < Date.now() - CLAIM_WINDOW) { toast('عدّى أكتر من ساعة على التحويل ده · كلّم صاحب المحل', 'err'); return; }
     setBusy(true);
     const b = writeBatch(db);
     const eref = doc(collection(db, 'shifts', shift.id, 'entries'));
     b.set(eref, {
       type: 'transfer', wallet: s.wallet, src: s.wallet, amount: Number(s.amount) || 0, by: profile.id, byName: profile.name,
-      smsId: s.id, smsName: s.fromName || '', smsPhone: s.fromPhone || '', smsRef: s.ref || '', smsTime: s.smsTime || '',
+      smsId: s.id, smsGroup: s.group || '', smsName: s.fromName || '', smsPhone: s.fromPhone || '', smsRef: s.ref || '', smsTime: s.smsTime || '', invoiceNo: inv.trim().slice(0, 40),
       createdAt: serverTimestamp(), createdAtLocal: new Date().toISOString(), posted: false,
     });
     // If another cashier already took it, this fails and nothing is saved.
     b.update(doc(db, 'walletIn', s.id), {
-      status: 'claimed', claimedBy: profile.id, claimedByName: profile.name, claimedShiftId: shift.id, claimedEntryId: eref.id, claimedAtMs: Date.now(),
+      status: 'claimed', claimedBy: profile.id, claimedByName: profile.name, claimedShiftId: shift.id, claimedEntryId: eref.id, claimedAtMs: Date.now(), claimInvoice: inv.trim().slice(0, 40),
     });
+    // One lock per transfer for all branches: if a cashier in another branch took it first, this fails.
+    if (s.group) b.set(doc(db, 'smsLocks', s.group), { shopId: shift.shopId, walletInId: s.id, by: profile.id, atMs: Date.now() });
     try {
       await b.commit();
-      logAct('sms_claim', `أكّد تحويل ${SRC_LABEL[s.wallet] || ''} ${fmt(s.amount)} ج من ${s.fromName || 'عميل'} (رسالة البنك)`, { shopId: shift.shopId, shiftId: shift.id });
+      logAct('sms_claim', `أكّد تحويل ${SRC_LABEL[s.wallet] || ''} ${fmt(s.amount)} ج من ${s.fromName || 'عميل'} · فاتورة ${inv.trim()} (رسالة البنك)`, { shopId: shift.shopId, shiftId: shift.id });
+      // The owner sees every confirmation and can refuse it if the money isn't the shop's.
+      pushEvent({ type: 'sms_claim', shopId: shift.shopId, shiftId: shift.id, to: 'staff', title: `✋ ${profile.name} أكّد تحويل ${fmt(s.amount)} ج`, body: `من ${s.fromName || 'عميل'} · فاتورة ${inv.trim()} · لو مش بتاع المحل ارفضه من «التحويلات»` });
       toast('اتسجل التحويل ✓');
       onClose();
     } catch (e) {
       console.error(e);
-      toast(e?.code === 'permission-denied' ? 'التحويل ده اتأكد قبل كده من كاشير تاني' : 'حصلت مشكلة، جرّب تاني', 'err');
+      toast(e?.code === 'permission-denied' ? 'التحويل ده اتأكد قبل كده من كاشير تاني أو اتشال' : 'حصلت مشكلة، جرّب تاني', 'err');
       setBusy(false);
     }
   };
@@ -141,8 +161,11 @@ export function ClaimModal({ s, shop, shift, profile, onClose }) {
         {s.fromPhone && <span className="small" dir="ltr" style={{ textAlign: 'end' }}>📱 {s.fromPhone}</span>}
         <span className="tiny" style={{ opacity: 0.9 }}>{[s.smsDate, s.smsTime && `الساعة ${s.smsTime}`, s.ref && `رقم العملية ${s.ref}`].filter(Boolean).join(' · ')}</span>
       </div>
-      <span className="small muted" style={{ lineHeight: 1.7 }}>اتأكد إن العميل اللي قدامك هو اللي حوّل المبلغ ده. هيتسجل «تحويل محفظة» في ورديتك ومش محتاج صورة.</span>
-      <button type="button" className="btn full lime" onClick={go} disabled={busy}>{busy ? 'لحظة…' : 'أيوه، ده تحويل عميل عندي'}</button>
+      <label className="field">رقم فاتورة البيع من البرنامج
+        <input className="input" autoFocus inputMode="numeric" dir="ltr" value={inv} onChange={(e) => setInv(e.target.value)} placeholder="مثلًا 10458" />
+      </label>
+      <span className="small muted" style={{ lineHeight: 1.7 }}>اتأكد إن العميل اللي قدامك هو اللي حوّل المبلغ ده، وإن الفاتورة اتعملت بنفس المبلغ. صاحب المحل والمحاسب بيوصلهم كل تأكيد وبيطابقوه بالفاتورة.</span>
+      <button type="button" className="btn full lime" onClick={go} disabled={busy || !inv.trim()}>{busy ? 'لحظة…' : 'أيوه، ده تحويل عميل عندي'}</button>
       <button type="button" className="link" onClick={onClose}>رجوع</button>
     </Modal>
   );

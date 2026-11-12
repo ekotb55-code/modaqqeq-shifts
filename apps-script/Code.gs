@@ -15,12 +15,12 @@ const PROJECT = 'modaqqeq-shifts';
 const FS = 'https://firestore.googleapis.com/v1/projects/' + PROJECT + '/databases/(default)/documents';
 const KEEP_DAYS = 60; // الصور بتتمسح بعد كده
 // مين يوصله إيه — كل واحد يقدر يغيّر اختياره من الجرس جوّه التطبيق (نفس الجدول في src/notifyPrefs.js)
-const PREF_OF = { handover: 'handover', reopen_done: 'handover', dispute: 'request', ack: 'request', msg: 'msg', close_report: 'close' };
+const PREF_OF = { handover: 'handover', reopen_done: 'handover', dispute: 'request', ack: 'request', msg: 'msg', close_report: 'close', sms_claim: 'wallet', sms_big: 'wallet', sms_refused: 'wallet' };
 const DEFAULTS = {
   accountant: { handover: true, request: true, msg: true, close: false },
   reviewer: { handover: true, request: true, msg: true, close: false },
-  owner: { close: true },
-  manager: { close: true },
+  owner: { close: true, wallet: true },
+  manager: { close: true, wallet: true },
   admin: {},
   support: {},
 };
@@ -334,17 +334,33 @@ function sms_(key, text) {
   req_('patch', FS + '/smsKeys/' + key + '?updateMask.fieldPaths=lastAtMs&updateMask.fieldPaths=lastText&updateMask.fieldPaths=lastOk',
     { fields: toFields_({ lastAtMs: Date.now(), lastText: String(text || '').replace(/\s+/g, ' ').slice(0, 200), lastOk: okMsg }) });
   if (!okMsg) return { ok: true, skipped: true };
-  const id = k.shopId + '_' + (p.ref || Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, p.text).map(function (b) { return ((b + 256) % 256).toString(16); }).join('').slice(0, 16));
+  const refKey = p.ref || Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, p.text).map(function (b) { return ((b + 256) % 256).toString(16); }).join('').slice(0, 16);
   const now = new Date();
-  const doc = { shopId: k.shopId, wallet: wallet, dir: p.dir, amount: p.amount, charge: p.charge || 0, balance: p.balance, fromName: p.fromName, fromPhone: p.fromPhone, ref: p.ref, smsDate: p.smsDate, smsTime: p.smsTime, text: p.text,
-    atMs: now.getTime(), day: Utilities.formatDate(now, 'Africa/Cairo', 'yyyy-MM-dd'), status: shopMode ? 'auto' : 'new' };
-  const r = req_('post', FS + '/walletIn?documentId=' + encodeURIComponent(id), { fields: toFields_(doc) });
-  if (r.code === 409) return { ok: true, dup: true }; // نفس الرسالة وصلت مرتين
-  if (r.code !== 200) return { ok: false, error: 'save ' + r.code };
-  if (!shopMode) {
-    req_('post', FS + '/outbox', { fields: toFields_({ type: 'sms', shopId: k.shopId, shiftId: '', to: 'shopCashiers', toUid: '', byUid: '', atMs: now.getTime(),
-      title: '💰 وصل تحويل ' + p.amount + ' ج', body: (p.fromName ? 'من ' + p.fromName + ' · ' : '') + 'لو ده عميلك أكّده في التطبيق' }) });
+  const base = { wallet: wallet, dir: p.dir, amount: p.amount, charge: p.charge || 0, balance: p.balance, fromName: p.fromName, fromPhone: p.fromPhone, ref: p.ref, smsDate: p.smsDate, smsTime: p.smsTime, text: p.text,
+    atMs: now.getTime(), day: Utilities.formatDate(now, 'Africa/Cairo', 'yyyy-MM-dd') };
+  if (shopMode) {
+    const r0 = req_('post', FS + '/walletIn?documentId=' + encodeURIComponent(k.shopId + '_' + refKey), { fields: toFields_(Object.assign({ shopId: k.shopId, status: 'auto' }, base)) });
+    if (r0.code === 409) return { ok: true, dup: true };
+    return r0.code === 200 ? { ok: true } : { ok: false, error: 'save ' + r0.code };
   }
+  // «بتروح لصاحب المحل»: one copy per branch of this account; one lock (smsLocks/group) so only one cashier takes it.
+  // Bigger than the limit → not for the cashiers: the owner / accountant decide in «التحويلات».
+  const max = Number(k.maxAmount) > 0 ? Number(k.maxAmount) : 3000;
+  const big = p.amount > max;
+  const shopIds = (k.shopIds && k.shopIds.length ? k.shopIds : [k.shopId]).filter(function (x, i, a) { return x && a.indexOf(x) === i; });
+  const group = key + '_' + refKey;
+  let saved = 0;
+  shopIds.forEach(function (sid) {
+    const r = req_('post', FS + '/walletIn?documentId=' + encodeURIComponent(sid + '_' + refKey), { fields: toFields_(Object.assign({ shopId: sid, group: group, status: big ? 'big' : 'new' }, base)) });
+    if (r.code === 200) saved++;
+  });
+  if (!saved) return { ok: true, dup: true }; // نفس الرسالة وصلت مرتين
+  shopIds.forEach(function (sid) {
+    const ev = big
+      ? { type: 'sms_big', shopId: sid, shiftId: '', to: 'staff', toUid: '', byUid: '', atMs: now.getTime(), title: '⚠️ تحويل كبير ' + p.amount + ' ج', body: (p.fromName ? 'من ' + p.fromName + ' · ' : '') + 'أكبر من الحد · مش هيظهر للكاشير إلا لو بعته من «التحويلات»' }
+      : { type: 'sms', shopId: sid, shiftId: '', to: 'shopCashiers', toUid: '', byUid: '', atMs: now.getTime(), title: '💰 وصل تحويل ' + p.amount + ' ج', body: (p.fromName ? 'من ' + p.fromName + ' · ' : '') + 'لو ده عميلك أكّده في التطبيق خلال ساعة' };
+    req_('post', FS + '/outbox', { fields: toFields_(ev) });
+  });
   return { ok: true };
 }
 function toFields_(o) {

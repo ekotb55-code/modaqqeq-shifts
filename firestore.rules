@@ -97,6 +97,9 @@ service cloud.firestore {
         allow update: if reviewerOf(shiftData(shiftId).shopId)
           || (signedIn() && shiftData(shiftId).cashierUid == request.auth.uid && shiftData(shiftId).status in ['open', 'reopened']
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deleted', 'deletedAt', 'deletedAtLocal', 'deletedBy', 'deletedByName', 'deleteReason']));
+        // The owner refuses a bank transfer a cashier confirmed («مش بتاع المحل»).
+        allow update: if staffOf(shiftData(shiftId).shopId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['smsRejected', 'smsRejectedBy', 'smsRejectedAt']);
         allow delete: if reviewerOf(shiftData(shiftId).shopId);
       }
 
@@ -183,6 +186,13 @@ service cloud.firestore {
         allow update, delete: if isAdmin();
       }
     }
+    // One lock per bank transfer shared by several branches: the first cashier who confirms it takes it.
+    match /smsLocks/{id} {
+      allow read: if signedIn();
+      allow create: if inShop(request.resource.data.shopId) && request.resource.data.by == request.auth.uid;
+      allow delete: if signedIn() && (resource.data.by == request.auth.uid || staffOf(resource.data.shopId));
+      allow update: if false;
+    }
     // Bank message formats taught from the app (used for every shop).
     match /smsFormats/{id} {
       allow read, write: if isAdmin();
@@ -191,8 +201,12 @@ service cloud.firestore {
     match /walletIn/{id} {
       allow read: if inShop(resource.data.shopId) || staffOf(resource.data.shopId);
       allow update: if reviewerOf(resource.data.shopId)
+        // The owner / branch manager decides: send to the cashiers, «شخصي», or refuse a confirmation.
+        || (staffOf(resource.data.shopId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'releasedAtMs', 'decidedBy', 'decidedByName', 'decidedAtMs'])
+            && request.resource.data.status in ['new', 'personal', 'rejected', 'big'])
         || (inShop(resource.data.shopId)
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'claimedBy', 'claimedByName', 'claimedShiftId', 'claimedEntryId', 'claimedAtMs'])
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'claimedBy', 'claimedByName', 'claimedShiftId', 'claimedEntryId', 'claimedAtMs', 'claimInvoice'])
             && ((resource.data.status == 'new' && request.resource.data.status == 'claimed' && request.resource.data.claimedBy == request.auth.uid)
                 || (resource.data.status == 'claimed' && resource.data.claimedBy == request.auth.uid && request.resource.data.status == 'new')));
       allow create: if false;

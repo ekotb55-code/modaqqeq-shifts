@@ -16,7 +16,7 @@ import { ClaimModal, WalletInCard, useWalletIn } from './WalletIn.jsx';
 export function entryTitle(e) {
   if (e.type === 'expense') return [e.kindLabel || 'مصروف', e.sub, e.kind === 'supplier' ? (e.invoice === 'invoice' ? '(فاتورة)' : '(توريد بدون فاتورة)') : '', e.note].filter(Boolean).join(' · ');
   if (e.type === 'income') return ['إيراد', e.reason, e.note].filter(Boolean).join(' · ');
-  if (e.type === 'transfer') return [`تحويل ${SRC_LABEL[e.wallet] || ''}`, e.smsName, e.smsId ? '✓ برسالة البنك' : ''].filter(Boolean).join(' · ');
+  if (e.type === 'transfer') return [`تحويل ${SRC_LABEL[e.wallet] || ''}`, e.smsName, e.invoiceNo ? `فاتورة ${e.invoiceNo}` : '', e.smsRejected ? '❌ صاحب المحل رفضه' : e.smsId ? '✓ برسالة البنك' : ''].filter(Boolean).join(' · ');
   if (e.type === 'topup') return [e.credit ? 'شحن آجل (دين للمندوب)' : 'شحن رصيد', e.machine].filter(Boolean).join(' · ');
   if (e.type === 'repPay') return ['سداد لمندوب', e.machine].filter(Boolean).join(' · ');
   if (e.type === 'move') return (e.to || 'side') === 'side' ? 'نقل من الدرج للجانبي' : 'نقل من الجانبي للدرج';
@@ -260,7 +260,10 @@ export function DeleteModal({ entry, shift, profile, onClose }) {
     if (entry.type === 'xfer_out' && entry.transferId) b.update(doc(db, 'transfers', entry.transferId), { status: 'cancelled', cancelledAt: serverTimestamp() });
     // A bank-confirmed transfer goes back to the list so the right cashier can take it.
     if (entry.credit || entry.type === 'repPay') addDebtChange(b, { shopId: shift.shopId, machine: entry.machine, delta: entry.credit ? -num(entry.amount) : num(entry.amount), shiftId: shift.id, entryId: entry.id, by: profile.id, byName: profile.name, note: 'اتمسحت العملية' });
-    if (entry.smsId) b.update(doc(db, 'walletIn', entry.smsId), { status: 'new', claimedBy: null, claimedByName: null, claimedShiftId: null, claimedEntryId: null, claimedAtMs: null });
+    if (entry.smsId && !entry.smsRejected) {
+      b.update(doc(db, 'walletIn', entry.smsId), { status: 'new', claimedBy: null, claimedByName: null, claimedShiftId: null, claimedEntryId: null, claimedAtMs: null, claimInvoice: null });
+      if (entry.smsGroup) b.delete(doc(db, 'smsLocks', entry.smsGroup));
+    }
     b.commit().catch((err) => { console.error(err); toast('مش قادرين نمسحها، جرّب تاني', 'err'); });
     logAct('delete', `مسح «${entryTitle(entry)}» ${fmt(entry.amount)} ج${reason.trim() ? ` · السبب: ${reason.trim()}` : ''}`, { shopId: shift.shopId, shiftId: shift.id });
     toast('العملية اتمسحت واتحطت في المحذوفات');
