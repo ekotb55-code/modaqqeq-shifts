@@ -91,7 +91,10 @@ export default function WalletTransfers({ shops, profile }) {
   if (!owned.length) return <div className="wrap"><div className="card empty">مفيش محافظ «بتروح لصاحب المحل» في المحلات دي</div></div>;
   const when = (ms) => (ms ? new Date(ms).toLocaleString('ar-EG', { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : '');
   // جه من إشعار انستاباي (أسرع، من غير رقم عملية): رسالة البنك بتكمّل عليه لما توصل
-  const bank = (x) => (x.src !== 'note' ? '' : x.bankOk ? ' · ✓ رسالة البنك' : now - (x.atMs || 0) > 30 * 60000 ? ' · ⚠️ من غير رسالة بنك' : ' · مستني رسالة البنك');
+  // تحويل تاني بنفس المبلغ على نفس المحفظة في نفس الوقت تقريبًا (45 دقيقة) ومش مرفوض: ممكن يكون نفس التحويل اتسجّل مرتين
+  const twin = (x) => items.some((y) => y !== x && y.wallet === x.wallet && Number(y.amount) === Number(x.amount) && !['rejected', 'personal'].includes(y.status)
+    && Math.abs((y.atMs || 0) - (x.atMs || 0)) < 45 * 60000);
+  const bank = (x) => (twin(x) && !['rejected', 'personal'].includes(x.status) ? ' · ⚠️ ممكن يكون متكرر · راجع الاسم' : '') + (x.src !== 'note' ? '' : x.bankOk ? ' · ✓ رسالة البنك' : now - (x.atMs || 0) > 30 * 60000 ? ' · ⚠️ من غير رسالة بنك' : ' · مستني رسالة البنك');
   const branches = (x) => (x.shopNames.length && shops.length > 1 ? ` · ${x.shopNames.join('، ')}` : '');
   const Row = ({ x, sub, children }) => (
     <div className={'wt-row' + (now - (x.releasedAtMs || x.atMs || 0) < 120000 ? ' wt-new' : '')}>

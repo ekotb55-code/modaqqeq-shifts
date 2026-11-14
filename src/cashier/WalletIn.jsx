@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { collection, doc, getDoc, onSnapshot, query, serverTimestamp, where, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, where, writeBatch } from 'firebase/firestore';
 import { pushEvent } from '../cloud.js';
 import { db } from '../firebase';
 import { Icon, Modal, WALLET_LOOK, WalletMark, useToast } from '../ui.jsx';
@@ -125,6 +125,14 @@ export function ClaimModal({ s, shop, shift, profile, onClose }) {
   const [busy, setBusy] = useState(false);
   const [inv, setInv] = useState('');
   const look = WALLET_LOOK[s.wallet] || WALLET_LOOK.insta;
+  // أكّد تحويل بنفس المبلغ قبل كده في الوردية دي؟ ممكن يكون نفس التحويل اتسجّل مرتين (إشعار + رسالة)
+  const [same, setSame] = useState([]);
+  useEffect(() => {
+    if (!shift?.id) return;
+    getDocs(query(collection(db, 'shifts', shift.id, 'entries'), where('type', '==', 'transfer'), where('amount', '==', Number(s.amount) || 0)))
+      .then((q) => setSame(q.docs.map((d) => d.data()).filter((e) => !e.deleted && !e.smsRejected && e.smsId !== s.id)))
+      .catch(() => {});
+  }, [shift?.id, s.id, s.amount]);
   const go = async () => {
     if (!navigator.onLine) { toast('لازم يكون فيه نت علشان نأكد التحويل', 'err'); return; }
     if (needsInvoice(s) && !inv.trim()) { toast('اكتب رقم فاتورة البيع من البرنامج', 'err'); return; }
@@ -174,6 +182,11 @@ export function ClaimModal({ s, shop, shift, profile, onClose }) {
         {s.fromPhone && <span className="small" dir="ltr" style={{ textAlign: 'end' }}>📱 {s.fromPhone}</span>}
         <span className="tiny" style={{ opacity: 0.9 }}>{[s.smsDate, s.smsTime && `الساعة ${s.smsTime}`, s.ref && `رقم العملية ${s.ref}`].filter(Boolean).join(' · ')}</span>
       </div>
+      {same.length > 0 && (
+        <div className="alert warn small" style={{ lineHeight: 1.7 }}>
+          ⚠️ إنت أكّدت تحويل بنفس المبلغ قبل كده في الوردية دي{same[0].smsName ? ` (من ${same[0].smsName})` : ''}. اتأكد إن ده تحويل تاني فعلًا من عميل تاني، مش نفس التحويل.
+        </div>
+      )}
       <label className="field">رقم فاتورة البيع من البرنامج{needsInvoice(s) ? '' : ' (لو موجود)'}
         <input className="input" autoFocus inputMode="numeric" dir="ltr" value={inv} onChange={(e) => setInv(e.target.value)} placeholder="مثلًا 10458" />
       </label>

@@ -322,7 +322,13 @@ function parseAny_(text) {
   return parseSms_(text);
 }
 
+// رسالة واحدة في المرة: لو الإشعار ورسالة البنك وصلوا في نفس اللحظة، التاني يلاقي الأول ويكمّل عليه بدل ما يتسجّل تحويل جديد.
 function sms_(key, text) {
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(25000); } catch (e) { /* busy: go on anyway */ }
+  try { return smsOne_(key, text); } finally { try { lock.releaseLock(); } catch (e) { /* ignore */ } }
+}
+function smsOne_(key, text) {
   if (!/^[a-z0-9]{10,40}$/.test(String(key))) return { ok: false, error: 'bad key' };
   const kr = req_('get', FS + '/smsKeys/' + key);
   if (kr.code !== 200) return { ok: false, error: 'bad key' };
@@ -351,12 +357,12 @@ function sms_(key, text) {
     cache.put(ck, '1', 30);
     const mate = mateOf_(home, wallet, p, now, 'sms');
     if (mate) { patchGroup_(mate, { noteSeen: true, fromIpa: p.fromName || '' }); return { ok: true, matched: true }; }
-  } else if (p.ref) {
-    // نفس الرسالة وصلت مرتين؟
-    if (req_('post', FS + '/smsRefs?documentId=' + encodeURIComponent(key + '_' + p.ref), { fields: toFields_({ atMs: now.getTime() }) }).code === 409) return { ok: true, dup: true };
+  } else {
+    // نفس الرسالة وصلت مرتين؟ (برقم العملية، ولو البرنامج ماقراهوش: بنص الرسالة)
+    if (req_('post', FS + '/smsRefs?documentId=' + encodeURIComponent(key + '_' + (p.ref || 't' + md5_(p.text))), { fields: toFields_({ atMs: now.getTime() }) }).code === 409) return { ok: true, dup: true };
     const mate = mateOf_(home, wallet, p, now, 'note');
     if (mate) {
-      patchGroup_(mate, { ref: p.ref, fromName: p.fromName || mate.fromName || '', fromIpa: mate.fromName || '', fromPhone: p.fromPhone || mate.fromPhone || '', smsDate: p.smsDate, smsTime: p.smsTime,
+      patchGroup_(mate, { ref: p.ref || '', fromName: p.fromName || mate.fromName || '', fromIpa: mate.fromName || '', fromPhone: p.fromPhone || mate.fromPhone || '', smsDate: p.smsDate, smsTime: p.smsTime,
         balance: p.balance, charge: p.charge || 0, smsText: p.text, bankOk: true, bankAtMs: now.getTime() });
       return { ok: true, matched: true };
     }

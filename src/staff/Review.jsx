@@ -171,6 +171,8 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
   // التحويل اللي صاحب المحل رفضه («مش بتاع المحل») مش بيتحسب: مش بيتسجّل على السيستم
   const transferEntries = entries.filter((e) => e.type === 'transfer' && !e.smsRejected);
   const opEntries = entries.filter((e) => e.type !== 'transfer');
+  // نفس المبلغ على نفس المحفظة أكتر من مرة: تنبيه للمحاسب يراجع الأسماء
+  const dupTransfers = Object.values(transferEntries.reduce((m, e) => { const k = `${e.wallet}|${num(e.amount)}`; (m[k] = m[k] || { key: k, wallet: e.wallet, amount: num(e.amount), list: [] }).list.push(e); return m; }, {})).filter((g) => g.list.length > 1);
   // Split operations by drawer: cashier drawer vs side drawer.
   const cashierOps = opEntries.filter((e) => e.src !== 'side');
   const sideOps = opEntries.filter((e) => e.src === 'side');
@@ -515,6 +517,13 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
 
       {rcv.diffFromPrev && <div className="alert warn small">الكاشير عدّل في أرقام الاستلام{shift.receiveEdits ? ` (${shift.receiveEdits} مرة بعد ما بدأ)` : ''} · اللي قبله سلّم درج {fmt(rcv.prevDrawerTotal)} وجانبي {fmt(rcv.prevSide)}، وهو استلم درج {fmt(rcv.drawerTotal)} وجانبي {fmt(rcv.side)}</div>}
       <Statements c={sum} shift={shift} shop={shop} />
+      {dupTransfers.length > 0 && (
+        <div className="alert warn small" style={{ lineHeight: 1.8 }}>
+          <strong>⚠️ تحويلات بنفس المبلغ · راجع الأسماء</strong>
+          {dupTransfers.map((g) => <div key={g.key}>{fmt(g.amount)} ج × {g.list.length} ({SRC_LABEL[g.wallet] || ''}): {g.list.map((e) => e.smsName || e.byName || '—').join(' · ')}</div>)}
+          <div className="tiny">ممكن يكون نفس التحويل اتسجّل مرتين (مرة من إشعار انستاباي ومرة من رسالة البنك). لو كده، صاحب المحل يرفض النسخة الزيادة من «التحويلات».</div>
+        </div>
+      )}
       <WalletSmsReview shift={shift} shop={shop} data={wsms} canEdit={canReview && shift.status !== 'closed'} />
       <RepDebtsCard shop={fullShop} profile={profile} canEdit={!!canReview} />
       <BillsCompare rcv={rcv} hnd={shift.handover} />
