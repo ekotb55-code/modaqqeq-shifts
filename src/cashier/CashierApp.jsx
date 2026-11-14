@@ -16,6 +16,7 @@ import Handover from './Handover.jsx';
 import Follow, { statusOf } from './Follow.jsx';
 import History from './History.jsx';
 import { logAct, logout as doLogout } from '../activity.js';
+import { rememberPin } from '../sessions.js';
 import { captureDocument } from '../DocCamera.jsx';
 import { PhoneShotListener } from '../phoneShot.jsx';
 import { NotifyBell, feed } from '../notify.jsx';
@@ -220,6 +221,7 @@ function PinModal({ onClose }) {
     setBusy(true);
     try {
       await updatePassword(auth.currentUser, cashierPassword(a));
+      rememberPin(auth.currentUser.uid, a).catch(() => {}); // الدخول من غير نت بالرقم الجديد
       setDoc(doc(db, 'cashierSecrets', auth.currentUser.uid), { pin: a, updatedAt: serverTimestamp() }).catch(() => {});
       logAct('password', 'غيّر الرقم السري بتاعه');
       toast('الرقم السري اتغيّر');

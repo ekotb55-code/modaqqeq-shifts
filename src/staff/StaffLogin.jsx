@@ -4,6 +4,7 @@ import { auth, SUPER_ADMINS } from '../firebase';
 import { Avatar, InstallButton, useToast } from '../ui.jsx';
 import { cashierEmail, cashierPassword } from '../lib';
 import { markLogin } from '../activity.js';
+import { cashierLogin } from '../sessions.js';
 
 const MSG = {
   'auth/invalid-credential': 'اسم الدخول أو الباسورد غلط',
@@ -49,15 +50,24 @@ export default function Login({ error }) {
   const pinLogin = async (pin) => {
     setBusy(true); setMsg('');
     try {
-      await setPersistence(auth, browserLocalPersistence).catch(() => {});
       markLogin();
-      await signInWithEmailAndPassword(auth, cashierEmail(who.username), cashierPassword(pin));
+      if (who.uid) {
+        // الجهاز بيفتكر كل كاشير دخل عليه قبل كده: الدخول من غير نت
+        await cashierLogin(who, pin);
+      } else {
+        await setPersistence(auth, browserLocalPersistence).catch(() => {});
+        await signInWithEmailAndPassword(auth, cashierEmail(who.username), cashierPassword(pin));
+      }
     } catch (err) {
       try { sessionStorage.removeItem('mdq-login-mark'); } catch { /* ignore */ }
-      setMsg(err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' ? 'الرقم السري غلط، جرّب تاني' : MSG[err.code] || 'حصلت مشكلة، جرّب تاني');
+      const c = err.code;
+      setMsg(c === 'auth/invalid-credential' || c === 'auth/wrong-password' || c === 'bad-pin' ? 'الرقم السري غلط، جرّب تاني'
+        : c === 'offline-first' || c === 'auth/network-request-failed' ? 'أول دخول ليك على الجهاز ده محتاج نت · شغّل نت من موبايلك (هوت سبوت) ثواني وادخل، وبعد كده هتدخل من غير نت'
+          : MSG[c] || 'حصلت مشكلة، جرّب تاني');
       setShake(true); setTimeout(() => setShake(false), 450);
       setPass('');
-    } finally { setBusy(false); }
+      setBusy(false);
+    }
   };
   const press = (d) => {
     if (busy) return;

@@ -1,6 +1,7 @@
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
-import { auth, db } from './firebase';
+import { auth, db, isCashierSession } from './firebase';
+import { lockCashier } from './sessions.js';
 import { unregisterPush } from './cloud.js';
 import { todayKey } from './lib';
 
@@ -55,5 +56,6 @@ export async function logout() {
   await Promise.race([Promise.all([logAct('logout', 'خرج من التطبيق'), unregisterPush(auth.currentUser?.uid)]), new Promise((r) => setTimeout(r, 2000))]);
   try { sessionStorage.removeItem('mdq-act-open'); } catch { /* ignore */ }
   setActor(null);
+  if (isCashierSession()) return lockCashier();
   return signOut(auth);
 }
