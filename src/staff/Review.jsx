@@ -168,7 +168,8 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
   const unchecked = photos.filter((p) => p.check !== 'ok' && p.check !== 'bad').length;
   const cashierSafe = `خزنة ${shift.cashierName}`;
   // Owner wallets: all transfers of one wallet are posted as one statement (700 + 67 …).
-  const transferEntries = entries.filter((e) => e.type === 'transfer');
+  // التحويل اللي صاحب المحل رفضه («مش بتاع المحل») مش بيتحسب: مش بيتسجّل على السيستم
+  const transferEntries = entries.filter((e) => e.type === 'transfer' && !e.smsRejected);
   const opEntries = entries.filter((e) => e.type !== 'transfer');
   // Split operations by drawer: cashier drawer vs side drawer.
   const cashierOps = opEntries.filter((e) => e.src !== 'side');
