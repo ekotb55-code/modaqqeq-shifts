@@ -25,6 +25,8 @@ export const RATE_FROM = { cashier: 'بتتخصم من درج الكاشير (ب
 // Who pays the machine's %: the shop (100 sale → 98 on the machine) or the customer (invoice 102 → 100 on the machine).
 export const RATE_ON = { shop: 'المحل (بتتخصم من المبلغ)', customer: 'العميل (بتتزود على الفاتورة)' };
 export const SETTLE = { carry: 'مستمرة · بتترحل تلقائي', liquidate: 'بتتسيّل' };
+// بتستقبل رصيد من مندوب؟ (شحن رصيد · شحن آجل · سداد للمندوب). القديم: ممكن وماجيك بس.
+export const repTopupOf = (m) => (m?.repTopup ?? /ممكن|ماجيك|ماجك/.test(m?.name || m?.machine || ''));
 export const settleOf = (m) => (m?.settle === 'liquidate' || m?.settle === 'daily' ? 'liquidate' : 'carry');
 
 // Machines are configured per shop: name, sub-accounts (or one account), commission rate and how it's settled.
@@ -53,7 +55,7 @@ export function machineListOf(shop) {
 }
 export function flattenMachines(list) {
   return list.filter((m) => m.active && m.name.trim()).flatMap((m) => {
-    const base = { machine: m.name.trim(), machineId: m.id, ratePct: num(m.ratePct), svcPct: num(m.svcPct), rateOn: m.rateOn === 'customer' ? 'customer' : 'shop', rateFrom: m.rateFrom, settle: settleOf(m), liqFeePct: settleOf(m) === 'liquidate' ? num(m.liqFeePct) : 0, inCash: m.inCash !== false, startZero: !!m.startZero };
+    const base = { machine: m.name.trim(), machineId: m.id, ratePct: num(m.ratePct), svcPct: num(m.svcPct), rateOn: m.rateOn === 'customer' ? 'customer' : 'shop', rateFrom: m.rateFrom, settle: settleOf(m), repTopup: repTopupOf(m), liqFeePct: settleOf(m) === 'liquidate' ? num(m.liqFeePct) : 0, inCash: m.inCash !== false, startZero: !!m.startZero };
     const accs = m.hasSubs ? m.accounts.map((a) => a.trim()).filter(Boolean) : [];
     return accs.length ? accs.map((a) => ({ ...base, account: a })) : [{ ...base, account: 'الرصيد' }];
   });

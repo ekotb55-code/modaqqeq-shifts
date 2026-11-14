@@ -3,7 +3,7 @@ import { collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, query, serverT
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { Avatar, Icon, Modal, useToast } from '../ui.jsx';
-import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, MACHINE_PRESETS, REG_KIND, allOpen, isAdminRole, newRegister, newExpenseType, RATE_FROM, RATE_ON, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, uidByLogin, matches, normUsername, DEFAULT_FEE_TIERS, tierFee, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, newVault, num, pickImage } from '../lib';
+import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, MACHINE_PRESETS, REG_KIND, allOpen, isAdminRole, newRegister, newExpenseType, RATE_FROM, RATE_ON, repTopupOf, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, uidByLogin, matches, normUsername, DEFAULT_FEE_TIERS, tierFee, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, newVault, num, pickImage } from '../lib';
 import { logAct } from '../activity.js';
 import { CLOUD } from '../cloud.js';
 import { applyFormat, buildFormat, firstWords, parseSms } from '../smsFormat.js';
@@ -140,6 +140,16 @@ function MachinesEditor({ list, onChange }) {
             <button type="button" className="icon-btn" aria-label={`امسح ${m.name || 'المكنة'}`} onClick={() => window.confirm('تمسح المكنة دي من المحل؟') && onChange(list.filter((x) => x.id !== m.id))}><Icon d="trash" size={18} /></button>
           </div>
           {num(m.svcPct) > 0 && <span className="tiny" style={{ background: '#EAFBC2', borderRadius: 12, padding: '6px 10px', alignSelf: 'flex-start' }}>العميل بيدفع الفاتورة + {num(m.svcPct)}% · لو الرصيد نزل 1,000 يبقى الدرج المفروض فيه {fmt(1000 + 10 * num(m.svcPct))}</span>}
+          <div className="spread" style={{ gap: 8, flexWrap: 'wrap', background: '#F7F6FB', borderRadius: 16, padding: '8px 12px' }}>
+            <span className="stack" style={{ gap: 0 }}>
+              <strong style={{ fontSize: 14 }}>بتستقبل رصيد من مندوب؟</strong>
+              <span className="tiny muted">«نعم» = الكاشير يقدر يسجّل «شحن رصيد مكنة» (كاش أو آجل) و«سداد لمندوب مكنة» للمكنة دي</span>
+            </span>
+            <div className="chips">
+              <button type="button" className={'chip sm' + (repTopupOf(m) ? ' on' : '')} aria-pressed={repTopupOf(m)} onClick={() => upd(m.id, { repTopup: true })}>نعم</button>
+              <button type="button" className={'chip sm' + (!repTopupOf(m) ? ' on' : '')} aria-pressed={!repTopupOf(m)} onClick={() => upd(m.id, { repTopup: false })}>لا</button>
+            </div>
+          </div>
           <div className="stack">
             <span className="small muted">الحسابات</span>
             <div className="chips">
@@ -297,7 +307,7 @@ function ShopEditor({ shop, shops = [] }) {
 
   const save = async () => {
     try {
-      const machineList = f.machineList.filter((m) => m.name.trim()).map((m) => ({ ...m, name: m.name.trim(), ratePct: num(m.ratePct), svcPct: num(m.svcPct), liqFeePct: num(m.liqFeePct), settle: settleOf(m), startZero: !!m.startZero, accounts: m.accounts.map((a) => a.trim()).filter(Boolean) }));
+      const machineList = f.machineList.filter((m) => m.name.trim()).map((m) => ({ ...m, name: m.name.trim(), ratePct: num(m.ratePct), svcPct: num(m.svcPct), liqFeePct: num(m.liqFeePct), settle: settleOf(m), repTopup: repTopupOf(m), startZero: !!m.startZero, accounts: m.accounts.map((a) => a.trim()).filter(Boolean) }));
       const registers = f.registers.filter((r) => r.name.trim()).map((r) => ({ ...r, name: r.name.trim() }));
       const vaults = f.vaults.filter((v) => v.name.trim()).map((v) => ({ ...v, name: v.name.trim() }));
       const vaultUpd = Object.fromEntries(Object.entries(vaultEdits).map(([id, v]) => [`vaultBalances.${id}`, num(v)]));
@@ -1159,7 +1169,7 @@ function KeyGuards({ k, shop, shops }) {
       ))}
       <div className="stack" style={{ gap: 4 }}>
         <span className="small"><b>الفروع اللي بتستلم على الحساب ده</b> <span className="tiny muted">· التحويل بيظهر عندهم كلهم، وأول كاشير يأكده ياخده</span></span>
-        <ShopsOf shops={shops} ids={ids} onChange={(v) => save({ shopIds: [...new Set([shop.id, ...v])] })} />
+        <ShopsOf shops={shops} ids={ids} onChange={(v) => { save({ shopIds: [...new Set([shop.id, ...v])] }); v.filter((id) => !ids.includes(id)).forEach((id) => updateDoc(doc(db, 'shops', id), { [`smsLinked.${k.wallet}`]: true }).catch(() => {})); }} />
       </div>
       <span className="tiny muted">التغيير بيسري على التحويلات الجاية.</span>
     </div>
@@ -1205,6 +1215,15 @@ function SmsForward({ shop, shops = [], wallets }) {
   const [teach, setTeach] = useState(null); // sample text, or '' for a blank form
   useEffect(() => onSnapshot(query(collection(db, 'smsKeys'), where('shopId', '==', shop.id)),
     (q) => setKeys(q.docs.map((d) => ({ id: d.id, ...d.data() }))), (e) => console.warn('smsKeys', e.code)), [shop.id]);
+  // روابط فروع تانية بتوصل للمحل ده كمان
+  const [shared, setShared] = useState([]);
+  useEffect(() => onSnapshot(query(collection(db, 'smsKeys'), where('shopIds', 'array-contains', shop.id)),
+    (q) => setShared(q.docs.map((d) => ({ id: d.id, ...d.data() }))), () => {}), [shop.id]);
+  // الكاشير بيشوف كارت المحفظة في الصفحة الرئيسية بس لو مربوطة برسايل البنك
+  const linkedKey = JSON.stringify(Object.fromEntries([...keys, ...shared].filter((k) => (k.mode || 'owner') === 'owner').map((k) => [k.wallet, true])));
+  useEffect(() => {
+    if (linkedKey !== JSON.stringify(shop.smsLinked || {})) updateDoc(doc(db, 'shops', shop.id), { smsLinked: JSON.parse(linkedKey) }).catch(() => {});
+  }, [linkedKey]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!wallets.length || !CLOUD.url) return null;
   const linkOf = (k) => `${CLOUD.url}?k=${k.id}`;
   const make = async (w) => {

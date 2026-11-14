@@ -3,7 +3,7 @@ import { collection, doc, serverTimestamp, writeBatch, updateDoc, setDoc, onSnap
 import { db } from '../firebase';
 import { Icon, Modal, useToast, WALLET_LOOK, WalletMark } from '../ui.jsx';
 import { captureDocument } from '../DocCamera.jsx';
-import { ENTRY_TYPES, OWNER, SRC_LABEL, WALLETS, WEEKDAYS, walletModeOf, fmt, num, safeLabel, shopSafes } from '../lib';
+import { ENTRY_TYPES, OWNER, SRC_LABEL, WALLETS, WEEKDAYS, walletModeOf, fmt, num, repTopupOf, safeLabel, shopSafes } from '../lib';
 import { logAct } from '../activity.js';
 import { requestFromPhone } from '../phoneShot.jsx';
 import { setPhoto as addPhotoDoc } from '../cloud.js';
@@ -71,7 +71,9 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
   const cashSafes = allSafes.filter((x) => x.kind === 'cash');
   const machineSafes = allSafes.filter((x) => x.kind === 'machine');
   // Machines by name (the rep is per machine, not per account) and what the shop owes each rep.
-  const machineNames = [...new Set(machineSafes.map((x) => x.m?.machine).filter(Boolean))];
+  // شحن الرصيد والسداد: المكن اللي «بتستقبل رصيد من مندوب» بس
+  const repSafes = machineSafes.filter((x) => repTopupOf(x.m));
+  const machineNames = [...new Set(repSafes.map((x) => x.m?.machine).filter(Boolean))];
   const debts = useRepDebts(shop.id);
   const [repMachine, setRepMachine] = useState(machineNames.length === 1 ? machineNames[0] : '');
   const topupSafes = [...cashSafes, { key: 'credit', label: 'آجل · المندوب هيتحاسب بعدين' }];
@@ -160,7 +162,7 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
       }
     }
     if (type === 'transfer') Object.assign(entry, { wallet, src: wallet });
-    if (type === 'topup') { const mm = machineSafes.find((x) => x.key === machine); Object.assign(entry, { src, machineKey: machine, machine: mm?.m?.machine || '', account: mm?.m?.account || '', ...(src === 'credit' ? { credit: true } : {}) }); }
+    if (type === 'topup') { const mm = repSafes.find((x) => x.key === machine); Object.assign(entry, { src, machineKey: machine, machine: mm?.m?.machine || '', account: mm?.m?.account || '', ...(src === 'credit' ? { credit: true } : {}) }); }
     if (type === 'repPay') Object.assign(entry, { src, machine: repMachine, note: note.trim() });
     if (type === 'liquidate') Object.assign(entry, { src, to: liqTo, note: note.trim(), fromLabel: safeLabel(src, shop), toLabel: safeLabel(liqTo, shop), fee: fee > 0 ? fee : 0, net: Math.round((num(amount) - fee) * 100) / 100 });
     if (type === 'move') Object.assign(entry, { src: moveTo === 'side' ? 'drawer' : 'side', to: moveTo });
@@ -329,8 +331,8 @@ export default function EntryModal({ type, shop, shift, profile, onClose, balanc
       {type === 'topup' && (
         <div className="stack">
           <span className="small muted">شحنت أنهي مكنة؟ (المبلغ اللي دفعته للمندوب)</span>
-          <SafePick safes={machineSafes} value={machine} onPick={setMachine} balances={balances} />
-          {machineSafes.length === 0 && <span className="tiny muted">مفيش مكن مفعّلة للمحل</span>}
+          <SafePick safes={repSafes} value={machine} onPick={setMachine} balances={balances} />
+          {repSafes.length === 0 && <span className="tiny muted">مفيش مكن بتستقبل رصيد من مندوب</span>}
         </div>
       )}
 

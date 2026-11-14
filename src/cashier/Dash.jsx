@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { collection, doc, onSnapshot, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Avatar, Icon, Img, Modal, NetMeter, PhotoView, WALLET_LOOK, WalletMark, useToast } from '../ui.jsx';
-import { ENTRY_TYPES, SRC_LABEL, WALLETS, durationStr, firstName, fmt, liveBalances, machineTotals, num, walletModeOf, registersOf, safeLabel, shopSafes, timeStr, entrySign } from '../lib';
+import { ENTRY_TYPES, SRC_LABEL, WALLETS, durationStr, firstName, fmt, liveBalances, machineTotals, num, repTopupOf, walletModeOf, registersOf, safeLabel, shopSafes, timeStr, entrySign } from '../lib';
 import { Incoming, SendModal } from './Transfers.jsx';
 import EntryModal from './EntryModal.jsx';
 import { logAct } from '../activity.js';
@@ -74,19 +74,20 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
   const counters = [
     { label: 'طالع من الدرج', value: out('drawer'), dot: '#fff', cls: 'c-orange' },
     !shop.noSide && { label: 'طالع من الجانبي', value: out('side'), dot: '#fff', cls: 'c-yellow' },
-    ...WALLETS.filter((w) => wallets.includes(w.key)).map((w) => ({ label: w.label, value: sum((e) => e.type === 'transfer' && e.wallet === w.key), dot: '#fff', cls: w.key === 'vf' ? 'c-pink' : 'c-violet', w: w.key })),
+    ...WALLETS.filter((w) => wallets.includes(w.key) && shop.smsLinked?.[w.key]).map((w) => ({ label: w.label, value: sum((e) => e.type === 'transfer' && e.wallet === w.key), dot: '#fff', cls: w.key === 'vf' ? 'c-pink' : 'c-violet', w: w.key })),
   ].filter(Boolean);
   const tiles = [
     ops && { t: 'expense', label: 'مصروف', icon: 'up' },
     ops && { t: 'income', label: 'إيراد', icon: 'down' },
     wallets.length > 0 && { t: 'transfer', label: 'تحويل محفظة', icon: 'phone' },
   ].filter(Boolean);
+  // شحن الرصيد والسداد للمندوب: بس لو فيه مكنة «بتستقبل رصيد من مندوب»
+  const repMachines = (shop.machines || []).some((m) => m.active !== false && repTopupOf(m));
   const extras = [
     registersOf(shop).length > 0 && { t: 'xfer', label: 'فلوس / فكة لكاشير تاني', icon: 'swap', color: '#4CC3FF' },
-    ops && (shop.machines || []).length > 0 && { t: 'topup', label: 'شحن رصيد مكنة', icon: 'bolt' },
-    ops && (shop.machines || []).length > 0 && { t: 'repPay', label: 'سداد لمندوب مكنة', icon: 'up' },
+    ops && repMachines && { t: 'topup', label: 'شحن رصيد مكنة', icon: 'bolt' },
+    ops && repMachines && { t: 'repPay', label: 'سداد لمندوب مكنة', icon: 'up' },
     ops && { t: 'liquidate', label: 'تسييل وتحويل بين الخزن', icon: 'swap' },
-    !shop.noSide && { t: 'move', label: 'نقل بين الدرجين', icon: 'swap' },
   ].filter(Boolean);
   const sms = useWalletIn(shift.shopId, wallets, profile.id);
   const [claim, setClaim] = useState(null);

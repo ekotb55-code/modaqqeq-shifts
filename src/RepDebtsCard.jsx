@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { writeBatch } from 'firebase/firestore';
 import { db } from './firebase';
 import { useToast } from './ui.jsx';
-import { fmt, num } from './lib';
+import { fmt, num, repTopupOf } from './lib';
 import { addDebtChange, useRepDebtLog, useRepDebts } from './repDebt.js';
 
 // What the shop owes the machine reps, with every change. The accountant can fix a number (e.g. an old debt from before the app).
@@ -10,7 +10,8 @@ export default function RepDebtsCard({ shop, profile, canEdit }) {
   const toast = useToast();
   const debts = useRepDebts(shop.id);
   const log = useRepDebtLog(shop.id, 30);
-  const names = [...new Set([...(shop.machines || []).map((m) => m.machine), ...Object.keys(debts)])].filter(Boolean);
+  // المكن اللي «بتستقبل رصيد من مندوب»، وأي مكنة لسه عليها دين
+  const names = [...new Set([...(shop.machines || []).filter((m) => repTopupOf(m)).map((m) => m.machine), ...Object.keys(debts).filter((n) => num(debts[n]))])].filter(Boolean);
   const [edit, setEdit] = useState(null); // { machine, value, note }
   const [open, setOpen] = useState(false);
   const any = names.some((n) => num(debts[n])) || log.length;
