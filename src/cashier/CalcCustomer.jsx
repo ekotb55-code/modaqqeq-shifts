@@ -98,7 +98,7 @@ export function CalcModal({ shop, options, onClose }) {
 export function CalcEntry({ shop }) {
   const [open, setOpen] = useState(false);
   const options = calcOptions(shop);
-  if (!options.length) return null;
+  if (!shop?.calcOn || !options.length) return null; // بتظهر بس في المحلات اللي المحاسب فتحها فيها
   return (
     <>
       <button type="button" className="counter c-sky calc-tile" onClick={() => setOpen(true)} style={{ border: 0, textAlign: 'right', cursor: 'pointer', color: 'var(--ink)' }}>

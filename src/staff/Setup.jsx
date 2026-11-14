@@ -287,7 +287,7 @@ function ShopEditor({ shop, shops = [] }) {
     machineList: machineListOf(shop), wallets: shop.wallets || ['insta', 'vf'], walletModes: walletModesOf(shop), walletFees: shop.walletFees || {},
     suppliers: shop.suppliers || [], staff: shop.staff || [], stoppedStaff: shop.stoppedStaff || [], partners: shop.partners || [],
     shopExpenses: shop.shopExpenses || [], customExpenseTypes: shop.customExpenseTypes || [], hiddenExpenseTypes: shop.hiddenExpenseTypes || [], incomeReasons: shop.incomeReasons || [], advanceDays: shop.advanceDays || [],
-    registers: shop.registers || [], vaults: shop.vaults || [],
+    registers: shop.registers || [], vaults: shop.vaults || [], calcOn: !!shop.calcOn,
   }));
   const [dirty, setDirty] = useState(false);
   const [vaultEdits, setVaultEdits] = useState({}); // رصيد الخزنة اللي المحاسب عدّله بإيده (id -> رقم)
@@ -327,7 +327,7 @@ function ShopEditor({ shop, shops = [] }) {
     const clone = (v) => JSON.parse(JSON.stringify(v ?? null));
     const up = {};
     if (parts.shifts) Object.assign(up, { shiftsCount: src.shiftsCount || 1, firstShiftStart: src.firstShiftStart || '09:00', shiftDuration: src.shiftDuration || 12 });
-    if (parts.machines) up.machineList = clone(machineListOf(src));
+    if (parts.machines) { up.machineList = clone(machineListOf(src)); up.calcOn = !!src.calcOn; }
     if (parts.wallets) Object.assign(up, { wallets: clone(src.wallets || ['insta', 'vf']), walletModes: clone(walletModesOf(src)), walletFees: clone(src.walletFees || {}) });
     if (parts.expenses) Object.assign(up, { customExpenseTypes: clone(src.customExpenseTypes || []), hiddenExpenseTypes: clone(src.hiddenExpenseTypes || []), shopExpenses: clone(src.shopExpenses || []), advanceDays: clone(src.advanceDays || []) });
     if (parts.income) up.incomeReasons = clone(src.incomeReasons || []);
@@ -418,6 +418,19 @@ function ShopEditor({ shop, shops = [] }) {
       <SmsForward shop={shop} shops={shops} wallets={WALLETS.filter((w) => f.wallets.includes(w.key)).map((w) => ({ ...w, mode: f.walletModes[w.key] || 'owner' }))} />
 
       <MachinesEditor list={f.machineList} onChange={(v) => set('machineList', v)} />
+
+      <section className="card" style={{ gap: 8 }}>
+        <div className="spread" style={{ gap: 12, flexWrap: 'wrap' }}>
+          <span className="stack" style={{ gap: 2, flex: '1 1 240px' }}>
+            <h2 className="h2">🧮 احسب للعميل</h2>
+            <span className="tiny muted" style={{ lineHeight: 1.7 }}>حاسبة على شاشة الكاشير: يكتب الفاتورة ويعرف يضرب كام على المكنة أو ياخد كام كاش، بالنِّسب اللي في إعداد المكن والمحافظ.</span>
+          </span>
+          <div className="chips">
+            <button type="button" className={'chip' + (f.calcOn ? ' on' : '')} aria-pressed={f.calcOn} onClick={() => set('calcOn', true)}>تظهر للكاشير</button>
+            <button type="button" className={'chip' + (!f.calcOn ? ' on' : '')} aria-pressed={!f.calcOn} onClick={() => set('calcOn', false)}>مقفولة</button>
+          </div>
+        </div>
+      </section>
 
       <VaultsEditor list={f.vaults} onChange={(v) => set('vaults', v)} balances={shop.vaultBalances || {}} edits={vaultEdits} onEdit={(id, v) => { setVaultEdits((x) => ({ ...x, [id]: v })); setDirty(true); }} />
 
@@ -1337,7 +1350,7 @@ function TeachSms({ sample: first, onClose }) {
 
 // Pick a shop and the parts of its settings to copy.
 const COPY_PARTS = [
-  { k: 'machines', label: 'المكن وحساباتها ونسبها ومقابل الخدمة', on: true },
+  { k: 'machines', label: 'المكن وحساباتها ونسبها ومقابل الخدمة وحاسبة العميل', on: true },
   { k: 'wallets', label: 'المحافظ وطريقتها ومقابل الخدمة بتاعها', on: true },
   { k: 'expenses', label: 'أنواع المصروفات ومصروفات المحل وأيام السلف', on: true },
   { k: 'income', label: 'أسباب الإيراد', on: true },
