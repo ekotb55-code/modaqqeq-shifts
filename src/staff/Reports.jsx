@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { collection, doc, deleteDoc, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, useToast } from '../ui.jsx';
-import { diffText, durationStr, fmt, minutesBetween, num, todayKey, timeStr } from '../lib';
+import { diffText, durationStr, fmt, minutesBetween, num, openKey, openOf, todayKey, timeStr } from '../lib';
 import { ShiftDetail } from './Review.jsx';
 import { logAct } from '../activity.js';
 
@@ -78,7 +78,12 @@ export default function Reports({ profile, shops }) {
     if (!confirmDelete) return;
 
     try {
-      await deleteDoc(doc(db, 'shifts', shiftToDelete.id));
+      // لو كانت لسه مفتوحة: الدرج يتفك كمان، وإلا هيفضل مقفول على وردية مش موجودة
+      const b = writeBatch(db);
+      b.delete(doc(db, 'shifts', shiftToDelete.id));
+      const sh = shops.find((s) => s.id === shiftToDelete.shopId);
+      if (openOf(sh, shiftToDelete.register)?.id === shiftToDelete.id) b.update(doc(db, 'shops', shiftToDelete.shopId), { [openKey(shiftToDelete.register)]: null });
+      await b.commit();
       toast('تم حذف الوردية بنجاح');
       setOpenId(null);
       logAct('delete_shift', `قام بحذف وردية ${shiftToDelete.cashierName} (محل ${shopName(shiftToDelete.shopId)})`, { shopId: shiftToDelete.shopId });

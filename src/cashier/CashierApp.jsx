@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { signOut, updatePassword } from 'firebase/auth';
-import { collection, deleteField, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where, deleteDoc } from 'firebase/firestore';
+import { collection, deleteField, doc, getDocFromServer, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where, deleteDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Icon, Avatar, Modal, Spinner, useToast } from '../ui.jsx';
-import { DEFAULT_SHOP, MAIN_REG, allOpen, cashierPassword, dateStr, firstName, openOf, regName, registersOf, shopForRegister, timeStr, toDate, todayKey } from '../lib';
+import { DEFAULT_SHOP, MAIN_REG, allOpen, openKey, cashierPassword, dateStr, firstName, openOf, regName, registersOf, shopForRegister, timeStr, toDate, todayKey } from '../lib';
 import { usePendingTransfers } from './Transfers.jsx';
 import { AttentionBar, AttentionModal, useAttention } from './Attention.jsx';
 import { NetStrip, ThemePicker, useTheme } from '../theme.jsx';
@@ -157,7 +157,7 @@ export default function CashierApp({ profile }) {
   else if (viewId && !viewDoc) body = <Spinner text="بنفتح الوردية…" />;
   else if (showFollow) body = <Follow shift={followShift} profile={me} onNew={startNew} onEdit={() => setAttn(followShift)} newLabel={mine ? 'رجوع للوردية الحالية' : undefined} />;
   else if (!reg) body = <RegisterPicker shop={shop} pub={pub} regs={regs} onPick={setPickReg} />;
-  else if (open && !mine) body = <Blocked open={open} pub={pub} onOther={regs.length ? () => setPickReg(null) : null} />;
+  else if (open && !mine) body = <Blocked open={open} pub={pub} shopId={shop?.id} reg={reg} onOther={regs.length ? () => setPickReg(null) : null} />;
   else if (!mine) body = <Receive shop={rshop} reg={reg} profile={profile} onStarted={() => setScreen('dash')} onCancel={regs.length ? () => setPickReg(null) : null} />;
   else if (!shift) body = <Spinner text="بنفتح ورديتك…" />;
   else if (screen === 'receive') body = <Receive key="edit" shop={rshop} reg={reg} profile={profile} editShift={shift} onStarted={() => setScreen('dash')} onCancel={() => setScreen('dash')} />;
@@ -286,8 +286,33 @@ function RegisterPicker({ shop, pub, regs, onPick }) {
   );
 }
 
-function Blocked({ open, pub, onOther }) {
+function Blocked({ open, pub, shopId, reg, onOther }) {
   const owner = (pub?.cashiers || []).find((c) => c.uid === open.cashierUid);
+  const toast = useToast();
+  // الوردية دي اتمسحت من السجل والدرج فضل مقفول عليها: نتأكد من السيرفر (محتاج نت) ونفك القفل
+  const [gone, setGone] = useState(false);
+  useEffect(() => {
+    if (!open?.id) return;
+    getDocFromServer(doc(db, 'shifts', open.id)).then((s) => setGone(!s.exists())).catch(() => {});
+  }, [open?.id]);
+  const unlock = async () => {
+    try {
+      await updateDoc(doc(db, 'shops', shopId), { [openKey(reg)]: null });
+      logAct('unlock', `فك قفل الدرج · وردية ${open.cashierName} كانت اتمسحت من السجل`, { shopId });
+      toast('الدرج اتفك · تقدر تستلم دلوقتي');
+    } catch (e) { console.error(e); toast('مش قادرين نفك القفل، اتأكد من النت', 'err'); }
+  };
+  if (gone) {
+    return (
+      <div className="wrap center">
+        <section className="card card-lg center" style={{ maxWidth: 520, textAlign: 'center', gap: 16 }}>
+          <h1 style={{ fontSize: 24, fontWeight: 700 }}>وردية {firstName(open.cashierName)} اتمسحت من السجل</h1>
+          <span className="muted" style={{ lineHeight: 1.7 }}>الوردية دي مبقتش موجودة، بس الدرج فضل مقفول عليها. فك القفل علشان تستلم وردية جديدة.</span>
+          <button type="button" className="btn full" onClick={unlock}>فك القفل واستلم</button>
+        </section>
+      </div>
+    );
+  }
   return (
     <div className="wrap center">
       <section className="card card-lg center" style={{ maxWidth: 520, textAlign: 'center', gap: 16 }}>
