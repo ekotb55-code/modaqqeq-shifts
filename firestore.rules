@@ -63,7 +63,8 @@ service cloud.firestore {
     }
 
     match /shifts/{shiftId} {
-      allow read: if staffOf(resource.data.shopId) || (signedIn() && resource.data.cashierUid == request.auth.uid);
+      // resource == null: وردية مش موجودة (اتمسحت) — الكاشير يقدر يتأكد إنها مش موجودة علشان يفك قفل الدرج
+      allow read: if (signedIn() && resource == null) || staffOf(resource.data.shopId) || (signedIn() && resource.data.cashierUid == request.auth.uid);
       allow create: if inShop(request.resource.data.shopId)
         && request.resource.data.cashierUid == request.auth.uid
         && request.resource.data.status == 'open';

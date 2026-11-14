@@ -293,7 +293,9 @@ function Blocked({ open, pub, shopId, reg, onOther }) {
   const [gone, setGone] = useState(false);
   useEffect(() => {
     if (!open?.id) return;
-    getDocFromServer(doc(db, 'shifts', open.id)).then((s) => setGone(!s.exists())).catch(() => {});
+    getDocFromServer(doc(db, 'shifts', open.id)).then((s) => setGone(!s.exists()))
+      // صاحب الوردية نفسه بيقدر يقرا ورديته دايمًا: لو اترفض يبقى مش موجودة
+      .catch((e) => { if (e?.code === 'permission-denied' && open.cashierUid === auth.currentUser?.uid) setGone(true); });
   }, [open?.id]);
   const unlock = async () => {
     try {
