@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { browserLocalPersistence, browserSessionPersistence, createUserWithEmailAndPassword, sendPasswordResetEmail, setPersistence, signInWithEmailAndPassword } from 'firebase/auth';
 import { auth, SUPER_ADMINS } from '../firebase';
 import { Avatar, InstallButton, useToast } from '../ui.jsx';
@@ -44,20 +44,41 @@ export default function Login({ error }) {
   const [mode, setMode] = useState(cards.length ? 'pick' : 'form');
   const [who, setWho] = useState(null);
 
-  const pinLogin = async (e) => {
-    e.preventDefault();
-    if (!pass.trim()) return;
+  // Cashier PIN: 4 digits on a big keypad; it signs in by itself after the 4th digit.
+  const [shake, setShake] = useState(false);
+  const pinLogin = async (pin) => {
     setBusy(true); setMsg('');
     try {
       await setPersistence(auth, browserLocalPersistence).catch(() => {});
       markLogin();
-      await signInWithEmailAndPassword(auth, cashierEmail(who.username), cashierPassword(pass.trim()));
+      await signInWithEmailAndPassword(auth, cashierEmail(who.username), cashierPassword(pin));
     } catch (err) {
       try { sessionStorage.removeItem('mdq-login-mark'); } catch { /* ignore */ }
       setMsg(err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' ? 'الرقم السري غلط، جرّب تاني' : MSG[err.code] || 'حصلت مشكلة، جرّب تاني');
+      setShake(true); setTimeout(() => setShake(false), 450);
       setPass('');
     } finally { setBusy(false); }
   };
+  const press = (d) => {
+    if (busy) return;
+    if (d === 'del') { setPass((p) => p.slice(0, -1)); return; }
+    setMsg('');
+    if (pass.length >= 4) return;
+    const n = pass + d;
+    setPass(n);
+    if (n.length === 4) { setBusy(true); setTimeout(() => pinLogin(n), 120); }
+  };
+  // the computer's keyboard works too
+  useEffect(() => {
+    if (!who) return undefined;
+    const onKey = (e) => {
+      if (/^[0-9]$/.test(e.key)) press(e.key);
+      else if (e.key === 'Backspace') press('del');
+      else if (e.key === 'Escape') { setWho(null); setPass(''); setMsg(''); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = async (e) => {
     e.preventDefault();
@@ -115,16 +136,24 @@ export default function Login({ error }) {
                   <button type="button" className="link" onClick={() => { setMode('form'); setMsg(''); }}>مش لاقي اسمك؟ أو محاسب / إدارة؟ ادخل من هنا</button>
                 </>
               ) : (
-                <form className="stack wl-pin" onSubmit={pinLogin}>
-                  <Avatar name={who.name} photo={who.photo} color={who.color || '#B39DFF'} size={120} />
-                  <h1 className="wl-title">أهلاً {who.name.split(' ')[0]} 👋</h1>
-                  <label className="field" style={{ width: '100%', textAlign: 'center' }}>اكتب رقمك السري
-                    <input className="input wl-pin-in" type="password" inputMode="numeric" autoComplete="current-password" dir="ltr" autoFocus value={pass} onChange={(e) => setPass(e.target.value)} aria-label={`الرقم السري بتاع ${who.name}`} />
-                  </label>
+                <div className="stack wl-pin">
+                  <Avatar name={who.name} photo={who.photo} color={who.color || '#B39DFF'} size={104} />
+                  <div className="stack" style={{ gap: 2, alignItems: 'center' }}>
+                    <h1 className="wl-title">أهلًا يا {who.name.split(' ')[0]}</h1>
+                    <span className="muted">{busy ? 'لحظة…' : 'اكتب الرقم السري بتاعك'}</span>
+                  </div>
+                  <div className={'pin-dots' + (shake ? ' shake' : '')} role="status" aria-label={`اتكتب ${pass.length} من 4`}>
+                    {[0, 1, 2, 3].map((i) => <span key={i} className={i < pass.length ? 'on' : ''} />)}
+                  </div>
                   {msg && <span className="badge bad" style={{ whiteSpace: 'normal' }}>{msg}</span>}
-                  <button type="submit" className="btn full" disabled={busy || !pass.trim()}>{busy ? 'لحظة…' : 'دخول'}</button>
-                  <button type="button" className="link" onClick={() => { setWho(null); setPass(''); setMsg(''); }}>مش انت؟ رجوع</button>
-                </form>
+                  <div className="pin-pad">
+                    {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((d) => <button key={d} type="button" onClick={() => press(d)} disabled={busy}>{d}</button>)}
+                    <span />
+                    <button type="button" onClick={() => press('0')} disabled={busy}>0</button>
+                    <button type="button" className="pin-del" onClick={() => press('del')} disabled={busy} aria-label="امسح آخر رقم">⌫</button>
+                  </div>
+                  <button type="button" className="link" onClick={() => { setWho(null); setPass(''); setMsg(''); }}>مش أنت؟ اختار اسم تاني</button>
+                </div>
               )}
             </div>
           ) : (

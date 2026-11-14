@@ -734,6 +734,20 @@ body.net-bad .topbar { background: #FFF4E0; }
 .wl-pin { align-items: center; gap: 14px; width: 100%; max-width: 340px; }
 .wl-pin .avatar { border: 5px solid #fff; box-shadow: 0 10px 26px rgba(20,20,50,.16); }
 .wl-pin-in { text-align: center; font-size: 30px; letter-spacing: 10px; height: 64px; }
+/* cashier PIN keypad */
+.pin-dots { display: flex; gap: 14px; justify-content: center; direction: ltr; padding: 4px 0; }
+.pin-dots span { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--ink); transition: background .12s, transform .12s; }
+.pin-dots span.on { background: var(--ink); transform: scale(1.05); }
+.pin-dots.shake { animation: pinShake .4s; }
+.pin-dots.shake span { border-color: var(--red); }
+@keyframes pinShake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-10px); } 40%, 80% { transform: translateX(10px); } }
+.pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; width: 100%; max-width: 360px; }
+.pin-pad button { height: 74px; border: 0; border-radius: 22px; background: var(--bg); color: var(--ink); font: inherit; font-size: 26px; font-weight: 800; cursor: pointer; transition: transform .08s, background .12s; -webkit-tap-highlight-color: transparent; }
+.pin-pad button:hover { background: #E4E2F3; }
+.pin-pad button:active { transform: scale(.94); background: #D9D6EE; }
+.pin-pad button:disabled { opacity: .6; }
+.pin-pad .pin-del { background: transparent; font-size: 28px; }
+@media (max-width: 480px) { .pin-pad button { height: 64px; } }
 @media (max-width: 480px) { .wl-grid { grid-template-columns: 1fr 1fr; } .wl-title { font-size: 24px; } }
 
 .bell-diag { display: flex; flex-direction: column; gap: 4px; margin: 0 4px 10px; padding: 10px 12px; border-radius: 14px; background: var(--bg); font-size: 13px; line-height: 1.6; }

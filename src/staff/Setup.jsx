@@ -564,7 +564,7 @@ function Cashiers({ shop, pub }) {
     if (!name.trim()) { toast('اكتب اسم الكاشير', 'err'); return; }
     const un = normUsername(username);
     if (!USERNAME_RE.test(un)) { toast('اسم الدخول كلمة واحدة من غير رموز (حرفين على الأقل)، زي شوقي أو shawky أو رقم موبايله', 'err'); return; }
-    if (!/^[0-9]{4,8}$/.test(pin)) { toast('الرقم السري لازم من 4 لـ 8 أرقام', 'err'); return; }
+    if (!/^[0-9]{4}$/.test(pin)) { toast('الرقم السري لازم 4 أرقام', 'err'); return; }
     setBusy(true);
     try {
       const email = cashierEmail(un);
@@ -605,7 +605,7 @@ function Cashiers({ shop, pub }) {
         <button type="button" onClick={async () => { const d = await pickImage(300, 0.8); if (d) setPhoto(d); }} style={{ border: 0, background: 'transparent', padding: 0 }} aria-label="صورة الكاشير" title="صورة (اختياري)"><Avatar name={name} photo={photo} color={color} size={52} /></button>
         <label className="field" style={{ flex: '1 1 170px' }}>الاسم<input className="input" value={name} onChange={(e) => setName(e.target.value)} /></label>
         <label className="field" style={{ width: 160 }}>اسم الدخول<input className="input" dir="auto" autoCapitalize="none" placeholder="شوقي أو 010…" value={username} onChange={(e) => setUsername(e.target.value)} /></label>
-        <label className="field" style={{ width: 120 }}>الرقم السري<input className="input" inputMode="numeric" maxLength={8} dir="ltr" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} /></label>
+        <label className="field" style={{ width: 120 }}>الرقم السري (4 أرقام)<input className="input" inputMode="numeric" maxLength={4} dir="ltr" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} /></label>
         <label className="field" style={{ width: 150 }}>الموبايل<input className="input" inputMode="tel" dir="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} /></label>
         <label className="field" style={{ width: 120 }}>الوردية
           <select className="input" value={slot} onChange={(e) => setSlot(e.target.value)}><option value="">—</option>{SLOTS.map((x) => <option key={x}>{x}</option>)}</select>
@@ -800,7 +800,7 @@ function PinChange({ c, info, onClose }) {
   const save = async () => {
     const old = known || oldPin;
     if (!/^[0-9]{4,8}$/.test(old)) { toast('اكتب الرقم السري القديم', 'err'); return; }
-    if (!/^[0-9]{4,8}$/.test(a)) { toast('الرقم الجديد لازم من 4 لـ 8 أرقام', 'err'); return; }
+    if (!/^[0-9]{4}$/.test(a)) { toast('الرقم الجديد لازم 4 أرقام', 'err'); return; }
     if (a !== b) { toast('الرقمين مش زي بعض', 'err'); return; }
     setBusy(true);
     try {
@@ -827,8 +827,8 @@ function PinChange({ c, info, onClose }) {
               <span className="tiny muted">مش متسجل عندنا لأن الكاشير اتعمل قبل الميزة دي · بعد أول تغيير هيبقى متسجل</span>
             </label>
           )}
-          <label className="field">الرقم الجديد (من 4 لـ 8 أرقام)<input className="input" inputMode="numeric" maxLength={8} dir="ltr" value={a} onChange={(e) => setA(e.target.value.replace(/\D/g, ''))} autoFocus /></label>
-          <label className="field">اكتبه تاني<input className="input" inputMode="numeric" maxLength={8} dir="ltr" value={b} onChange={(e) => setB(e.target.value.replace(/\D/g, ''))} /></label>
+          <label className="field">الرقم الجديد (4 أرقام)<input className="input" inputMode="numeric" maxLength={4} dir="ltr" value={a} onChange={(e) => setA(e.target.value.replace(/\D/g, ''))} autoFocus /></label>
+          <label className="field">اكتبه تاني<input className="input" inputMode="numeric" maxLength={4} dir="ltr" value={b} onChange={(e) => setB(e.target.value.replace(/\D/g, ''))} /></label>
           <button type="button" className="btn full" onClick={save} disabled={busy}>{busy ? 'لحظة…' : 'حفظ الرقم الجديد'}</button>
         </>
       )}
