@@ -9,7 +9,7 @@ const JARD_TEST_URL = 'https://script.google.com/macros/s/AKfycbyZM7c-AcAPJPpbfY
 // نفس مفتاح تطبيق الجرد (موجود أصلاً في التطبيق المجمع المنشور)
 const JARD_KEY = 'b4d1771abd401101';
 
-export const SHIFT_JARD_DEF = { on: false, store: '', test: true };
+export const SHIFT_JARD_DEF = { on: false, store: '', test: false };
 export const shiftJardOf = (shop) => ({ ...SHIFT_JARD_DEF, ...(shop?.shiftJard || {}) });
 export const shiftJardOn = (shop) => { const c = shiftJardOf(shop); return !!(c.on && String(c.store || '').trim()); };
 

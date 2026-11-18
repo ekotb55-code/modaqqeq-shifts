@@ -517,8 +517,8 @@ function ShiftJardSetup({ v, onChange }) {
         <>
           <label className="field">اسم الفرع في التطبيق المجمع (دليل الموظفين)<input className="input" value={v.store} onChange={(e) => up({ store: e.target.value })} /></label>
           <div className="chips">
-            <button type="button" className={'chip sm' + (v.test ? ' on' : '')} aria-pressed={v.test} onClick={() => up({ test: true })}>تجربة الربط (بيانات تجربة)</button>
             <button type="button" className={'chip sm' + (!v.test ? ' on' : '')} aria-pressed={!v.test} onClick={() => up({ test: false })}>الأساسي (شيت الفرع الحقيقي)</button>
+            <button type="button" className={'chip sm' + (v.test ? ' on' : '')} aria-pressed={v.test} onClick={() => up({ test: true })}>تجربة الربط (بيانات تجربة)</button>
           </div>
           <span className="tiny muted" style={{ lineHeight: 1.7 }}>الأصناف بتتضاف وتتشال من تاب «أصناف الجرد الثابتة» في شيت جرد الفرع، أو من إعدادات الجرد العشوائي في التطبيق المجمع.</span>
           <button type="button" className="btn sm soft" style={{ alignSelf: 'flex-start' }} disabled={busy || !String(v.store || '').trim()} onClick={test}>{busy ? 'لحظة…' : 'جرّب الربط واعرض الأصناف'}</button>
