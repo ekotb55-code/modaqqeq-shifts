@@ -9,8 +9,10 @@ object Net {
     fun get(url: String): String = request(url, "GET", null, null).let { if (it.first >= 400) throw Exception("HTTP ${it.first}") else it.second }
     // Google sign-in APIs: the error comes back as JSON with a 400, so give back the code and the text both
     fun call(url: String, body: String, type: String): Pair<Int, String> = request(url, "POST", body, type)
+    // Firestore with the owner's own sign-in (the same rules as the shifts app decide what he may read)
+    fun authed(url: String, token: String, body: String?): Pair<Int, String> = request(url, if (body == null) "GET" else "POST", body, "application/json", token)
 
-    private fun request(start: String, method0: String, body: String?, type: String?): Pair<Int, String> {
+    private fun request(start: String, method0: String, body: String?, type: String?, token: String? = null): Pair<Int, String> {
         var url = start
         var method = method0
         repeat(6) {
@@ -19,6 +21,7 @@ object Net {
             c.connectTimeout = 20_000
             c.readTimeout = 40_000
             c.requestMethod = method
+            if (token != null) c.setRequestProperty("Authorization", "Bearer $token")
             if (method == "POST" && body != null) {
                 c.doOutput = true
                 c.setRequestProperty("Content-Type", type ?: "text/plain; charset=utf-8")

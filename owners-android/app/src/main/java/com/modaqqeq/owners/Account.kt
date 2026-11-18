@@ -55,7 +55,14 @@ object Account {
         return err
     }
 
-    private fun idToken(c: Context): String? {
+    fun role(c: Context) = prefs(c).getString("role", "") ?: ""
+    // the account's id is inside the sign-in token itself
+    fun uid(c: Context): String? {
+        val t = idToken(c) ?: return null
+        return runCatching { JSONObject(String(android.util.Base64.decode(t.split(".")[1], android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING))).optString("user_id") }.getOrNull()
+    }
+
+    fun idToken(c: Context): String? {
         val p = prefs(c)
         if (System.currentTimeMillis() < p.getLong("idExp", 0)) p.getString("idToken", null)?.let { return it }
         val refresh = p.getString("refresh", null) ?: return null
@@ -101,7 +108,7 @@ object Account {
             }
         }
         val e = p.edit().putLong("syncAt", System.currentTimeMillis())
-        if (mode(c) == "user") e.putString("name", j.optString("name"))
+        if (mode(c) == "user") e.putString("name", j.optString("name")).putString("role", j.optString("role"))
         if (mode(c) == "shop" && j.optString("shopName").isNotBlank()) e.putString("shopName", j.optString("shopName"))
         e.apply()
         val arr = j.optJSONArray("keys")
