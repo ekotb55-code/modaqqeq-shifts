@@ -10,6 +10,7 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
@@ -35,14 +36,27 @@ object Popup {
         val title = (if (big) "⚠️ تحويل كبير " else "💰 وصل ") + fmt.format(amount) + " ج"
         val line = listOf(if (from.isNotBlank()) "من $from" else "", wallet).filter { it.isNotBlank() }.joinToString(" · ")
         val hint = if (big) "أكبر من الحد · مش ظاهر للكاشير" else "ظاهر للكاشيرية دلوقتي"
-        if (Settings.canDrawOverlays(c)) main.post { overlay(c.applicationContext, title, line, hint, actUrl) }
-        else notify(c, title, "$line · $hint", actUrl)
+        val app = c.applicationContext
+        if (!Settings.canDrawOverlays(app)) {
+            Store.addLog(app, "الشباك العايم", title, "✗ مظهرش: إذن «الشباك العايم فوق التطبيقات» مقفول · طلع إشعار بداله")
+            notify(app, title, "$line · $hint", actUrl); return
+        }
+        main.post {
+            try { overlay(app, title, line, hint, actUrl) }
+            catch (e: Throwable) {
+                // ميضيعش التحويل من غير ما صاحب المحل يعرف: إشعار بداله + السبب في السجل
+                Store.addLog(app, "الشباك العايم", title, "✗ مظهرش (" + (e.javaClass.simpleName + " " + (e.message ?: "")).trim().take(120) + ") · طلع إشعار بداله")
+                notify(app, title, "$line · $hint", actUrl)
+            }
+        }
     }
 
     private fun dp(c: Context, v: Int) = (v * c.resources.displayMetrics.density).toInt()
 
-    private fun overlay(c: Context, title: String, line: String, hint: String, actUrl: String) {
-        val wm = c.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+    private fun overlay(app: Context, title: String, line: String, hint: String, actUrl: String) {
+        // أندرويد 11+: الشباك لازم يتعمل من "سياق شباك" مش من التطبيق نفسه، وإلا ممكن ميظهرش
+        val c: Context = if (Build.VERSION.SDK_INT >= 30) app.createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null) else app
+        val wm = c.getSystemService(WindowManager::class.java)
         val card = LinearLayout(c).apply {
             orientation = LinearLayout.VERTICAL
             layoutDirection = View.LAYOUT_DIRECTION_RTL
@@ -76,7 +90,7 @@ object Popup {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT,
         ).apply { gravity = Gravity.TOP; x = 0; y = dp(c, 36); horizontalMargin = 0.03f }
-        runCatching { wm.addView(card, lp) }
+        wm.addView(card, lp)
         main.postDelayed({ remove() }, 3 * 60_000L) // ميفضلش على الشاشة للأبد
     }
 
