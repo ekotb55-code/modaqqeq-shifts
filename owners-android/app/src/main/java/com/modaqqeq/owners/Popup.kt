@@ -10,10 +10,12 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.view.Display
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -55,7 +57,10 @@ object Popup {
 
     private fun overlay(app: Context, title: String, line: String, hint: String, actUrl: String) {
         // أندرويد 11+: الشباك لازم يتعمل من "سياق شباك" مش من التطبيق نفسه، وإلا ممكن ميظهرش
-        val c: Context = if (Build.VERSION.SDK_INT >= 30) app.createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null) else app
+        val c: Context = if (Build.VERSION.SDK_INT >= 30) {
+            val screen = app.getSystemService(DisplayManager::class.java).getDisplay(Display.DEFAULT_DISPLAY)
+            app.createDisplayContext(screen).createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null)
+        } else app
         val wm = c.getSystemService(WindowManager::class.java)
         val card = LinearLayout(c).apply {
             orientation = LinearLayout.VERTICAL
