@@ -527,6 +527,28 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
       <WalletSmsReview shift={shift} shop={shop} data={wsms} canEdit={canReview && shift.status !== 'closed'} />
       <RepDebtsCard shop={fullShop} profile={profile} canEdit={!!canReview} />
       <BillsCompare rcv={rcv} hnd={shift.handover} />
+      {shift.handover?.jard && (() => {
+        const j = shift.handover.jard;
+        return (
+          <section className="card" style={{ gap: 8, background: j.shortCount ? '#FFE4E4' : j.overCount ? '#E4F0FF' : '#E2FAB0' }}>
+            <h2 className="h2">📋 جرد الوردية{j.test ? ' (تجربة)' : ''}</h2>
+            <span className="small">{j.count} صنف · {j.outName} سلّم و{j.inName} استلم{!j.shortCount && !j.overCount ? ' · مفيش فروقات ✅' : ''}</span>
+            {j.shortCount > 0 && (
+              <div className="stack" style={{ gap: 4 }}>
+                <strong className="small" style={{ color: '#9B1C1C' }}>نواقص {j.shortCount} صنف · {fmt(j.shortValue)} ج · {j.invoice ? 'الكاشير أكّد إنه ضربها فاتورة على حسابه (عجز وردية)' : 'الكاشير ماأكدش الفاتورة'}</strong>
+                {(j.short || []).map((l) => <span key={l.code} className="tiny">{l.name} · {fmt(l.diff)} × {fmt(l.sale)} = {fmt(l.value)} ج</span>)}
+                <span className="tiny muted">راجع إن فاتورة النواقص موجودة في مبيعات الوردية على البرنامج.</span>
+              </div>
+            )}
+            {j.overCount > 0 && (
+              <div className="stack" style={{ gap: 4 }}>
+                <strong className="small">زيادة {j.overCount} صنف · محتاجة تسوية (تعديل كمية) من الدعم أو المحل</strong>
+                {(j.over || []).map((l) => <span key={l.code} className="tiny">{l.name} · +{fmt(l.diff)}</span>)}
+              </div>
+            )}
+          </section>
+        );
+      })()}
 
       <section className="card" style={{ gap: 0 }} data-tour="moves">
         <div className="spread" style={{ marginBottom: 8 }}>

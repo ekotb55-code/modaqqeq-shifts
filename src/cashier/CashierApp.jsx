@@ -161,7 +161,7 @@ export default function CashierApp({ profile }) {
   else if (!mine) body = <Receive shop={rshop} reg={reg} profile={profile} onStarted={() => setScreen('dash')} onCancel={regs.length ? () => setPickReg(null) : null} />;
   else if (!shift) body = <Spinner text="بنفتح ورديتك…" />;
   else if (screen === 'receive') body = <Receive key="edit" shop={rshop} reg={reg} profile={profile} editShift={shift} onStarted={() => setScreen('dash')} onCancel={() => setScreen('dash')} />;
-  else if (screen === 'handover') body = <Handover shop={rshop} shift={shift} entries={active} incoming={incoming} profile={me} onBack={() => setScreen('dash')} onDone={setDone} />;
+  else if (screen === 'handover') body = <Handover cashiers={(pub?.cashiers || []).filter((c) => !c.disabled && c.username)} shop={rshop} shift={shift} entries={active} incoming={incoming} profile={me} onBack={() => setScreen('dash')} onDone={setDone} />;
   else body = <Dash shop={rshop} fullShop={shop} shift={shift} entries={active} deleted={deleted} incoming={incoming} outgoing={outgoing} profile={me} onHandover={() => setScreen('handover')} onReceive={() => setScreen('receive')} onChat={() => setAttn(shift)} />;
 
   return (

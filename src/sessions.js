@@ -50,6 +50,20 @@ export async function cashierLogin({ uid, username }, pin) {
   await switchTo(a);
 }
 
+// تأكيد كاشير برقمه السري من غير ما نغيّر مين فاتح التطبيق (جرد الوردية: اللي بيسلّم واللي بيستلم).
+// لو دخل على الجهاز ده قبل كده بيتأكد من غير نت، ولو لأ محتاج نت مرة (وبعدها الجهاز بيفتكره).
+// بيرمي Error فيها .code زي cashierLogin.
+export async function verifyCashierPin({ uid, username }, pin) {
+  const saved = read()[uid];
+  if (saved?.hash && (await pinHash(pin, unb64(saved.salt))) === saved.hash) return true;
+  if (!online()) { const e = new Error('offline'); e.code = saved?.hash ? 'bad-pin' : 'offline-first'; throw e; }
+  const a = sessionApp(uid);
+  const cred = await signInWithEmailAndPassword(getAuth(a), cashierEmail(username), cashierPassword(pin));
+  if (cred.user.uid !== uid) { await signOut(getAuth(a)); const e = new Error('wrong user'); e.code = 'auth/invalid-credential'; throw e; }
+  await rememberPin(uid, pin);
+  return true;
+}
+
 async function switchTo(a) {
   await leave();
   // the login screen's app must not keep anyone signed in

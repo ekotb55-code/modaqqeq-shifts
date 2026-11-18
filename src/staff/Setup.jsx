@@ -4,6 +4,7 @@ import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { Avatar, Icon, Modal, useToast } from '../ui.jsx';
 import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, MACHINE_PRESETS, REG_KIND, allOpen, isAdminRole, newRegister, newExpenseType, RATE_FROM, RATE_ON, repTopupOf, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, uidByLogin, matches, normUsername, normShopName, DEFAULT_FEE_TIERS, tierFee, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, newVault, num, pickImage } from '../lib';
+import { jardFixed, shiftJardOf } from '../shiftJard.js';
 import { logAct } from '../activity.js';
 import { CLOUD } from '../cloud.js';
 import { applyFormat, buildFormat, firstWords, parseSms } from '../smsFormat.js';
@@ -298,6 +299,7 @@ function ShopEditor({ shop, shops = [] }) {
     suppliers: shop.suppliers || [], staff: shop.staff || [], stoppedStaff: shop.stoppedStaff || [], partners: shop.partners || [],
     shopExpenses: shop.shopExpenses || [], customExpenseTypes: shop.customExpenseTypes || [], hiddenExpenseTypes: shop.hiddenExpenseTypes || [], incomeReasons: shop.incomeReasons || [], advanceDays: shop.advanceDays || [],
     registers: shop.registers || [], vaults: shop.vaults || [], calcOn: !!shop.calcOn,
+    shiftJard: { ...shiftJardOf(shop), store: shiftJardOf(shop).store || shop.name || '' },
   }));
   const [dirty, setDirty] = useState(false);
   const [vaultEdits, setVaultEdits] = useState({}); // رصيد الخزنة اللي المحاسب عدّله بإيده (id -> رقم)
@@ -443,6 +445,8 @@ function ShopEditor({ shop, shops = [] }) {
         </div>
       </section>
 
+      <ShiftJardSetup v={f.shiftJard} onChange={(v) => set('shiftJard', v)} />
+
       <VaultsEditor list={f.vaults} onChange={(v) => set('vaults', v)} balances={shop.vaultBalances || {}} edits={vaultEdits} onEdit={(id, v) => { setVaultEdits((x) => ({ ...x, [id]: v })); setDirty(true); }} />
 
       <RegistersEditor list={f.registers} machines={f.machineList} wallets={f.wallets} openShifts={shop.openShifts || {}} onChange={(v) => set('registers', v)} />
@@ -481,6 +485,52 @@ function ShopEditor({ shop, shops = [] }) {
         <button type="button" className="btn" onClick={save} disabled={!dirty} style={{ boxShadow: 'var(--shadow-lg)' }}><Icon d="check" />{dirty ? 'حفظ التعديلات' : 'كله محفوظ'}</button>
       </div>
     </div>
+  );
+}
+
+// جرد الوردية: الكاشير اللي بيسلّم واللي بيستلم بيجردوا الأصناف الثابتة قبل التقفيل (الجرد العشوائي بتاع التطبيق المجمع)
+function ShiftJardSetup({ v, onChange }) {
+  const [busy, setBusy] = useState(false);
+  const [info, setInfo] = useState(null);
+  const up = (patch) => { onChange({ ...v, ...patch }); setInfo(null); };
+  const test = async () => {
+    setBusy(true); setInfo(null);
+    try {
+      const j = await jardFixed(v);
+      setInfo({ ok: true, fixed: j.cfg?.fixed || [] });
+    } catch (e) { setInfo({ ok: false, msg: e.message }); }
+    setBusy(false);
+  };
+  return (
+    <section className="card" style={{ gap: 10 }}>
+      <div className="spread" style={{ gap: 12, flexWrap: 'wrap' }}>
+        <span className="stack" style={{ gap: 2, flex: '1 1 240px' }}>
+          <h2 className="h2">📋 جرد الوردية</h2>
+          <span className="tiny muted" style={{ lineHeight: 1.7 }}>الكاشير مايقدرش يسلّم غير لما يجرد الأصناف الثابتة مع اللي هيستلم منه. النواقص بتتضرب فاتورة على حسابه (عجز وردية) والزيادة بيتعملها تسوية.</span>
+        </span>
+        <div className="chips">
+          <button type="button" className={'chip' + (v.on ? ' on' : '')} aria-pressed={v.on} onClick={() => up({ on: true })}>مطلوب للتقفيل</button>
+          <button type="button" className={'chip' + (!v.on ? ' on' : '')} aria-pressed={!v.on} onClick={() => up({ on: false })}>مقفول</button>
+        </div>
+      </div>
+      {v.on && (
+        <>
+          <label className="field">اسم الفرع في التطبيق المجمع (دليل الموظفين)<input className="input" value={v.store} onChange={(e) => up({ store: e.target.value })} /></label>
+          <div className="chips">
+            <button type="button" className={'chip sm' + (v.test ? ' on' : '')} aria-pressed={v.test} onClick={() => up({ test: true })}>تجربة الربط (بيانات تجربة)</button>
+            <button type="button" className={'chip sm' + (!v.test ? ' on' : '')} aria-pressed={!v.test} onClick={() => up({ test: false })}>الأساسي (شيت الفرع الحقيقي)</button>
+          </div>
+          <span className="tiny muted" style={{ lineHeight: 1.7 }}>الأصناف بتتضاف وتتشال من تاب «أصناف الجرد الثابتة» في شيت جرد الفرع، أو من إعدادات الجرد العشوائي في التطبيق المجمع.</span>
+          <button type="button" className="btn sm soft" style={{ alignSelf: 'flex-start' }} disabled={busy || !String(v.store || '').trim()} onClick={test}>{busy ? 'لحظة…' : 'جرّب الربط واعرض الأصناف'}</button>
+          {info && (info.ok ? (
+            <div className={'alert small ' + (info.fixed.length ? 'ok' : 'warn')}>
+              <strong>{info.fixed.length ? `الربط شغال · ${info.fixed.length} صنف ثابت` : 'الربط شغال بس مفيش أصناف ثابتة لسه'}</strong>
+              {info.fixed.length > 0 && <span>{info.fixed.map((x) => x.name || x.code).join(' • ')}</span>}
+            </div>
+          ) : <div className="alert bad small" role="alert">{info.msg}</div>)}
+        </>
+      )}
+    </section>
   );
 }
 

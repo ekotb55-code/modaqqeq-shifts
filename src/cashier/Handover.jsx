@@ -12,6 +12,8 @@ import { logAct } from '../activity.js';
 import { takePhoto } from '../phoneShot.jsx';
 import { setPhoto as addPhotoDoc } from '../cloud.js';
 import { pushEvent } from '../cloud.js';
+import { shiftJardOn } from '../shiftJard.js';
+import ShiftJard, { jardDraftKey } from './ShiftJard.jsx';
 
 const WHERE = { stay: 'يفضل في الدرج', shop: 'يتسلّم للمحل', main: 'يتسلّم للأساسي' };
 function Split({ title, mark, color, amount, value, set, options = ['stay', 'shop'] }) {
@@ -28,7 +30,7 @@ function Split({ title, mark, color, amount, value, set, options = ['stay', 'sho
   );
 }
 
-export default function Handover({ shop, shift, entries, incoming = [], profile, onBack, onDone }) {
+export default function Handover({ shop, shift, entries, incoming = [], profile, cashiers = [], onBack, onDone }) {
   useTour('c-handover', CASHIER_HANDOVER, { uid: profile.id });
   const toast = useToast();
   const reg = shift.register || MAIN_REG;
@@ -43,6 +45,10 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
   const [keepDrawer, setKeepDrawer] = useDraft(dkey, 'keepDrawer', isSub ? 'main' : 'stay');
   const [keepSide, setKeepSide] = useDraft(dkey, 'keepSide', 'stay');
   const opts = isSub ? ['main', 'stay'] : ['stay', 'shop'];
+  // جرد الوردية: من مهام التقفيل في المحلات المفعّل فيها (الدرج الأساسي بس)
+  const needJard = !isSub && shiftJardOn(shop);
+  const [jard, setJard] = useDraft(dkey, 'jard', null);
+  const [jardOpen, setJardOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [sideFix, setSideFix] = useState(null);
 
@@ -100,6 +106,7 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
 
   // --- تجميع النواقص ---
   const missingItems = [];
+  if (needJard && !jard) missingItems.push('جرد الوردية');
   if (side === '') missingItems.push('اكتب مبلغ الجانبي');
   else if (!sideOk) missingItems.push('ظبط الجانبي');
 
@@ -144,6 +151,7 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
       keepDrawer, keepSide, sideExpected: expSide, sideFix: sideFix || null, wallets: walletsClose,
       walletsTyped: Object.fromEntries(shopWallets.map((w) => [w.key, num(wtyped[w.key])])),
       walletModes: walletModesOf(shop),
+      ...(needJard && jard ? { jard } : {}),
       walletsOpenFix: Object.fromEntries(shopWallets.filter((w) => needsOpen(w.key)).map((w) => [w.key, num(wopen[w.key])])),
     };
     
@@ -169,6 +177,7 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
       const offline = !navigator.onLine;
       if (offline) p.catch(() => {}); else await p;
       clearDraft(dkey);
+      clearDraft(jardDraftKey(shift.id));
       clearRemoteDraft(profile.id, dkey);
       onDone({
         offline,
@@ -195,6 +204,22 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
         </div>
         <button type="button" className="btn soft sm" onClick={onBack}>رجوع للعمليات</button>
       </div>
+      {jardOpen && <ShiftJard shop={shop} shift={shift} profile={profile} cashiers={cashiers} onClose={() => setJardOpen(false)} onDone={(s) => { setJard(s); setJardOpen(false); toast('جرد الوردية اتسجل · كمّل التسليم'); }} />}
+      {needJard && (
+        <section className="card" style={{ gap: 10, background: jard ? '#E2FAB0' : '#FFE3A3' }}>
+          <div className="spread" style={{ gap: 12, flexWrap: 'wrap' }}>
+            <span className="stack" style={{ gap: 2, flex: '1 1 240px' }}>
+              <h2 className="h2">📋 جرد الوردية</h2>
+              <span className="small" style={{ lineHeight: 1.7 }}>
+                {jard
+                  ? `✓ اتجرد ${jard.count} صنف مع ${jard.inName}${jard.shortCount ? ` · نواقص ${fmt(jard.shortValue)} ج اتضربت فاتورة (عجز وردية)` : ''}${jard.overCount ? ` · ${jard.overCount} صنف زيادة هيتعملهم تسوية` : ''}${!jard.shortCount && !jard.overCount ? ' · مفيش فروقات' : ''}`
+                  : 'لازم تجرد الأصناف الثابتة مع الكاشير اللي هيستلم منك قبل ما تسلّم.'}
+              </span>
+            </span>
+            {!jard && <button type="button" className="btn" style={{ height: 56 }} onClick={() => setJardOpen(true)}>ابدأ الجرد</button>}
+          </div>
+        </section>
+      )}
       <div className="row">
         <div className="grow" style={{ flex: '3 1 520px' }}>
           <section className="card tint-orange" style={{ gap: 16 }} data-tour="h-bills">
