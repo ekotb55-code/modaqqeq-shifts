@@ -8,7 +8,7 @@
  *     وبيمسح الصور اللي عدّى عليها أكتر من شهرين.
  *
  * التشغيل لأول مرة: اختار الدالة setup من فوق ودوس Run.
- * لازم الحساب اللي بيشغّل السكريبت يكون صاحب مشروع Firebase (ekotb55@gmail.com).
+ * لازم الحساب اللي بيشغّل السكريبت يكون صاحب مشروع Firebase (pos-assist@modaqqeq.com، Editor على مشروع Firebase وفولدر الصور).
  */
 
 const PROJECT = 'modaqqeq-shifts';
