@@ -11,7 +11,7 @@ import android.service.notification.StatusBarNotification
 // Notifications of the chosen apps (InstaPay, الأهلي فون كاش…)
 class NotifListener : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        val conns = Store.conns(this).filter { sbn.packageName in it.apps }
+        val conns = Store.active(this).filter { sbn.packageName in it.apps }
         if (conns.isEmpty()) return
         val ex = sbn.notification.extras
         val big = ex.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
@@ -31,7 +31,7 @@ class SmsReceiver : BroadcastReceiver() {
         if (msgs.isEmpty()) return
         val from = msgs[0].displayOriginatingAddress ?: msgs[0].originatingAddress ?: ""
         val text = msgs.joinToString("") { it.displayMessageBody ?: "" }.trim()
-        val conns = Store.conns(c).filter { conn -> conn.senders.any { s -> s.isNotBlank() && from.contains(s.trim(), ignoreCase = true) } }
+        val conns = Store.active(c).filter { conn -> conn.senders.any { s -> s.isNotBlank() && from.contains(s.trim(), ignoreCase = true) } }
         if (conns.isEmpty() || !Filter.money(text)) return
         if (Store.seenRecently(c, "sms|$text")) return
         conns.forEach { SendWorker.enqueue(c, it.url, text, "رسالة $from") }

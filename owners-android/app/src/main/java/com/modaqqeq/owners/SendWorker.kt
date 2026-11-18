@@ -36,7 +36,8 @@ class SendWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
                 j.optBoolean("skipped") -> Store.addLog(applicationContext, src, text, "• مش رسالة تحويل")
                 else -> {
                     Store.addLog(applicationContext, src, text, "✓ وصل لمدقق")
-                    j.optJSONObject("popup")?.let { p ->
+                    // موبايل المحل: من غير شباك ولا أرقام قدام الكاشير
+                    if (!Account.isShopPhone(applicationContext)) j.optJSONObject("popup")?.let { p ->
                         Popup.show(applicationContext, p.optDouble("amount"), p.optString("from"), p.optString("wallet"), p.optBoolean("big"), p.optString("actUrl"))
                     }
                 }

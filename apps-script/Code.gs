@@ -232,6 +232,9 @@ function doPost(e) {
     if (e.parameter && e.parameter.a === 'personal') return json_(personalFromNote_(e.parameter.g, e.parameter.t));
     const body = JSON.parse(e.postData.contents);
     if (body.action === 'img') return json_(getImg_(body));
+    if (body.action === 'mykeys') return json_(myKeys_(body.idToken));
+    if (body.action === 'pair') return json_(pair_(body.code));
+    if (body.action === 'shopkeys') return json_(shopKeys_(body.shopId, body.token));
     return json_({ ok: false, error: 'unknown action' });
   } catch (err) { return json_({ ok: false, error: String(err) }); }
 }
@@ -408,7 +411,7 @@ function smsOne_(key, text) {
     req_('post', FS + '/outbox', { fields: toFields_(ev) });
   });
   // تطبيق «مدقق Owners» بيعرض شباك عايم بالتحويل وزرار «شخصي»
-  const WL = { insta: 'انستاباي', insta2: 'انستاباي شخصي', vf: 'فودافون كاش', nbe: 'الأهلي فون كاش' };
+  const WL = WALLET_NAMES_;
   return { ok: true, popup: { amount: p.amount, from: p.fromName || '', wallet: WL[wallet] || wallet, big: !!big, actUrl: g.personal ? actUrl : '' } };
 }
 function md5_(t) { return Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, String(t)).map(function (b) { return ((b + 256) % 256).toString(16).padStart(2, '0'); }).join('').slice(0, 16); }
@@ -430,6 +433,56 @@ function mateOf_(shopId, wallet, p, now, src) {
     return x.src === 'sms' && !x.noteSeen;                      // إشعار متأخر بيدوّر على رسالة من غير إشعار
   }).sort(function (a, b) { return (a.atMs || 0) - (b.atMs || 0); });
   return cands[0] || null;
+}
+// ───────── تطبيق «مدقق Owners» بيجيب محافظه لوحده ─────────
+// كل محفظة في الإعدادات ليها «مع مين؟»: موبايل المحل ('shop') أو أكونت شخص (uid).
+// صاحب الأكونت يدخل التطبيق فيجيله المحافظ اللي باسمه؛ وموبايل المحل يتربط مرة بكود/QR من الإعدادات.
+const WALLET_NAMES_ = { insta: 'انستاباي', insta2: 'انستاباي شخصي', vf: 'فودافون كاش', vf2: 'فودافون كاش شخصي', nbe: 'الأهلي فون كاش' };
+const WEB_KEY_ = 'AIzaSyCRCvSveuol7K9eQdDVTPEFundBVD8HtWs'; // مفتاح Firebase العام (نفس اللي في التطبيق)
+function keysWhere_(filters) {
+  const where = filters.length === 1 ? filters[0] : { compositeFilter: { op: 'AND', filters: filters } };
+  const r = req_('post', FS + ':runQuery', { structuredQuery: { from: [{ collectionId: 'smsKeys' }], where: where } });
+  const base = ScriptApp.getService().getUrl();
+  const shopNames = {};
+  return ((r.json || []).filter(function (x) { return x.document; })).map(function (x) {
+    const f = fields_(x.document);
+    const id = x.document.name.split('/').pop();
+    if (!(f.shopId in shopNames)) { const sr = req_('get', FS + '/shops/' + f.shopId); shopNames[f.shopId] = sr.code === 200 ? (fields_(sr.json).name || f.shopName || '') : (f.shopName || ''); }
+    return { k: id, url: base + '?k=' + id, wallet: f.wallet || 'insta', label: WALLET_NAMES_[f.wallet] || f.wallet || '', shopId: f.shopId, shopName: shopNames[f.shopId] };
+  });
+}
+function eqF_(field, v) { return { fieldFilter: { field: { fieldPath: field }, op: 'EQUAL', value: { stringValue: String(v) } } }; }
+function myKeys_(idToken) {
+  if (!idToken) return { ok: false, error: 'login' };
+  const r = UrlFetchApp.fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + WEB_KEY_, { method: 'post', contentType: 'application/json', payload: JSON.stringify({ idToken: String(idToken) }), muteHttpExceptions: true });
+  let uid = '';
+  try { uid = (JSON.parse(r.getContentText()).users || [])[0].localId || ''; } catch (e) { uid = ''; }
+  if (!uid) return { ok: false, error: 'login' };
+  const ur = req_('get', FS + '/users/' + uid);
+  const u = ur.code === 200 ? fields_(ur.json) : {};
+  if (!u.role || u.disabled || ['owner', 'manager', 'admin', 'support'].indexOf(u.role) < 0) return { ok: false, error: 'role', name: u.name || '' };
+  return { ok: true, name: u.name || '', role: u.role, keys: keysWhere_([eqF_('holder', uid)]) };
+}
+// كود الربط بيتعمل من الإعدادات وبيعيش ربع ساعة ويتستخدم مرة واحدة
+function pair_(code) {
+  if (!/^\d{6}$/.test(String(code || ''))) return { ok: false, error: 'code' };
+  const r = req_('get', FS + '/devicePairs/' + code);
+  if (r.code !== 200) return { ok: false, error: 'code' };
+  const p = fields_(r.json);
+  req_('delete', FS + '/devicePairs/' + code);
+  if (!(Number(p.expMs) > Date.now())) return { ok: false, error: 'expired' };
+  const dr = req_('get', FS + '/shopDevices/' + p.shopId);
+  const d = dr.code === 200 ? fields_(dr.json) : {};
+  if (!d.token) return { ok: false, error: 'code' };
+  return { ok: true, shopId: p.shopId, shopName: p.shopName || '', token: d.token };
+}
+function shopKeys_(shopId, token) {
+  if (!shopId || !token) return { ok: false, error: 'unpaired' };
+  const dr = req_('get', FS + '/shopDevices/' + shopId);
+  const d = dr.code === 200 ? fields_(dr.json) : {};
+  if (!d.token || d.token !== String(token)) return { ok: false, error: 'unpaired' };
+  const sr = req_('get', FS + '/shops/' + shopId);
+  return { ok: true, shopName: sr.code === 200 ? (fields_(sr.json).name || '') : '', keys: keysWhere_([eqF_('shopId', shopId), eqF_('holder', 'shop')]) };
 }
 // نفس التعديل على كل نسخ التحويل (كل فرع ليه نسخة)
 function patchGroup_(mate, patch) {

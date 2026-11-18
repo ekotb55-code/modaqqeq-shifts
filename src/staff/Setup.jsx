@@ -1224,11 +1224,35 @@ function SmsForward({ shop, shops = [], wallets }) {
   useEffect(() => {
     if (linkedKey !== JSON.stringify(shop.smsLinked || {})) updateDoc(doc(db, 'shops', shop.id), { smsLinked: JSON.parse(linkedKey) }).catch(() => {});
   }, [linkedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // «مع مين؟»: الأونر ومدير الفرع بتوع المحل ده (كل واحد يدخل «مدقق Owners» بأكونته فتجيله محافظه لوحدها)
+  const [people, setPeople] = useState([]);
+  useEffect(() => onSnapshot(query(collection(db, 'users'), where('role', 'in', ['owner', 'manager'])),
+    (q) => setPeople(q.docs.map((d) => ({ id: d.id, ...d.data() })).filter((u) => !u.disabled)), () => {}), []);
+  const mine = people.filter((u) => (u.shopIds || []).includes(shop.id));
+  const owners = mine.filter((u) => u.role === 'owner');
+  const defHolder = (w) => (w.mode === 'shop' ? 'shop' : owners.length === 1 ? owners[0].id : '');
+  // الروابط اللي اتعملت قبل «مع مين؟»: تاخد الاختيار المبدئي مرة واحدة
+  useEffect(() => {
+    keys.forEach((k) => {
+      if (k.holder !== undefined) return;
+      const w = wallets.find((x) => x.key === k.wallet);
+      const h = w && defHolder(w);
+      if (h) updateDoc(doc(db, 'smsKeys', k.id), { holder: h }).catch(() => {});
+    });
+  }, [keys, people]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!wallets.length || !CLOUD.url) return null;
   const linkOf = (k) => `${CLOUD.url}?k=${k.id}`;
-  const make = async (w) => {
+  const holderName = (h) => (h === 'shop' ? 'موبايل المحل' : people.find((u) => u.id === h)?.name || '');
+  const pick = async (w, k, h) => {
     try {
-      await setDoc(doc(db, 'smsKeys', newKey()), { shopId: shop.id, shopName: shop.name || '', wallet: w.key, mode: w.mode || 'owner', atMs: Date.now() });
+      if (k) await updateDoc(doc(db, 'smsKeys', k.id), { holder: h });
+      else await make(w, h);
+      logAct('setup', `${w.label} · ${shop.name}: الرسايل على ${holderName(h)}`, { shopId: shop.id });
+    } catch (e) { console.error(e); toast('مش قادرين نحفظ', 'err'); }
+  };
+  const make = async (w, holder) => {
+    try {
+      await setDoc(doc(db, 'smsKeys', newKey()), { shopId: shop.id, shopName: shop.name || '', wallet: w.key, mode: w.mode || 'owner', holder: holder ?? defHolder(w), atMs: Date.now() });
       logAct('setup', `عمل رابط رسايل البنك لـ ${w.label} · ${shop.name}`, { shopId: shop.id });
     } catch (e) { console.error(e); toast('مش قادرين نعمله، جرّب تاني', 'err'); }
   };
@@ -1247,12 +1271,29 @@ function SmsForward({ shop, shops = [], wallets }) {
       </span>
       {wallets.map((w) => {
         const k = keys.find((x) => x.wallet === w.key);
+        const holder = k ? (k.holder ?? defHolder(w)) : '';
+        const chip = (h, label) => (
+          <button key={h} type="button" className={'chip sm' + (holder === h ? ' on' : '')} aria-pressed={holder === h} onClick={() => holder !== h && pick(w, k, h)}>{label}{holder === h ? ' ✓' : ''}</button>
+        );
         return (
           <div key={w.key} className="stack" style={{ background: '#fff', borderRadius: 20, padding: '12px 14px', gap: 8 }}>
             <div className="spread">
               <span className="stack" style={{ gap: 0 }}><strong>{w.label}</strong><span className="tiny muted">{w.mode === 'shop' ? 'تبع المحل · كل رسالة داخل/طالع بتتسجل لوحدها' : 'بتروح لصاحب المحل · الكاشير بيأكد التحويل'}</span></span>
               {k ? <span className="badge">{k.lastAtMs ? `آخر رسالة: ${new Date(k.lastAtMs).toLocaleString('ar-EG', { day: 'numeric', month: 'numeric', hour: 'numeric', minute: '2-digit' })}` : 'لسه موصلش رسايل'}</span>
-                : <button type="button" className="btn sm" onClick={() => make(w)}>اعمل رابط</button>}
+                : <span className="badge">لسه مش مربوطة</span>}
+            </div>
+            <div className="stack" style={{ gap: 6, background: '#F7F6FB', borderRadius: 16, padding: '10px 12px' }}>
+              <span className="small"><b>📱 الرسايل بتيجي على موبايل مين؟</b></span>
+              <div className="chips">
+                {chip('shop', '📱 موبايل المحل')}
+                {mine.map((u) => chip(u.id, `👤 ${u.name}`))}
+              </div>
+              {mine.length === 0 && <span className="tiny muted">مفيش أونر أو مدير للمحل ده · ضيفهم من «المسؤولين عن المحل»</span>}
+              <span className="tiny muted" style={{ lineHeight: 1.7 }}>
+                {holder === 'shop' ? 'اربط موبايل المحل مرة واحدة من «📱 اربط موبايل المحل» تحت، والمحفظة هتشتغل عليه لوحدها.'
+                  : holder ? `${holderName(holder)} يدخل تطبيق «مدقق Owners» بأكونته، والمحفظة هتظهرله لوحدها.`
+                    : 'اختار علشان المحفظة تتظبط لوحدها على الموبايل.'}
+              </span>
             </div>
             {k && <>
               {k.lastText && <span className="tiny" style={{ background: 'var(--chip)', borderRadius: 12, padding: '6px 10px', lineHeight: 1.7 }}>{k.lastOk ? '✓ ' : '✗ مفهمناش الرسالة دي: '}{k.lastText}</span>}
@@ -1278,9 +1319,64 @@ function SmsForward({ shop, shops = [], wallets }) {
           </div>
         );
       })}
+      <ShopPhone shop={shop} />
       <SmsFormats onTeach={() => setTeach('')} />
       {teach !== null && <TeachSms sample={teach} onClose={() => setTeach(null)} />}
     </section>
+  );
+}
+
+// موبايل المحل: بيتربط مرة واحدة بكود (أو QR) من غير باسورد، وبيقرا محافظ المحل اللي «مع موبايل المحل» بس.
+const OWNERS_APK = 'https://github.com/ekotb55-code/modaqqeq-shifts/releases/download/owners-latest/modaqqeq-owners.apk';
+function ShopPhone({ shop }) {
+  const toast = useToast();
+  const [pair, setPair] = useState(null); // { code, qr, apk }
+  const start = async () => {
+    try {
+      const dref = doc(db, 'shopDevices', shop.id);
+      let token = (await getDoc(dref)).data()?.token;
+      if (!token) { token = newKey() + newKey(); await setDoc(dref, { token, atMs: Date.now() }); }
+      const code = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000));
+      await setDoc(doc(db, 'devicePairs', code), { shopId: shop.id, shopName: shop.name || '', expMs: Date.now() + 15 * 60000, atMs: Date.now(), by: auth.currentUser?.uid || '' });
+      const QR = (await import('qrcode')).default;
+      const [qr, apk] = await Promise.all([QR.toDataURL('MDQPAIR:' + code, { margin: 1, width: 260 }), QR.toDataURL(OWNERS_APK, { margin: 1, width: 200 })]);
+      setPair({ code, qr, apk });
+      logAct('setup', `عمل كود ربط موبايل المحل · ${shop.name}`, { shopId: shop.id });
+    } catch (e) { console.error(e); toast('مش قادرين نعمل كود، جرّب تاني', 'err'); }
+  };
+  const unlinkAll = async () => {
+    if (!window.confirm('تفك ربط كل موبايلات المحل ده؟ هتحتاج تربطهم تاني بكود جديد.')) return;
+    try {
+      await setDoc(doc(db, 'shopDevices', shop.id), { token: newKey() + newKey(), atMs: Date.now() });
+      logAct('setup', `فك ربط موبايلات المحل · ${shop.name}`, { shopId: shop.id });
+      toast('اتفك ربطهم');
+    } catch { toast('مش قادرين نفكهم', 'err'); }
+  };
+  return (
+    <div className="stack" style={{ background: '#fff', borderRadius: 20, padding: '12px 14px', gap: 8 }}>
+      <div className="spread">
+        <span className="stack" style={{ gap: 0 }}><strong>📱 اربط موبايل المحل</strong><span className="tiny muted">للمحافظ اللي «مع موبايل المحل» · من غير باسورد، ومن غير ما الكاشير يشوف أي أرقام</span></span>
+        <button type="button" className="btn sm" onClick={start}>اعمل كود</button>
+      </div>
+      <button type="button" className="link" style={{ alignSelf: 'flex-start' }} onClick={unlinkAll}>فك ربط كل موبايلات المحل</button>
+      {pair && (
+        <Modal title="📱 ربط موبايل المحل" onClose={() => setPair(null)}>
+          <div className="stack" style={{ gap: 14 }}>
+            <div className="stack center" style={{ gap: 6 }}>
+              <span className="small"><b>١) نزّل «مدقق Owners» على موبايل المحل</b></span>
+              <img src={pair.apk} alt="رابط تنزيل مدقق Owners" width={150} height={150} style={{ borderRadius: 12 }} />
+              <span className="tiny muted">صوّر الكود ده بكاميرا موبايل المحل، أو افتح: <span dir="ltr" style={{ wordBreak: 'break-all' }}>{OWNERS_APK}</span></span>
+            </div>
+            <div className="stack center" style={{ gap: 6 }}>
+              <span className="small"><b>٢) في التطبيق دوس «ده موبايل المحل» وصوّر ده</b></span>
+              <img src={pair.qr} alt="كود الربط" width={220} height={220} style={{ borderRadius: 12 }} />
+              <span className="small">أو اكتب الكود: <b dir="ltr" style={{ fontSize: 26, letterSpacing: 4 }}>{pair.code}</b></span>
+              <span className="tiny muted">الكود شغال ربع ساعة ولمرة واحدة.</span>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
   );
 }
 

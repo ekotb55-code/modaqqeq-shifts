@@ -13,6 +13,11 @@ data class Conn(
     val apps: List<String>,      // package names
     val appNames: List<String>,  // shown in the list
     val senders: List<String>,   // SMS sender names, matched case-insensitively
+    val managed: Boolean = false, // came by itself from Modaqqeq (account / shop phone)
+    val wallet: String = "",
+    val shopName: String = "",
+    val on: Boolean = true,       // «على الموبايل ده»
+    val edited: Boolean = false,  // apps/senders changed by hand → keep them on the next sync
 )
 
 object Store {
@@ -26,6 +31,7 @@ object Store {
             Conn(
                 o.getString("id"), o.optString("name"), o.getString("url"),
                 o.optJSONArray("apps").strings(), o.optJSONArray("appNames").strings(), o.optJSONArray("senders").strings(),
+                o.optBoolean("managed"), o.optString("wallet"), o.optString("shopName"), o.optBoolean("on", true), o.optBoolean("edited"),
             )
         }
     }
@@ -36,9 +42,32 @@ object Store {
             arr.put(JSONObject().apply {
                 put("id", x.id); put("name", x.name); put("url", x.url)
                 put("apps", JSONArray(x.apps)); put("appNames", JSONArray(x.appNames)); put("senders", JSONArray(x.senders))
+                put("managed", x.managed); put("wallet", x.wallet); put("shopName", x.shopName); put("on", x.on); put("edited", x.edited)
             })
         }
         prefs(c).edit().putString("conns", arr.toString()).apply()
+    }
+
+    fun active(c: Context) = conns(c).filter { it.on }
+
+    // The wallets Modaqqeq gave this phone: add new ones, update moved ones, drop removed ones.
+    // Hand-made links to the same wallet are replaced; «على الموبايل ده» and hand edits are kept.
+    fun applyManaged(c: Context, keys: List<JSONObject>) {
+        synchronized(this) {
+            val old = conns(c)
+            val byId = old.associateBy { it.id }
+            val nbeToo = keys.any { it.optString("wallet") == "nbe" }
+            val ids = keys.map { it.optString("k") }
+            val manual = old.filter { m -> !m.managed && ids.none { id -> m.url.contains("k=$id") } }
+            val managed = keys.map { k ->
+                val id = k.optString("k"); val w = k.optString("wallet"); val prev = byId[id]
+                val apps = Defaults.apps(c, w)
+                val base = Conn(id, k.optString("label"), k.optString("url"), apps.map { it.first }, apps.map { it.second }, Defaults.senders(w, nbeToo),
+                    managed = true, wallet = w, shopName = k.optString("shopName"), on = prev?.on ?: true)
+                if (prev != null && prev.edited) base.copy(apps = prev.apps, appNames = prev.appNames, senders = prev.senders, edited = true) else base
+            }
+            saveConns(c, manual + managed)
+        }
     }
 
     // What was sent lately (shown on the main screen)
