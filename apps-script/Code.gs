@@ -629,7 +629,7 @@ function purImage_(d) {
     return { ok: true, data: 'data:' + (b.getContentType() || 'image/jpeg') + ';base64,' + Utilities.base64Encode(b.getBytes()) };
   } catch (e) { return { ok: false, error: 'image' }; }
 }
-// شغّلها مرة من المحرر بعد ما شيت «فواتير المشتريات» يتشارك مع الحساب ده: بتاخد إذن قراءة الشيتات وتتأكد إنها شايفاه
+// شغّلها مرة من المحرر بعد ما شيت «فواتير المشتريات» يتشارك مع الحساب ده (مشاهدة بس، فمش هيقدر يكتب فيه): بتاخد إذن الشيتات وتتأكد إنها شايفاه
 function purCheck() {
   PropertiesService.getScriptProperties().deleteProperty('PUR_SHEET');
   const ss = purSS_();
