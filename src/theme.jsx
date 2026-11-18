@@ -15,11 +15,15 @@ export const THEMES = [
   { id: 'coffee', name: 'قهوة', sw: ['#6F4E37', '#F2C14E', '#C08552', '#7FB7BE'] },
   { id: 'peach', name: 'بناتي خوخي', sw: ['#FF7F6E', '#9EE6CF', '#FFC2B4', '#FFE29A'] },
   { id: 'lavender', name: 'بناتي لافندر', sw: ['#9B6BD6', '#BDE0FE', '#FFC8DD', '#E2CFFF'] },
+  { id: 'gold', name: 'ذهبي', sw: ['#A87B12', '#F2C94C', '#C9A25A', '#D9822B'] },
 ];
+// «داكن» من تطبيق مدقق Owners: هنا بيتعرض «ليلي» لحد ما الشاشات كلها تبقى جاهزة للداكن
+const ALIAS = { dark: 'night' };
 
 const key = (uid) => `mdq-theme-${uid || 'guest'}`;
 export function applyTheme(id) {
-  document.documentElement.dataset.theme = THEMES.some((t) => t.id === id) ? id : 'mdq';
+  const t = ALIAS[id] || id;
+  document.documentElement.dataset.theme = THEMES.some((x) => x.id === t) ? t : 'mdq';
 }
 export function useTheme(profile) {
   const [theme, setTheme] = useState(() => {

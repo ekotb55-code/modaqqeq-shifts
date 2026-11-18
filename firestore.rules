@@ -60,6 +60,19 @@ service cloud.firestore {
       // Anyone may change only his own app colours, picture and notification choices.
       allow update: if signedIn() && request.auth.uid == uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['theme', 'photo', 'notifyPrefs']);
+      // «مدقق Owners»: الأونر أو المدير بيعمل أكونت مدير لفروعه هو بس (مش أونر ولا إدارة).
+      // chain = مين عمله ومين فوقه، علشان كل واحد يشوف ويوقّف اللي تحته.
+      allow create: if hasProfile() && me().role in ['owner', 'manager'] && !me().get('disabled', false)
+        && request.resource.data.role == 'manager'
+        && request.resource.data.shopIds is list && request.resource.data.shopIds.size() > 0
+        && me().shopIds.hasAll(request.resource.data.shopIds)
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.chain == me().get('chain', []).concat([request.auth.uid])
+        && request.resource.data.keys().hasOnly(['role', 'name', 'email', 'shopIds', 'color', 'createdAt', 'createdBy', 'createdByName', 'chain']);
+      allow read: if signedIn() && request.auth.uid in resource.data.get('chain', []);
+      allow update: if hasProfile() && resource.data.role == 'manager' && me().role in ['owner', 'manager'] && !me().get('disabled', false)
+        && (request.auth.uid in resource.data.get('chain', []) || (me().role == 'owner' && me().shopIds.hasAll(resource.data.shopIds)))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['disabled', 'disabledAt', 'disabledBy']);
     }
 
     match /shifts/{shiftId} {

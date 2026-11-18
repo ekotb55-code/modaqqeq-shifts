@@ -87,6 +87,10 @@ object Home {
             val me = get(token, "users/$uid") ?: return "مقدرناش نقرا الأكونت"
             val role = me.optString("role")
             Photo.save(c, me.optString("photo").takeIf { it.startsWith("data:image") })
+            if (me.optBoolean("disabled")) { Account.signOut(c); return "الأكونت ده اتوقف · كلّم اللي عمله" }
+            // الشكل متحفوظ على الأكونت: لو اتغيّر من تطبيق الورديات ييجي هنا
+            me.optString("theme").takeIf { t -> Themes.ALL.any { it.id == t } }?.let { Themes.set(c, it) }
+            c.getSharedPreferences("home", Context.MODE_PRIVATE).edit().putString("role", role).apply()
             val ids = me.optJSONArray("shopIds")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList()
             val shops = (if (ids.isEmpty() && role in listOf("admin", "support")) emptyList() else ids)
                 .mapNotNull { id -> get(token, "shops/$id")?.put("_id", id) }

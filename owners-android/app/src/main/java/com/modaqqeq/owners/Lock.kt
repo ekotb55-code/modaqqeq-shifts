@@ -33,7 +33,9 @@ object Lock {
     }
     // بعد ٥ محاولات غلط: استنى ٣٠ ثانية
     fun waitSec(c: Context) = ((prefs(c).getLong("until", 0) - System.currentTimeMillis()) / 1000).toInt().coerceAtLeast(0)
-    fun clear(c: Context) = prefs(c).edit().clear().apply()
+    fun clear(c: Context) { val b = bioOn(c); prefs(c).edit().clear().putBoolean("bioOff", !b).apply() }
+    fun bioOn(c: Context) = !prefs(c).getBoolean("bioOff", false)
+    fun setBio(c: Context, on: Boolean) = prefs(c).edit().putBoolean("bioOff", !on).apply()
 }
 
 // صورة الأكونت: نفس صورة تطبيق الورديات (users/{uid}.photo · JPEG مربع 320)

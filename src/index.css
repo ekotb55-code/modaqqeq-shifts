@@ -563,6 +563,8 @@ body.net-bad .topbar { background: #FFF4E0; }
 :root[data-theme="lavender"] .hero { background: linear-gradient(135deg, #8E5CD1 0%, #B28AE6 55%, #FFC8DD 100%); }
 :root[data-theme="lavender"] .card { border-radius: 36px; }
 :root[data-theme="lavender"] .btn { border-radius: 999px; }
+:root[data-theme="gold"] { --bg: #FBF6E9; --blue: #A87B12; --blue-soft: #F3E4BE; --chip: #F5ECD2; --line: #EEE2C2; --lime: #F2C94C; --lime-soft: #FBEFC4; --lime-ink: #4A3600; --violet: #C9A25A; --orange: #D9822B; --yellow: #F2C94C; --sky: #8FB8C9; --pink: #E8A0A0; --ink: #2E2410; --muted: #7D6E4E; }
+:root[data-theme="gold"] .hero { background: linear-gradient(135deg, #6E4E05 0%, #A87B12 55%, #D9AE3F 100%); }
 
 .remember { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 18px; background: var(--chip); cursor: pointer; user-select: none; }
 .remember input { position: absolute; opacity: 0; width: 1px; height: 1px; }
