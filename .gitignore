@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+owners-android/.gradle/
+owners-android/build/
+owners-android/app/build/
+owners-android/local.properties

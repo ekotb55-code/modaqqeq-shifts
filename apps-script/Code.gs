@@ -407,7 +407,9 @@ function smsOne_(key, text) {
       : { type: 'sms', shopId: sid, shiftId: '', to: 'shopCashiers', toUid: '', byUid: '', atMs: now.getTime(), title: '💰 وصل تحويل ' + p.amount + ' ج', body: (p.fromName ? 'من ' + p.fromName + ' · ' : '') + (base.windowMin ? 'لو ده عميلك أكّده في التطبيق خلال ' + base.windowMin + ' دقيقة' : 'لو ده عميلك أكّده في التطبيق') };
     req_('post', FS + '/outbox', { fields: toFields_(ev) });
   });
-  return { ok: true };
+  // تطبيق «مدقق Owners» بيعرض شباك عايم بالتحويل وزرار «شخصي»
+  const WL = { insta: 'انستاباي', insta2: 'انستاباي شخصي', vf: 'فودافون كاش', nbe: 'الأهلي فون كاش' };
+  return { ok: true, popup: { amount: p.amount, from: p.fromName || '', wallet: WL[wallet] || wallet, big: !!big, actUrl: g.personal ? actUrl : '' } };
 }
 function md5_(t) { return Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, String(t)).map(function (b) { return ((b + 256) % 256).toString(16).padStart(2, '0'); }).join('').slice(0, 16); }
 // أقدم تحويل لسه مستني نصّه التاني: من «src» التاني، نفس المحفظة ونفس المبلغ، في آخر 45 دقيقة

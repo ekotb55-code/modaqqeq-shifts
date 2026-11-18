@@ -1,0 +1,38 @@
+name: Owners Android
+on:
+  push:
+    branches: [main]
+    paths: ['owners-android/**', '.github/workflows/owners-android.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build APK
+        working-directory: owners-android
+        env:
+          # مفتاح تجريبي (مرحلة التجربة) — قبل التسليم للعملاء يتنقل لـ GitHub Secrets
+          OWNERS_KEYSTORE: ${{ github.workspace }}/owners-android/keystore/test.jks
+          OWNERS_KS_PASS: owners-test
+        run: gradle --no-daemon :app:assembleRelease
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp owners-android/app/build/outputs/apk/release/app-release.apk modaqqeq-owners.apk
+          gh release view owners-latest >/dev/null 2>&1 || gh release create owners-latest --title "مدقق Owners" --notes "آخر نسخة من تطبيق مدقق Owners (أندرويد)"
+          gh release upload owners-latest modaqqeq-owners.apk --clobber
+      - uses: actions/upload-artifact@v4
+        with:
+          name: modaqqeq-owners
+          path: modaqqeq-owners.apk
