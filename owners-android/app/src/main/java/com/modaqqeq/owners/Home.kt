@@ -84,6 +84,7 @@ object Home {
         try {
             val me = get(token, "users/$uid") ?: return "مقدرناش نقرا الأكونت"
             val role = me.optString("role")
+            Photo.save(c, me.optString("photo").takeIf { it.startsWith("data:image") })
             val ids = me.optJSONArray("shopIds")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList()
             val shops = (if (ids.isEmpty() && role in listOf("admin", "support")) emptyList() else ids)
                 .mapNotNull { id -> get(token, "shops/$id")?.put("_id", id) }

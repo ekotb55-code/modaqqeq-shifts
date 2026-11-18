@@ -119,6 +119,7 @@ object Account {
 
     fun signOut(c: Context) {
         prefs(c).edit().clear().apply()
+        Lock.clear(c); Photo.save(c, null)
         Store.saveConns(c, Store.conns(c).filter { !it.managed })
         WorkManager.getInstance(c).cancelUniqueWork("sync")
     }

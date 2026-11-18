@@ -115,6 +115,13 @@ object Popup {
         if (actUrl.isNotBlank()) row.addView(btn("شخصي", "#C6FF1A", "#1E1B3A") { remove(); Personal.mark(c, actUrl) })
         row.addView(btn("تمام", "#33FFFFFF", "#FFFFFF") { remove() })
         card.addView(row)
+        // نفس خط التطبيق
+        runCatching {
+            val reg = android.graphics.Typeface.createFromAsset(app.assets, "fonts/alexandria-regular.ttf")
+            val bold = android.graphics.Typeface.createFromAsset(app.assets, "fonts/alexandria-bold.ttf")
+            fun walk(v: View) { if (v is TextView) v.typeface = if (v.typeface?.isBold == true) bold else reg; if (v is android.view.ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i)) }
+            walk(card)
+        }
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,

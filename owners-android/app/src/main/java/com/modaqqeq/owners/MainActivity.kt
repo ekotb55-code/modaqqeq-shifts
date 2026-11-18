@@ -66,8 +66,15 @@ class MainActivity : Activity() {
         setContentView(swipe)
     }
 
+    // القفل: كل مرة التطبيق يتفتح من الأول، أو بعد دقيقتين في الخلفية
+    private var unlocked = false
+    private var stoppedAt = 0L
+    override fun onStop() { super.onStop(); stoppedAt = System.currentTimeMillis() }
+
     override fun onResume() {
-        super.onResume(); render()
+        super.onResume()
+        if (stoppedAt > 0 && System.currentTimeMillis() - stoppedAt > 2 * 60_000) { unlocked = false; bioAsked = false }
+        render()
         // المحافظ بتتحدّث لوحدها كل ما التطبيق يتفتح (لو عدّى عشر دقايق)
         if (Account.mode(this).isNotEmpty() && System.currentTimeMillis() - Account.lastSync(this) > 10 * 60_000) bg({ Account.sync(this) }) { render() }
         // أرقام الصفحة الرئيسية: لو آخر تحديث أقدم من دقيقتين
@@ -99,7 +106,7 @@ class MainActivity : Activity() {
         layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) }
     }
     private fun button(t: String, primary: Boolean = true, onClick: () -> Unit) = Button(this).apply {
-        text = t; isAllCaps = false; textSize = 14f
+        text = t; isAllCaps = false; textSize = 14.5f; stateListAnimator = null; minHeight = dp(50); setTypeface(typeface, Typeface.BOLD)
         setTextColor(Color.parseColor(if (primary) "#FFFFFF" else INK))
         background = GradientDrawable().apply { cornerRadius = dp(99).toFloat(); setColor(Color.parseColor(if (primary) BLUE else "#E9ECFB")) }
         setOnClickListener { onClick() }
@@ -120,9 +127,24 @@ class MainActivity : Activity() {
             (Build.VERSION.SDK_INT < 33 || has(Manifest.permission.POST_NOTIFICATIONS)) && pm.isIgnoringBatteryOptimizations(packageName)
     }
 
-    private fun render() {
+    // نفس خط تطبيق الورديات (Alexandria) على كل الكلام
+    private val fReg by lazy { runCatching { Typeface.createFromAsset(assets, "fonts/alexandria-regular.ttf") }.getOrDefault(Typeface.DEFAULT) }
+    private val fBold by lazy { runCatching { Typeface.createFromAsset(assets, "fonts/alexandria-bold.ttf") }.getOrDefault(Typeface.DEFAULT_BOLD) }
+    private fun applyFont(v: View) {
+        if (v is TextView) { val b = v.typeface?.isBold == true; v.typeface = if (b) fBold else fReg }
+        if (v is android.view.ViewGroup) for (i in 0 until v.childCount) applyFont(v.getChildAt(i))
+    }
+    private fun render() { renderInner(); applyFont(root) }
+
+    private fun renderInner() {
         swipe?.isRefreshing = loadingHome || loadingTr || loadingPur
         root.removeAllViews()
+        val mode0 = Account.mode(this)
+        swipe?.isEnabled = mode0 != "user" || (unlocked && Lock.has(this))
+        // مش داخل: صفحة دخول كاملة · داخل ومفيش رقم سري: يختار رقم · مقفول: شاشة الأرقام
+        if (mode0.isEmpty() && page != "menu") { loginPage(); return }
+        if (mode0 == "user" && !Lock.has(this)) { pinPage("set"); return }
+        if (mode0 == "user" && !unlocked) { pinPage("unlock"); return }
         val mode = Account.mode(this)
         // الهيدر: العلامة والاسم، وأيقونة القايمة من غير زرار تقيل
         val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(2)) }
@@ -136,6 +158,7 @@ class MainActivity : Activity() {
             addView(text(if (page == "menu") "الأكونت والصلاحيات والمحافظ" else if (page == "purchase") "كل اللي متسجّل عليها" else when (Account.mode(this@MainActivity)) {
                 "user" -> "Owners · ${Account.name(this@MainActivity)}"; "shop" -> "Owners · موبايل المحل"; else -> "Owners" }, 11.5f, "#8A8AA0"))
         })
+        if (Account.mode(this) == "user" && page != "menu" && page != "purchase") top.addView(avatar(34) { go("menu") }.apply { (layoutParams as LinearLayout.LayoutParams).marginEnd = dp(4) })
         top.addView(iconBtn(if (page == "menu" || page == "purchase") "→" else "☰") { go(when (page) { "menu" -> "home"; "purchase" -> "purchases"; else -> "menu" }) })
         root.addView(top)
         if (page == "menu") { menuPage(); return }
@@ -147,7 +170,6 @@ class MainActivity : Activity() {
             setOnClickListener { go("menu") }
         })
         when (mode) {
-            "" -> { accountCard(); return }
             "shop" -> {
                 root.addView(card().apply {
                     addView(text("📱 موبايل محل ${Account.shopName(this@MainActivity)}", 18f, bold = true))
@@ -158,14 +180,14 @@ class MainActivity : Activity() {
             }
         }
         // الصفحتين
-        val tabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; background = round("#FFFFFF", 99); setPadding(dp(4), dp(4), dp(4), dp(4))
+        val tabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; background = round("#FFFFFF", 99); setPadding(dp(5), dp(5), dp(5), dp(5))
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) } }
         if (page != "purchase") listOf("home" to "🏠 الرئيسية", "transfers" to "📲 التحويلات", "purchases" to "🛒 المشتريات").forEach { (k, l) ->
             val on = page == k
             tabs.addView(TextView(this).apply {
                 text = l; textSize = 13.5f; gravity = Gravity.CENTER; setTypeface(typeface, if (on) Typeface.BOLD else Typeface.NORMAL)
                 setTextColor(Color.parseColor(if (on) "#FFFFFF" else "#6B6A80"))
-                background = if (on) GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Color.parseColor("#1565D8"), Color.parseColor("#5B8CFF"))).apply { cornerRadius = dp(99).toFloat() } else null
+                background = if (on) round(BLUE, 99) else null
                 setPadding(0, dp(11), 0, dp(11)); setOnClickListener { if (!on) { showAllDone = false; go(k) } }
             }, LinearLayout.LayoutParams(0, -2, 1f))
         }
@@ -250,6 +272,11 @@ class MainActivity : Activity() {
         val acc = card()
         when (Account.mode(this)) {
             "user" -> {
+                acc.addView(LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(8))
+                    addView(avatar(64) { pickPhoto() })
+                    addView(TextView(this@MainActivity).apply { text = "🖼 غيّر الصورة"; textSize = 14f; setTypeface(typeface, Typeface.BOLD); setTextColor(Color.parseColor(BLUE)); setPadding(dp(14), dp(10), dp(14), dp(10)); setOnClickListener { pickPhoto() } })
+                })
                 acc.addView(text("👤 داخل بأكونت ${Account.name(this).ifBlank { Account.email(this) }}", 17f, bold = true))
                 acc.addView(text("المحافظ اللي «مع ${Account.name(this).ifBlank { "الأكونت ده" }}» في الإعدادات بتيجي هنا لوحدها.", 13f, "#6B6A80"))
             }
@@ -269,9 +296,10 @@ class MainActivity : Activity() {
             if (last > 0) acc.addView(text("آخر تحديث للمحافظ: " + SimpleDateFormat("d/M h:mm a", Locale.forLanguageTag("ar-EG-u-nu-latn")).format(Date(last)), 12f, "#A9A8BC"))
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(8), 0, 0) }
             row.addView(button("🔄 حدّث المحافظ", false) { bg({ Account.sync(this) }) { e -> toast(e ?: "اتحدّثت ✓"); render() } })
+            if (Account.mode(this) == "user") acc.addView(button("🔒 غيّر الرقم السري", false) { Lock.clear(this); pinStage = ""; go("home") }.apply { layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) } })
             row.addView(button(if (Account.isShopPhone(this)) "فك الربط" else "خروج", false) {
                 AlertDialog.Builder(this).setMessage(if (Account.isShopPhone(this)) "تفك ربط موبايل المحل؟ المحافظ هتبطل تتبعت من هنا." else "تخرج من الأكونت؟ المحافظ هتبطل تتبعت من الموبايل ده.")
-                    .setPositiveButton("أيوه") { _, _ -> Account.signOut(this); render() }.setNegativeButton("لأ", null).show()
+                    .setPositiveButton("أيوه") { _, _ -> Account.signOut(this); unlocked = false; page = "home"; render() }.setNegativeButton("لأ", null).show()
             }.apply { layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) } })
             acc.addView(row)
         }
@@ -300,11 +328,7 @@ class MainActivity : Activity() {
         val tag = { s: JSONObject -> if (multi) " · ${s.optString("name")}" else "" }
 
         val at = data?.optLong("at") ?: 0
-        title("النهارده", when {
-            loadingHome && at == 0L -> "بنجيب الأرقام…"
-            at > 0 -> "آخر تحديث " + SimpleDateFormat("h:mm a", Locale.forLanguageTag("ar-EG-u-nu-latn")).format(Date(at)) + (homeErr?.let { " · ⚠️ $it" } ?: "")
-            else -> homeErr ?: ""
-        }, { refreshHome(true) }, loadingHome)
+        hero(at, shops)
         if (data == null) return
         if (all.size > 1) filterRow(listOf(dropChip(listOf("" to "كل المحلات") + all.map { it.optString("id") to it.optString("name") }, sel) { Home.setShop(this, it); render() }))
         if (all.isEmpty()) { root.addView(text("مفيش محلات على الأكونت ده", 13f, "#6B6A80")); return }
@@ -341,12 +365,12 @@ class MainActivity : Activity() {
         if ("sales" in chosen) {
             val known = rev.filter { !it.isNull("sales") }
             tiles += tile("💰 مبيعات النهارده", if (known.isEmpty()) "—" else money.format(known.sumOf { it.optDouble("sales") }) + " ج",
-                if (known.isEmpty()) "لسه مفيش وردية اتراجعت النهارده" else "من ${known.size} وردية اتراجعت", "#2E7D32", "#66BB6A")
+                if (known.isEmpty()) "لسه مفيش وردية اتراجعت النهارده" else "من ${known.size} وردية اتراجعت", "#B6F000", "")
         }
         if ("expenses" in chosen) {
             val closed = rev.filter { it.optBoolean("closed") }
             tiles += tile("🧾 مصروفات النهارده", money.format(closed.sumOf { it.optDouble("expenses") }) + " ج",
-                if (closed.isEmpty()) "من الورديات اللي اتقفلت · لسه مفيش" else "من ${closed.size} وردية اتقفلت", "#E65100", "#FF9800")
+                if (closed.isEmpty()) "من الورديات اللي اتقفلت · لسه مفيش" else "من ${closed.size} وردية اتقفلت", "#FF7A1A", "")
         }
         if ("diff" in chosen) {
             val led = shops.flatMap { objs(j(it, "ledger")) }
@@ -355,16 +379,16 @@ class MainActivity : Activity() {
             // أكبر عجز ظاهر علشان لو فيه رقم غلط (مبيعات اتكتبت غلط مثلًا) يبان على طول
             val top = led.filter { it.optString("kind") == "shortage" }.maxByOrNull { it.optDouble("amount") }
             val topTxt = top?.let { "\nأكبرهم: ${money.format(it.optDouble("amount"))} ج · ${it.optString("cashier")} ${it.optString("day").takeLast(5).split("-").reversed().joinToString("/")}" } ?: ""
-            tiles += tile("⚖️ عجز الشهر ده", money.format(sh) + " ج", "زيادة ${money.format(ov)} ج · ${led.size} وردية$topTxt", "#C62828", "#EF5350")
+            tiles += tile("⚖️ عجز الشهر ده", money.format(sh) + " ج", "زيادة ${money.format(ov)} ج · ${led.size} وردية$topTxt", "#FF7EB0", "")
         }
         if ("transfers" in chosen) {
             val got = wall.filter { it.first.optString("dir") != "out" && it.first.optString("status") !in listOf("personal", "rejected") }
             val by = got.groupBy { it.first.optString("w") }.map { (w, l) -> "${Home.walletName(w)}: ${money.format(l.sumOf { it.first.optDouble("amount") })} ج (${l.size})" }
-            tiles += tile("📲 تحويلات النهارده", money.format(got.sumOf { it.first.optDouble("amount") }) + " ج", if (by.isEmpty()) "لسه مفيش" else by.joinToString("\n"), "#5B2A9E", "#9C6ADE")
+            tiles += tile("📲 تحويلات النهارده", money.format(got.sumOf { it.first.optDouble("amount") }) + " ج", if (by.isEmpty()) "لسه مفيش" else by.joinToString("\n"), "#A07CFF", "")
         }
         if ("open" in chosen) {
             val o = shops.flatMap { s -> objs(j(s, "open")).map { it to s } }
-            tiles += tile("🟢 ورديات مفتوحة", "${o.size}", if (o.isEmpty()) "مفيش ورديات مفتوحة" else o.joinToString("\n") { (x, s) -> "${x.optString("cashier")} · من ${ago(x.optDouble("at"))}${tag(s)}" }, "#1565D8", "#42A5F5")
+            tiles += tile("🟢 ورديات مفتوحة", "${o.size}", if (o.isEmpty()) "مفيش ورديات مفتوحة" else o.joinToString("\n") { (x, s) -> "${x.optString("cashier")} · من ${ago(x.optDouble("at"))}${tag(s)}" }, "#1565D8", "")
         }
         if ("balances" in chosen) {
             val last = HashMap<String, JSONObject>()
@@ -375,7 +399,7 @@ class MainActivity : Activity() {
             val tf = SimpleDateFormat("h:mm a", Locale.forLanguageTag("ar-EG-u-nu-latn"))
             tiles += tile("🏦 رصيد المحافظ", if (last.isEmpty()) "—" else "${last.size} محفظة",
                 if (last.isEmpty()) "مفيش رسايل فيها رصيد النهارده" else last.values.joinToString("\n") { "${Home.walletName(it.optString("w"))}${if (multi) " · " + it.optString("_shop") else ""}: ${money.format(it.optDouble("bal"))} ج · ${tf.format(Date(it.optDouble("atMs").toLong()))}" },
-                "#0B4F2E", "#43A047")
+                "#1B7F3B", "")
         }
         if ("purchases" in chosen) {
             val pd = Purchases.cached(this)
@@ -385,7 +409,7 @@ class MainActivity : Activity() {
             val wait = pl.count { Purchases.pending(it.optString("status")) }
             tiles += tile("🛒 مشتريات النهارده", if (pd == null) "—" else money.format(pl.sumOf { it.optDouble("total") }) + " ج",
                 if (pd == null) "دوس ↻ علشان تتجاب" else if (pl.isEmpty()) "مفيش فواتير اترفعت النهارده" else "${pl.size} فاتورة" + if (wait > 0) " · $wait لسه مدخلتش السيستم" else " · كلها اتدخلت ✓",
-                "#00695C", "#26A69A").apply { setOnClickListener { go("purchases") } }
+                "#FFC400", "").apply { setOnClickListener { go("purchases") } }
         }
         tiles.chunked(2).forEach { pair ->
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, dp(10), 0, 0) }
@@ -905,12 +929,218 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun tile(title: String, big: String, sub: String, c1: String, c2: String) = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(dp(14), dp(12), dp(14), dp(12))
-        background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(Color.parseColor(c1), Color.parseColor(c2))).apply { cornerRadius = dp(22).toFloat() }
-        addView(text(title, 13f, "#FFFFFF", true))
-        addView(text(big, 24f, "#FFFFFF", true).apply { setPadding(0, dp(4), 0, dp(2)) })
-        addView(text(sub, 11.5f, "#F2F2FF"))
+    // ── صورة الأكونت (دايرة) ──
+    private val PHOTO_REQ = 7711
+    private fun avatar(size: Int, onClick: (() -> Unit)? = null): View {
+        val b = Photo.get(this)
+        val v: View = if (b != null) ImageView(this).apply {
+            setImageBitmap(b); scaleType = ImageView.ScaleType.CENTER_CROP; clipToOutline = true
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.WHITE) }
+        } else TextView(this).apply {
+            text = Account.name(this@MainActivity).trim().take(1).ifBlank { "👤" }; textSize = size / 2.6f; gravity = Gravity.CENTER; setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.parseColor(INK)); background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#B6F000")) }
+        }
+        v.layoutParams = LinearLayout.LayoutParams(dp(size), dp(size))
+        onClick?.let { f -> v.setOnClickListener { f() } }
+        return v
+    }
+    private fun pickPhoto() {
+        val pick = Intent(Intent.ACTION_GET_CONTENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE)
+        val cam = Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE)
+        runCatching { startActivityForResult(Intent.createChooser(pick, "صورتك").putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(cam)), PHOTO_REQ) }
+            .onFailure { toast("مفيش تطبيق صور على الموبايل") }
+    }
+
+    // ── الكارت الأزرق الكبير: «صباح الفل يا …» (زي تطبيق الورديات) ──
+    private fun hero(at: Long, shops: List<JSONObject>) {
+        val h = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Africa/Cairo")).get(java.util.Calendar.HOUR_OF_DAY)
+        val first = Account.name(this).trim().split(" ").firstOrNull().orEmpty()
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(18), dp(18), dp(16)); background = round(BLUE, 30)
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) }
+        }
+        val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
+        top.addView(avatar(58) { go("menu") }.apply { (layoutParams as LinearLayout.LayoutParams).marginEnd = dp(12)
+            foreground = GradientDrawable().apply { shape = GradientDrawable.OVAL; setStroke(dp(3), Color.WHITE) } })
+        top.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+            addView(text((if (h < 12) "صباح الفل" else "مساء الفل") + if (first.isNotBlank()) " يا $first" else "", 24f, "#FFFFFF", true))
+            addView(text(SimpleDateFormat("EEEE d/M", Locale.forLanguageTag("ar-EG-u-nu-latn")).format(Date()) + when {
+                loadingHome -> " · بيتحدّث…"
+                at > 0 -> " · آخر تحديث " + SimpleDateFormat("h:mm a", Locale.forLanguageTag("ar-EG-u-nu-latn")).format(Date(at))
+                else -> "" } + (homeErr?.let { " · ⚠️ $it" } ?: ""), 12f, "#D6E6FF"))
+        })
+        top.addView(iconBtn(if (loadingHome) "⏳" else "↻") { refreshHome(true) }.apply { setTextColor(Color.WHITE) })
+        box.addView(top)
+        // أهم رقمين
+        val known = shops.flatMap { objs(j(it, "reviews")) }.filter { !it.isNull("sales") }
+        val open = shops.sumOf { j(it, "open").length() }
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, dp(14), 0, 0) }
+        listOf("مبيعات النهارده" to (if (known.isEmpty()) "—" else money.format(known.sumOf { it.optDouble("sales") }) + " ج"),
+            "ورديات مفتوحة" to "$open").forEachIndexed { i, (l, v) ->
+            row.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(10), dp(14), dp(10))
+                background = GradientDrawable().apply { cornerRadius = dp(20).toFloat(); setColor(Color.parseColor("#2A7BEA")) }
+                addView(text(l, 12f, "#D6E6FF")); addView(text(v, 21f, "#FFFFFF", true))
+            }, LinearLayout.LayoutParams(0, -2, 1f).apply { if (i > 0) marginStart = dp(8) })
+        }
+        box.addView(row)
+        root.addView(box)
+    }
+
+    // ── صفحة الدخول (كاملة) ──
+    private var loginUser = ""
+    private var loginPass = ""
+    private var loginBusy = false
+    private var loginErr = ""
+    private fun field(hint: String, value: String, pass: Boolean, onChange: (String) -> Unit) = EditText(this).apply {
+        setText(value); this.hint = hint; textSize = 16f; textDirection = View.TEXT_DIRECTION_LTR; setSingleLine()
+        inputType = if (pass) InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD else InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+        background = round("#FFFFFF", 18); setPadding(dp(18), dp(14), dp(18), dp(14))
+        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) }
+        addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) { onChange(s?.toString() ?: "") }
+        })
+    }
+    private fun loginPage() {
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(0, dp(36), 0, 0)
+            addView(ImageView(this@MainActivity).apply { setImageResource(R.mipmap.ic_launcher); clipToOutline = true; background = round("#FFFFFF", 28); layoutParams = LinearLayout.LayoutParams(dp(96), dp(96)) })
+            addView(text("مدقق Owners", 28f, BLUE, true).apply { gravity = Gravity.CENTER; setPadding(0, dp(14), 0, 0) })
+            addView(text("أهلًا بيك 👋 ادخل بنفس الإيميل والباسورد بتوع تطبيق الورديات", 14f, "#6B6A80").apply { gravity = Gravity.CENTER; setPadding(dp(12), dp(4), dp(12), dp(10)) })
+        })
+        val box = card().apply { setPadding(dp(16), dp(10), dp(16), dp(18)) }
+        box.addView(field("الإيميل أو اسم المستخدم", loginUser, false) { loginUser = it })
+        box.addView(field("الباسورد", loginPass, true) { loginPass = it })
+        if (loginErr.isNotBlank()) box.addView(text("⚠️ $loginErr", 13f, "#B3261E", true).apply { setPadding(dp(4), dp(10), dp(4), 0) })
+        box.addView(button(if (loginBusy) "بيدخل…" else "ادخل") {
+            if (loginBusy) return@button
+            if (loginUser.isBlank() || loginPass.isBlank()) { loginErr = "اكتب الإيميل والباسورد"; render(); return@button }
+            loginBusy = true; loginErr = ""; render()
+            bg({ Account.signIn(this, loginUser, loginPass) }) { e ->
+                loginBusy = false
+                if (e != null) { loginErr = e; render(); return@bg }
+                loginPass = ""; unlocked = true; page = "home"; render(); refreshHome(false)
+            }
+        }.apply { textSize = 17f; layoutParams = LinearLayout.LayoutParams(-1, dp(58)).apply { topMargin = dp(16) } })
+        root.addView(box)
+        root.addView(TextView(this).apply {
+            text = "📱 ده موبايل المحل؟ اربطه بالكود"; textSize = 14.5f; setTypeface(typeface, Typeface.BOLD); setTextColor(Color.parseColor(BLUE)); gravity = Gravity.CENTER
+            setPadding(0, dp(18), 0, dp(8)); setOnClickListener { pairDialog() }
+        })
+        root.addView(TextView(this).apply {
+            text = "⚙️ الصلاحيات والإعدادات"; textSize = 13f; setTextColor(Color.parseColor("#8A8AA0")); gravity = Gravity.CENTER
+            setPadding(0, dp(4), 0, dp(8)); setOnClickListener { go("menu") }
+        })
+    }
+
+    // ── شاشة الأرقام (زي دخول الكاشير) ──
+    private var pinBuf = ""
+    private var pinStage = ""      // set1 / set2 لما بيختار رقم
+    private var pinFirst = ""
+    private var pinMsg = ""
+    private var bioAsked = false
+    private fun bioReady(): Boolean {
+        if (Build.VERSION.SDK_INT < 29) return false
+        val bm = getSystemService(android.hardware.biometrics.BiometricManager::class.java) ?: return false
+        return if (Build.VERSION.SDK_INT >= 30) bm.canAuthenticate(android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK) == android.hardware.biometrics.BiometricManager.BIOMETRIC_SUCCESS
+        else @Suppress("DEPRECATION") (bm.canAuthenticate() == android.hardware.biometrics.BiometricManager.BIOMETRIC_SUCCESS)
+    }
+    private fun askBio() {
+        if (Build.VERSION.SDK_INT < 29 || !bioReady()) return
+        runCatching {
+            val b = android.hardware.biometrics.BiometricPrompt.Builder(this).setTitle("افتح مدقق Owners").setSubtitle(Account.name(this))
+                .setNegativeButton("الرقم السري", mainExecutor) { _, _ -> }
+            if (Build.VERSION.SDK_INT >= 30) b.setAllowedAuthenticators(android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK)
+            b.build().authenticate(android.os.CancellationSignal(), mainExecutor, object : android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: android.hardware.biometrics.BiometricPrompt.AuthenticationResult?) { unlocked = true; pinBuf = ""; render() }
+            })
+        }
+    }
+    private fun pinPage(kind: String) {
+        if (kind == "set" && pinStage.isEmpty()) pinStage = "set1"
+        val setting = kind == "set"
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(0, dp(30), 0, 0) }
+        col.addView(avatar(92))
+        col.addView(text(Account.name(this).ifBlank { "مدقق Owners" }, 22f, INK, true).apply { gravity = Gravity.CENTER; setPadding(0, dp(12), 0, 0) })
+        col.addView(text(when {
+            pinMsg.isNotBlank() -> pinMsg
+            setting && pinStage == "set1" -> "اختار رقم سري من ٤ أرقام تفتح بيه التطبيق"
+            setting -> "اكتب الرقم تاني علشان نتأكد"
+            else -> "اكتب الرقم السري"
+        }, 14f, if (pinMsg.isNotBlank()) "#B3261E" else "#6B6A80").apply { gravity = Gravity.CENTER; setPadding(dp(12), dp(4), dp(12), dp(18)) })
+        // النقط
+        val dots = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER }
+        repeat(4) { i ->
+            dots.addView(View(this).apply {
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setStroke(dp(2), Color.parseColor(if (pinMsg.isNotBlank()) "#B3261E" else INK)); if (i < pinBuf.length) setColor(Color.parseColor(INK)) }
+                layoutParams = LinearLayout.LayoutParams(dp(22), dp(22)).apply { marginStart = dp(8); marginEnd = dp(8) }
+            })
+        }
+        col.addView(dots)
+        if (pinMsg.isNotBlank()) dots.post { dots.animate().translationX(dp(10).toFloat()).setDuration(50).withEndAction { dots.animate().translationX(-dp(10).toFloat()).setDuration(80).withEndAction { dots.animate().translationX(0f).setDuration(60).start() }.start() }.start() }
+        root.addView(col)
+        val wait = if (setting) 0 else Lock.waitSec(this)
+        if (wait > 0) root.addView(text("محاولات كتير غلط · استنى $wait ثانية", 13f, "#B3261E", true).apply { gravity = Gravity.CENTER; setPadding(0, dp(10), 0, 0) })
+        // الأرقام
+        val pad = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(22), dp(18), 0) }
+        val keys = listOf(listOf("1", "2", "3"), listOf("4", "5", "6"), listOf("7", "8", "9"), listOf(if (!setting && bioReady()) "bio" else "", "0", "del"))
+        keys.forEach { r ->
+            val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+            r.forEachIndexed { i, k ->
+                line.addView(TextView(this).apply {
+                    text = when (k) { "del" -> "⌫"; "bio" -> "☝"; else -> k }; textSize = if (k == "bio") 26f else 26f; gravity = Gravity.CENTER; setTypeface(typeface, Typeface.BOLD)
+                    setTextColor(Color.parseColor(INK)); background = if (k.isEmpty() || k == "del") null else round(if (k == "bio") "#E2FAB0" else "#FFFFFF", 22)
+                    isEnabled = k.isNotEmpty() && wait == 0
+                    setOnClickListener {
+                        when (k) {
+                            "del" -> { pinBuf = pinBuf.dropLast(1); pinMsg = ""; render() }
+                            "bio" -> askBio()
+                            else -> { if (pinBuf.length < 4) { pinBuf += k; pinMsg = ""; render(); if (pinBuf.length == 4) Handler(Looper.getMainLooper()).postDelayed({ pinDone(setting) }, 120) } }
+                        }
+                    }
+                }, LinearLayout.LayoutParams(0, dp(66), 1f).apply { if (i > 0) marginStart = dp(12) })
+            }
+            pad.addView(line, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
+        }
+        root.addView(pad)
+        if (!setting) root.addView(TextView(this).apply {
+            text = "نسيت الرقم؟ ادخل بالإيميل تاني"; textSize = 13.5f; setTypeface(typeface, Typeface.BOLD); setTextColor(Color.parseColor(BLUE)); gravity = Gravity.CENTER; setPadding(0, dp(22), 0, dp(8))
+            setOnClickListener {
+                AlertDialog.Builder(this@MainActivity).setMessage("هتخرج من الأكونت وتدخل تاني بالإيميل والباسورد، وتختار رقم جديد. المحافظ هترجع لوحدها.")
+                    .setPositiveButton("تمام") { _, _ -> Account.signOut(this@MainActivity); unlocked = false; pinBuf = ""; render() }.setNegativeButton("لأ", null).show()
+            }
+        })
+        if (!setting && !bioAsked && wait == 0 && bioReady()) { bioAsked = true; root.post { askBio() } }
+    }
+    private fun pinDone(setting: Boolean) {
+        val p = pinBuf; pinBuf = ""
+        if (setting) {
+            if (pinStage == "set1") { pinFirst = p; pinStage = "set2"; pinMsg = ""; render(); return }
+            if (p != pinFirst) { pinStage = "set1"; pinFirst = ""; pinMsg = "الرقمين مش زي بعض · اختار تاني"; render(); return }
+            Lock.set(this, p); pinStage = ""; pinFirst = ""; pinMsg = ""; unlocked = true; toast("✓ الرقم السري اتحفظ"); render(); return
+        }
+        bg({ if (Lock.check(this, p)) null else "x" }) { e ->
+            if (e == null) { unlocked = true; pinMsg = ""; render(); refreshHome(false) }
+            else { pinMsg = if (Lock.waitSec(this) > 0) "محاولات كتير غلط" else "الرقم غلط"; render() }
+        }
+    }
+
+    // كارت ملخص بألوان تطبيق الورديات (لون صريح + دايرة فيها الأيقونة)
+    private fun tile(title: String, big: String, sub: String, c1: String, @Suppress("UNUSED_PARAMETER") c2: String) = LinearLayout(this).apply {
+        val dark = run { val c = Color.parseColor(c1); (0.299 * Color.red(c) + 0.587 * Color.green(c) + 0.114 * Color.blue(c)) > 150 }
+        val fg = if (dark) INK else "#FFFFFF"; val soft = if (dark) "#3A3950" else "#EEF2FF"
+        orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(dp(14), dp(14), dp(14), dp(14))
+        background = round(c1, 28)
+        val icon = title.substringBefore(" "); val name = title.substringAfter(" ")
+        addView(TextView(this@MainActivity).apply { text = icon; textSize = 18f; gravity = Gravity.CENTER
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(if (dark) 0x40FFFFFF else 0x33FFFFFF) }
+            layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)) })
+        addView(text(name, 13f, fg, true).apply { setPadding(0, dp(10), 0, 0) })
+        addView(text(big, 23f, fg, true).apply { setPadding(0, dp(2), 0, dp(2)) })
+        addView(text(sub, 11.5f, soft))
     }
 
     private fun homeSettings() {
@@ -1030,6 +1260,18 @@ class MainActivity : Activity() {
     }
     @Deprecated("Activity result")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == PHOTO_REQ) {
+            if (resultCode != RESULT_OK || data == null) return
+            val bmp: android.graphics.Bitmap? = runCatching {
+                data.data?.let { u -> contentResolver.openInputStream(u)?.use { android.graphics.BitmapFactory.decodeStream(it) } }
+                    ?: @Suppress("DEPRECATION") (data.extras?.get("data") as? android.graphics.Bitmap)
+            }.getOrNull()
+            if (bmp == null) { toast("مقدرناش نفتح الصورة"); return }
+            toast("بيحفظ الصورة…")
+            val d = Photo.square(bmp)
+            bg({ Photo.upload(this, d) }) { e -> toast(e ?: "اتغيّرت الصورة ✓ · هتظهر في تطبيق الورديات كمان"); render() }
+            return
+        }
         val r = IntentIntegrator.parseActivityResult(requestCode, resultCode, data)
         if (r == null) { super.onActivityResult(requestCode, resultCode, data); return }
         val t = r.contents ?: return
