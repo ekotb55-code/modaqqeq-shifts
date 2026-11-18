@@ -22,6 +22,7 @@ import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -56,6 +57,7 @@ class MainActivity : Activity() {
         if (Account.mode(this).isNotEmpty() && System.currentTimeMillis() - Account.lastSync(this) > 10 * 60_000) bg({ Account.sync(this) }) { render() }
         // أرقام الصفحة الرئيسية: لو آخر تحديث أقدم من دقيقتين
         if (Account.mode(this) == "user" && System.currentTimeMillis() - (Home.cached(this)?.optLong("at") ?: 0) > 2 * 60_000) refreshHome(false)
+        if (Account.mode(this) == "user" && page == "transfers" && System.currentTimeMillis() - (Transfers.cached(this)?.optLong("at") ?: 0) > 60_000) refreshTransfers(false)
     }
 
     private var loadingHome = false
@@ -88,56 +90,60 @@ class MainActivity : Activity() {
         setOnClickListener { onClick() }
     }
 
+    // الصفحات: الرئيسية / التحويلات، و ☰ فيها كل الإعدادات
+    private var page = "home"
+    private fun go(p: String) { page = p; render(); (root.parent as? ScrollView)?.scrollTo(0, 0) }
+    @Deprecated("back")
+    override fun onBackPressed() { if (page != "home") go("home") else super.onBackPressed() }
+
+    private fun allOk(): Boolean {
+        val pm = getSystemService(PowerManager::class.java)
+        return notifAccess() && has(Manifest.permission.RECEIVE_SMS) && Settings.canDrawOverlays(this) &&
+            (Build.VERSION.SDK_INT < 33 || has(Manifest.permission.POST_NOTIFICATIONS)) && pm.isIgnoringBatteryOptimizations(packageName)
+    }
+
     private fun render() {
         root.removeAllViews()
-        root.addView(text("مدقق Owners", 26f, BLUE, true))
-        root.addView(text("بيقرا رسايل البنك وإشعارات التحويلات على التليفون ده ويبعتها لمدقق، ويطلّعلك شباك فيه التحويل وزرار «شخصي».", 14f, "#6B6A80"))
+        val mode = Account.mode(this)
+        val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
+        top.addView(ImageView(this).apply { setImageResource(R.mipmap.ic_launcher); layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginEnd = dp(10) } })
+        top.addView(text(if (page == "menu") "الإعدادات" else "مدقق Owners", 24f, BLUE, true).apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1f) })
+        top.addView(button(if (page == "menu") "رجوع ←" else "☰", false) { go(if (page == "menu") "home" else "menu") }.apply { textSize = if (page == "menu") 14f else 22f; layoutParams = LinearLayout.LayoutParams(-2, dp(48)) })
+        root.addView(top)
+        if (page == "menu") { menuPage(); return }
 
-        if (Account.mode(this) == "user") home()
-
-        // الموبايل ده بتاع مين؟
-        val acc = card()
-        when (Account.mode(this)) {
-            "user" -> {
-                acc.addView(text("👤 داخل بأكونت ${Account.name(this).ifBlank { Account.email(this) }}", 17f, bold = true))
-                acc.addView(text("المحافظ اللي «مع ${Account.name(this).ifBlank { "الأكونت ده" }}» في الإعدادات بتيجي هنا لوحدها.", 13f, "#6B6A80"))
-            }
-            "shop" -> {
-                acc.addView(text("📱 موبايل محل ${Account.shopName(this)}", 17f, bold = true))
-                acc.addView(text("بيقرا محافظ المحل اللي «مع موبايل المحل» ويبعتها ساكت، من غير شباك ولا أرقام.", 13f, "#6B6A80"))
-            }
-            else -> {
-                acc.addView(text("الموبايل ده بتاع مين؟", 17f, bold = true))
-                acc.addView(text("ادخل بأكونتك (صاحب المحل أو المدير) والمحافظ هتتظبط لوحدها. ولو ده موبايل المحل اربطه بالكود اللي في الإعدادات.", 13f, "#6B6A80"))
-                acc.addView(button("👤 ادخل بأكونتك") { login() }.apply { layoutParams = LinearLayout.LayoutParams(-1, dp(52)).apply { topMargin = dp(10) } })
-                acc.addView(button("📱 ده موبايل المحل", false) { pairDialog() }.apply { layoutParams = LinearLayout.LayoutParams(-1, dp(52)).apply { topMargin = dp(8) } })
-            }
-        }
-        if (Account.mode(this).isNotEmpty()) {
-            val last = Account.lastSync(this)
-            if (last > 0) acc.addView(text("آخر تحديث للمحافظ: " + SimpleDateFormat("d/M h:mm a", Locale.forLanguageTag("ar-EG-u-nu-latn")).format(Date(last)), 12f, "#A9A8BC"))
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(8), 0, 0) }
-            row.addView(button("🔄 حدّث المحافظ", false) { bg({ Account.sync(this) }) { e -> toast(e ?: "اتحدّثت ✓"); render() } })
-            row.addView(button(if (Account.isShopPhone(this)) "فك الربط" else "خروج", false) {
-                AlertDialog.Builder(this).setMessage(if (Account.isShopPhone(this)) "تفك ربط موبايل المحل؟ المحافظ هتبطل تتبعت من هنا." else "تخرج من الأكونت؟ المحافظ هتبطل تتبعت من الموبايل ده.")
-                    .setPositiveButton("أيوه") { _, _ -> Account.signOut(this); render() }.setNegativeButton("لأ", null).show()
-            }.apply { layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) } })
-            acc.addView(row)
-        }
-        root.addView(acc)
-
-        // ١) الصلاحيات
-        val perms = card()
-        val pmx = getSystemService(PowerManager::class.java)
-        val allOk = notifAccess() && has(Manifest.permission.RECEIVE_SMS) && Settings.canDrawOverlays(this) &&
-            (Build.VERSION.SDK_INT < 33 || has(Manifest.permission.POST_NOTIFICATIONS)) && pmx.isIgnoringBatteryOptimizations(packageName)
-        perms.addView(text("١) الصلاحيات على التليفون ده" + if (allOk && !showPerms) "  ✅ كلها شغالة" else "", 17f, bold = true).apply {
-            if (allOk) setOnClickListener { showPerms = !showPerms; render() }
+        // صلاحية مقفولة؟ تنبيه صغير يفتح ☰
+        if (!allOk()) root.addView(card().apply {
+            background = GradientDrawable().apply { cornerRadius = dp(20).toFloat(); setColor(Color.parseColor("#FFF4E0")) }
+            addView(text("⚠️ فيه صلاحية مقفولة على الموبايل ده · التحويلات ممكن متوصلش. دوس هنا وفعّلها", 14f, "#8A5A00", true))
+            setOnClickListener { go("menu") }
         })
-        if (allOk && !showPerms) {
-            perms.addView(text("دوس هنا لو عايز تشوفها", 12f, "#A9A8BC").apply { setOnClickListener { showPerms = true; render() } })
-            root.addView(perms)
-        } else {
+        when (mode) {
+            "" -> { accountCard(); return }
+            "shop" -> {
+                root.addView(card().apply {
+                    addView(text("📱 موبايل محل ${Account.shopName(this@MainActivity)}", 18f, bold = true))
+                    addView(text("شغال · بيقرا محافظ المحل ويبعتها لمدقق ساكت، من غير شباك ولا أرقام.", 13f, "#6B6A80"))
+                    addView(text("${Store.active(this@MainActivity).size} محفظة شغالة على الموبايل ده", 13f, "#2E7D32", true).apply { setPadding(0, dp(6), 0, 0) })
+                })
+                return
+            }
+        }
+        // الصفحتين
+        val tabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, dp(12), 0, 0) }
+        listOf("home" to "🏠 الرئيسية", "transfers" to "📲 التحويلات").forEachIndexed { i, (k, l) ->
+            tabs.addView(button(l, page == k) { if (k == "transfers" && Transfers.cached(this) == null) refreshTransfers(false); go(k) }.apply { layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f).apply { if (i == 1) marginStart = dp(8) } })
+        }
+        root.addView(tabs)
+        if (page == "transfers") transfers() else home()
+    }
+
+    // ☰: الأكونت، الصلاحيات، المحافظ، السجل، وإعدادات الصفحة الرئيسية
+    private fun menuPage() {
+        accountCard()
+        if (Account.mode(this) == "user") root.addView(button("⚙️ إعدادات الصفحة الرئيسية (الكروت والتنبيهات)", false) { homeSettings() }.apply { layoutParams = LinearLayout.LayoutParams(-1, dp(52)).apply { topMargin = dp(12) } })
+        val perms = card()
+        perms.addView(text("✅ الصلاحيات على التليفون ده", 17f, bold = true))
         permRow(perms, "قراءة إشعارات التطبيقات (انستاباي، الأهلي فون كاش…)", notifAccess()) { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
         permRow(perms, "قراءة رسايل البنك (SMS)", has(Manifest.permission.RECEIVE_SMS)) { requestPermissions(arrayOf(Manifest.permission.RECEIVE_SMS), 1) }
         permRow(perms, "الشباك العايم فوق التطبيقات", Settings.canDrawOverlays(this)) {
@@ -149,17 +155,16 @@ class MainActivity : Activity() {
             startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
         }
         perms.addView(text("لو التليفون قالك «إعداد مقيّد»: افتح «معلومات التطبيق» ← النقط التلاتة فوق ← «السماح بالإعدادات المقيّدة»، وارجع فعّل تاني.", 12f, "#8A5A00").apply { setPadding(0, dp(8), 0, dp(4)) })
-        perms.addView(button("جرّب الشباك العايم", false) {
+        perms.addView(text("لو التليفون قالك «إعداد مقيّد»: افتح «معلومات التطبيق» ← النقط التلاتة فوق ← «السماح بالإعدادات المقيّدة»، وارجع فعّل تاني.", 12f, "#8A5A00").apply { setPadding(0, dp(8), 0, dp(4)) })
+        perms.addView(button("🧪 جرّب الشباك العايم", false) {
             Popup.show(this, 1.0, "تجربة", "انستاباي", false, "")
             Handler(Looper.getMainLooper()).postDelayed({ render() }, 800)
         })
-        perms.addView(button("افتح معلومات التطبيق", false) { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) })
+        perms.addView(button("افتح معلومات التطبيق", false) { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) }.apply { layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) } })
         root.addView(perms)
-        }
-
-        // ٢) المحافظ المربوطة
+        // 💳 المحافظ المربوطة
         val links = card()
-        links.addView(text("٢) المحافظ المربوطة", 17f, bold = true))
+        links.addView(text("💳 المحافظ المربوطة", 17f, bold = true))
         val conns = Store.conns(this)
         if (conns.isEmpty()) links.addView(text(if (Account.mode(this).isEmpty()) "ادخل بأكونتك أو اربط موبايل المحل فوق، والمحافظ هتيجي لوحدها." else "مفيش محافظ «مع ${if (Account.isShopPhone(this)) "موبايل المحل" else "الأكونت ده"}» في الإعدادات لسه.", 13f, "#6B6A80"))
         // محفظتين من نفس النوع شغالين هنا = نفس الإشعار هيروح للاتنين
@@ -192,7 +197,7 @@ class MainActivity : Activity() {
 
         // ٣) آخر حاجات اتبعتت
         val log = card()
-        log.addView(text("٣) آخر حاجات اتبعتت لمدقق", 17f, bold = true))
+        log.addView(text("🧾 آخر حاجات اتبعتت لمدقق", 17f, bold = true))
         val arr = Store.log(this)
         if (arr.length() == 0) log.addView(text("لسه مفيش", 13f, "#6B6A80"))
         val tf = SimpleDateFormat("d/M h:mm a", Locale.forLanguageTag("ar-EG-u-nu-latn"))
@@ -204,6 +209,41 @@ class MainActivity : Activity() {
         root.addView(log)
         root.addView(text("نسخة ${packageManager.getPackageInfo(packageName, 0).versionName}", 11f, "#A9A8BC").apply { setPadding(0, dp(12), 0, 0) })
     }
+
+    private fun accountCard() {
+        // الموبايل ده بتاع مين؟
+        val acc = card()
+        when (Account.mode(this)) {
+            "user" -> {
+                acc.addView(text("👤 داخل بأكونت ${Account.name(this).ifBlank { Account.email(this) }}", 17f, bold = true))
+                acc.addView(text("المحافظ اللي «مع ${Account.name(this).ifBlank { "الأكونت ده" }}» في الإعدادات بتيجي هنا لوحدها.", 13f, "#6B6A80"))
+            }
+            "shop" -> {
+                acc.addView(text("📱 موبايل محل ${Account.shopName(this)}", 17f, bold = true))
+                acc.addView(text("بيقرا محافظ المحل اللي «مع موبايل المحل» ويبعتها ساكت، من غير شباك ولا أرقام.", 13f, "#6B6A80"))
+            }
+            else -> {
+                acc.addView(text("الموبايل ده بتاع مين؟", 17f, bold = true))
+                acc.addView(text("ادخل بأكونتك (صاحب المحل أو المدير) والمحافظ هتتظبط لوحدها. ولو ده موبايل المحل اربطه بالكود اللي في الإعدادات.", 13f, "#6B6A80"))
+                acc.addView(button("👤 ادخل بأكونتك") { login() }.apply { layoutParams = LinearLayout.LayoutParams(-1, dp(52)).apply { topMargin = dp(10) } })
+                acc.addView(button("📱 ده موبايل المحل", false) { pairDialog() }.apply { layoutParams = LinearLayout.LayoutParams(-1, dp(52)).apply { topMargin = dp(8) } })
+            }
+        }
+        if (Account.mode(this).isNotEmpty()) {
+            val last = Account.lastSync(this)
+            if (last > 0) acc.addView(text("آخر تحديث للمحافظ: " + SimpleDateFormat("d/M h:mm a", Locale.forLanguageTag("ar-EG-u-nu-latn")).format(Date(last)), 12f, "#A9A8BC"))
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(8), 0, 0) }
+            row.addView(button("🔄 حدّث المحافظ", false) { bg({ Account.sync(this) }) { e -> toast(e ?: "اتحدّثت ✓"); render() } })
+            row.addView(button(if (Account.isShopPhone(this)) "فك الربط" else "خروج", false) {
+                AlertDialog.Builder(this).setMessage(if (Account.isShopPhone(this)) "تفك ربط موبايل المحل؟ المحافظ هتبطل تتبعت من هنا." else "تخرج من الأكونت؟ المحافظ هتبطل تتبعت من الموبايل ده.")
+                    .setPositiveButton("أيوه") { _, _ -> Account.signOut(this); render() }.setNegativeButton("لأ", null).show()
+            }.apply { layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) } })
+            acc.addView(row)
+        }
+        root.addView(acc)
+
+    }
+
 
     private var showPerms = false
     private val money = DecimalFormat("#,##0.##", java.text.DecimalFormatSymbols(Locale.US))
@@ -323,6 +363,168 @@ class MainActivity : Activity() {
             root.addView(row)
         }
         if (tiles.isEmpty()) root.addView(text("مفيش ملخصات مختارة · دوس ⚙️ واختار", 13f, "#6B6A80"))
+    }
+
+    // ── 📲 التحويلات ──
+    private var loadingTr = false
+    private var trErr: String? = null
+    private var undo: Pair<String, () -> String?>? = null   // آخر قرار، علشان «تراجع»
+    private fun refreshTransfers(say: Boolean) {
+        if (loadingTr) return
+        loadingTr = true; if (page == "transfers") render()
+        bg({ Transfers.load(this) }) { e -> loadingTr = false; trErr = e; if (say && e == null) toast("اتحدّثت ✓"); render() }
+    }
+    // يعمل القرار، يحدّث القايمة، ويطلّع «تراجع» لمدة 8 ثواني
+    private fun act(work: () -> String?, done: String, back: (() -> String?)?) {
+        toast("بيحفظ…")
+        bg(work) { e ->
+            if (e != null) { toast(e); return@bg }
+            undo = if (back != null) done to back else null
+            val mine = undo
+            Handler(Looper.getMainLooper()).postDelayed({ if (undo === mine) { undo = null; render() } }, 8000)
+            refreshTransfers(false)
+        }
+    }
+
+    private fun transfers() {
+        val data = Transfers.cached(this)
+        val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(14), 0, 0) }
+        head.addView(text("📲 التحويلات", 20f, INK, true).apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1f) })
+        head.addView(button(if (loadingTr) "⏳" else "🔄", false) { refreshTransfers(true) }.apply { layoutParams = LinearLayout.LayoutParams(dp(56), dp(44)) })
+        root.addView(head)
+        val at = data?.optLong("at") ?: 0
+        root.addView(text(when {
+            loadingTr && at == 0L -> "بنجيب التحويلات…"
+            at > 0 -> "آخر تحديث: " + SimpleDateFormat("h:mm a", Locale.forLanguageTag("ar-EG-u-nu-latn")).format(Date(at)) + (trErr?.let { " · ⚠️ $it" } ?: "")
+            else -> trErr ?: ""
+        }, 12f, "#8A8AA0"))
+
+        // الفلاتر: الأيام والمحفظة والمحل
+        fun chips(opts: List<Pair<String, String>>, sel: String, pick: (String) -> Unit) {
+            val sc = android.widget.HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, dp(8), 0, 0) }
+            opts.forEach { (k, l) -> row.addView(button(l, k == sel) { pick(k) }.apply { textSize = 13f; layoutParams = LinearLayout.LayoutParams(-2, dp(40)).apply { marginEnd = dp(6) } }) }
+            sc.addView(row); root.addView(sc)
+        }
+        chips(listOf("1" to "النهارده", "2" to "من امبارح", "7" to "آخر 7 أيام"), Transfers.days(this).toString()) { Transfers.setDays(this, it.toInt()); refreshTransfers(false) }
+        val shopsAll = objs(j(data, "shops"))
+        val raw = objs(j(data, "list"))
+        val wallets = raw.map { it.optString("wallet") }.distinct()
+        if (wallets.size > 1) chips(listOf("" to "كل المحافظ") + wallets.map { it to Home.walletName(it) }, Transfers.wallet(this)) { Transfers.setWallet(this, it); render() }
+        val selShop = Home.shop(this).takeIf { id -> shopsAll.any { it.optString("id") == id } } ?: ""
+        if (shopsAll.size > 1) chips(listOf("" to "كل المحلات") + shopsAll.map { it.optString("id") to it.optString("name") }, selShop) { Home.setShop(this, it); render() }
+
+        undo?.let { (t, back) ->
+            val bar = card().apply { background = GradientDrawable().apply { cornerRadius = dp(20).toFloat(); setColor(Color.parseColor(INK)) } }
+            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            r.addView(text("✓ $t", 14f, "#FFFFFF", true).apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1f) })
+            r.addView(button("تراجع", false) { undo = null; act(back, "رجع زي ما كان", null) })
+            bar.addView(r); root.addView(bar)
+        }
+        if (data == null) return
+
+        val shopName = shopsAll.associate { it.optString("id") to it.optString("name") }
+        val wf = Transfers.wallet(this)
+        val filtered = raw.filter { (wf.isEmpty() || it.optString("wallet") == wf) && (selShop.isEmpty() || it.optString("shopId") == selShop) }
+        // نفس التحويل ممكن يكون في كذا فرع: نعرضه مرة واحدة
+        val groups = filtered.groupBy { it.optString("group").ifBlank { it.optString("_id") } }.values.map { copies ->
+            val main = copies.firstOrNull { it.optString("status") in listOf("claimed", "rejected", "approved") } ?: copies.first()
+            main to copies
+        }
+        val now = System.currentTimeMillis().toDouble()
+        fun t(x: JSONObject, k: String) = x.optDouble(k, 0.0).takeIf { it > 0 } ?: x.optDouble("atMs", 0.0)
+        fun win(x: JSONObject): Double { val m = x.optDouble("windowMin", 60.0); return if (m == 0.0) 36 * 3_600_000.0 else (if (m > 0) m else 60.0) * 60_000 }
+        fun live(x: JSONObject) = x.optString("status") == "new" && t(x, "releasedAtMs") > now - win(x)
+        val newest = { k: String -> compareByDescending<Pair<JSONObject, List<JSONObject>>> { t(it.first, k) } }
+        val lLive = groups.filter { live(it.first) }.sortedWith(newest("releasedAtMs"))
+        val lBig = groups.filter { it.first.optString("status") == "big" }.sortedWith(newest("atMs"))
+        val lClaim = groups.filter { it.first.optString("status") == "claimed" }.sortedWith(newest("claimedAtMs"))
+        val lDone = groups.filter { it.first.optString("status") in listOf("approved", "rejected", "personal", "expired") || (it.first.optString("status") == "new" && !live(it.first)) }.sortedWith(newest("decidedAtMs"))
+
+        val tf = SimpleDateFormat("EEE h:mm a", Locale.forLanguageTag("ar-EG-u-nu-latn"))
+        fun whenTxt(ms: Double) = if (ms > 0) tf.format(Date(ms.toLong())) else ""
+        fun twin(x: JSONObject) = groups.any { (y, _) -> y !== x && y.optString("wallet") == x.optString("wallet") && y.optDouble("amount") == x.optDouble("amount") &&
+            y.optString("status") !in listOf("rejected", "personal") && Math.abs(y.optDouble("atMs") - x.optDouble("atMs")) < 45 * 60_000 }
+        fun bank(x: JSONObject): String {
+            var b = if (twin(x) && x.optString("status") !in listOf("rejected", "personal")) " · ⚠️ ممكن يكون متكرر · راجع الاسم" else ""
+            if (x.optString("src") == "note") b += if (x.optBoolean("bankOk")) " · ✓ رسالة البنك" else if (now - x.optDouble("atMs") > 30 * 60_000) " · ⚠️ من غير رسالة بنك" else " · مستني رسالة البنك"
+            return b
+        }
+        fun branches(copies: List<JSONObject>) = if (shopsAll.size > 1) " · " + copies.mapNotNull { shopName[it.optString("shopId")] }.distinct().joinToString("، ") else ""
+
+        fun row(parent: LinearLayout, x: JSONObject, sub: String, btns: List<Triple<String, String, () -> Unit>>) {
+            val r = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(10), 0, dp(10)) }
+            val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
+            val w = x.optString("wallet")
+            line.addView(View(this).apply {
+                background = GradientDrawable().apply { cornerRadius = dp(10).toFloat(); setColor(Color.parseColor(when { w.startsWith("vf") -> "#E60000"; w == "nbe" -> "#1F8A4C"; else -> "#7B2FBE" })) }
+                layoutParams = LinearLayout.LayoutParams(dp(8), dp(38)).apply { marginEnd = dp(10) }
+            })
+            val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, -2, 1f) }
+            col.addView(text("${Transfers.money(x.optDouble("amount"))} ج · ${x.optString("fromName").ifBlank { "عميل" }}", 16f, INK, true))
+            col.addView(text("${Home.walletName(w)} · $sub", 12f, "#6B6A80"))
+            line.addView(col); r.addView(line)
+            if (btns.isNotEmpty()) {
+                val br = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(dp(18), dp(6), 0, 0) }
+                btns.forEach { (l, kind, f) ->
+                    br.addView(Button(this).apply {
+                        text = l; isAllCaps = false; textSize = 13f
+                        val (bgc, fg) = when (kind) { "ok" -> "#2E7D32" to "#FFFFFF"; "no" -> "#FDE7E7" to "#B3261E"; else -> "#E9ECFB" to INK }
+                        setTextColor(Color.parseColor(fg)); background = GradientDrawable().apply { cornerRadius = dp(99).toFloat(); setColor(Color.parseColor(bgc)) }
+                        setOnClickListener { f() }
+                        layoutParams = LinearLayout.LayoutParams(-2, dp(40)).apply { marginEnd = dp(8) }
+                    })
+                }
+                r.addView(br)
+            }
+            parent.addView(r)
+            parent.addView(View(this).apply { setBackgroundColor(Color.parseColor("#EEF0F8")); layoutParams = LinearLayout.LayoutParams(-1, dp(1)) })
+        }
+        fun sec(title: String, hint: String, list: List<Pair<JSONObject, List<JSONObject>>>, body: (LinearLayout) -> Unit) {
+            if (list.isEmpty()) return
+            val c = card()
+            c.addView(text("$title · ${list.size}", 17f, INK, true))
+            if (hint.isNotBlank()) c.addView(text(hint, 12f, "#8A8AA0"))
+            body(c); root.addView(c)
+        }
+        if (lLive.isEmpty() && lBig.isEmpty() && lClaim.isEmpty()) root.addView(card().apply { addView(text("مفيش تحويلات مستنية حاجة دلوقتي ✓", 15f, "#6B6A80")) })
+
+        sec("⏳ وصلت دلوقتي", "ظاهرة للكاشيرية", lLive) { c ->
+            lLive.forEach { (x, cp) -> row(c, x, whenTxt(t(x, "releasedAtMs")) + branches(cp) + (x.optString("fromPhone").takeIf { it.isNotBlank() }?.let { " · $it" } ?: "") + bank(x),
+                if (x.optBoolean("allowPersonal", true)) listOf(Triple("شخصي", "", { act({ Transfers.setAll(this, cp, "personal", "اتعلّم شخصي") }, "اتعلّم شخصي") { Transfers.setAll(this, cp, x.optString("status"), "رجع زي ما كان") } })) else emptyList()) }
+        }
+        sec("⚠️ مستنية قرارك", "أكبر من الحد · مش ظاهرة للكاشير", lBig) { c ->
+            lBig.forEach { (x, cp) -> row(c, x, whenTxt(x.optDouble("atMs")) + branches(cp) + bank(x), listOfNotNull(
+                Triple("ابعته للكاشير", "ok", { act({ Transfers.setAll(this, cp, "new", "اتبعت للكاشيرية", release = true) }, "اتبعت للكاشيرية") { Transfers.setAll(this, cp, "big", "رجع زي ما كان") } }),
+                if (x.optBoolean("allowPersonal", true)) Triple("شخصي", "", { act({ Transfers.setAll(this, cp, "personal", "اتعلّم شخصي") }, "اتعلّم شخصي") { Transfers.setAll(this, cp, "big", "رجع زي ما كان") } }) else null)) }
+        }
+        sec("✋ أكّدها الكاشير", "طابقها بالفاتورة على البرنامج", lClaim) { c ->
+            lClaim.forEach { (x, cp) -> row(c, x, "${x.optString("claimedByName")} · فاتورة ${x.optString("claimInvoice").ifBlank { "—" }} · ${whenTxt(t(x, "claimedAtMs"))}${branches(cp)}${bank(x)}", listOf(
+                Triple("✓ تبع المحل", "ok", { act({ Transfers.setOne(this, x, "approved", "اتعلّم تبع المحل") }, "اتعلّم تبع المحل") { Transfers.setOne(this, x, "claimed", "رجع زي ما كان") } }),
+                Triple("✗ مش بتاعه", "no", {
+                    AlertDialog.Builder(this).setMessage("ترفض ${Transfers.money(x.optDouble("amount"))} ج اللي ${x.optString("claimedByName")} أكّده؟ المبلغ هيبقى على الكاشير.")
+                        .setPositiveButton("أيوه ارفضه") { _, _ -> act({ Transfers.refuse(this, x, false) }, "اترفض · المبلغ بقى على الكاشير") { Transfers.refuse(this, x, true) } }
+                        .setNegativeButton("لأ", null).show()
+                }))) }
+        }
+        sec("اللي خلص", "تبع المحل / مرفوض / شخصي / عدّى وقته", lDone) { c ->
+            lDone.forEach { (x, cp) ->
+                val st = x.optString("status"); val by = x.optString("decidedByName").takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""
+                val txt = when (st) {
+                    "approved" -> "✓ تبع المحل$by · أكّده ${x.optString("claimedByName")}"
+                    "rejected" -> "❌ اترفض$by · كان أكّده ${x.optString("claimedByName")}"
+                    "personal" -> "شخصي$by"
+                    else -> "عدّى وقته ومحدش أكّده"
+                }
+                val b: Triple<String, String, () -> Unit>? = when (st) {
+                    "approved" -> Triple("رجّعه", "", { act({ Transfers.setOne(this, x, "claimed", "رجع لـ«أكّدها الكاشير»") }, "رجع لـ«أكّدها الكاشير»", null) })
+                    "rejected" -> Triple("رجّعه", "", { act({ Transfers.refuse(this, x, true) }, "رجع زي ما كان · المبلغ رجع في حساب الكاشير", null) })
+                    "personal" -> Triple("ابعته للكاشير", "", { act({ Transfers.setAll(this, cp, "new", "اتبعت للكاشيرية", release = true) }, "اتبعت للكاشيرية") { Transfers.setAll(this, cp, "personal", "رجع زي ما كان") } })
+                    else -> Triple("اظهره تاني", "", { act({ Transfers.setAll(this, cp, "new", "ظهر تاني للكاشيرية", release = true) }, "ظهر تاني للكاشيرية", null) })
+                }
+                row(c, x, "$txt · ${whenTxt(t(x, "decidedAtMs"))}${branches(cp)}", listOfNotNull(b))
+            }
+        }
     }
 
     private fun tile(title: String, big: String, sub: String, c1: String, c2: String) = LinearLayout(this).apply {

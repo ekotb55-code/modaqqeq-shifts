@@ -11,7 +11,7 @@ import java.util.TimeZone
 // The owner's home: alerts + the summary cards he chose, read straight from Modaqqeq with his own sign-in
 // (no Google Apps Script, so it never touches the daily limit).
 object Home {
-    private const val FS = "https://firestore.googleapis.com/v1/projects/modaqqeq-shifts/databases/(default)/documents"
+    internal const val FS = "https://firestore.googleapis.com/v1/projects/modaqqeq-shifts/databases/(default)/documents"
     private fun prefs(c: Context) = c.getSharedPreferences("home", Context.MODE_PRIVATE)
 
     // ── what the owner chose ──
@@ -58,12 +58,12 @@ object Home {
         f.parse(s.take(19))!!.time.toDouble()
     }.getOrDefault(0.0)
 
-    private fun get(token: String, path: String): JSONObject? {
+    internal fun get(token: String, path: String): JSONObject? {
         val r = Net.authed("$FS/$path", token, null)
         return if (r.first == 200) fields(JSONObject(r.second)) else null
     }
-    private fun eq(field: String, v: String) = JSONObject().put("fieldFilter", JSONObject().put("field", JSONObject().put("fieldPath", field)).put("op", "EQUAL").put("value", JSONObject().put("stringValue", v)))
-    private fun query(token: String, coll: String, vararg filters: JSONObject): List<JSONObject> {
+    internal fun eq(field: String, v: String) = JSONObject().put("fieldFilter", JSONObject().put("field", JSONObject().put("fieldPath", field)).put("op", "EQUAL").put("value", JSONObject().put("stringValue", v)))
+    internal fun query(token: String, coll: String, vararg filters: JSONObject): List<JSONObject> {
         val where = if (filters.size == 1) filters[0] else JSONObject().put("compositeFilter", JSONObject().put("op", "AND").put("filters", JSONArray(filters.toList())))
         val body = JSONObject().put("structuredQuery", JSONObject().put("from", JSONArray().put(JSONObject().put("collectionId", coll))).put("where", where).put("limit", 500))
         val r = Net.authed("$FS:runQuery", token, body.toString())
@@ -73,7 +73,7 @@ object Home {
     }
 
     private val cairo = TimeZone.getTimeZone("Africa/Cairo")
-    private fun dayKey(ms: Long) = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = cairo }.format(Date(ms))
+    internal fun dayKey(ms: Long) = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = cairo }.format(Date(ms))
     private val WALLET = mapOf("insta" to "انستاباي", "insta2" to "انستاباي شخصي", "vf" to "فودافون كاش", "vf2" to "فودافون كاش شخصي", "nbe" to "الأهلي فون كاش")
 
     // Everything the home needs, for the shops this account may see. Returns an error text or null.
