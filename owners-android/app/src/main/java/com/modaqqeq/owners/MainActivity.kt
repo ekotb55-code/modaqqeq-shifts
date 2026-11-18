@@ -272,7 +272,7 @@ class MainActivity : Activity() {
             addView(TextView(this@MainActivity).apply { text = "📤"; textSize = 22f; gravity = Gravity.CENTER
                 background = GradientDrawable().apply { cornerRadius = dp(16).toFloat(); setColor(0x33FFFFFF) }; layoutParams = LinearLayout.LayoutParams(dp(50), dp(50)).apply { marginEnd = dp(12) } })
             addView(LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
-                addView(text("شارك التطبيق", 16f, "#FFFFFF", true)); addView(text("واتساب، بلوتوث، المشاركة القريبة…", 12f, "#E6FFFFFF")) })
+                addView(text("شارك التطبيق", 16f, "#FFFFFF", true)); addView(text("بيبعت ملف التطبيق نفسه · واتساب، بلوتوث، المشاركة القريبة", 12f, "#E6FFFFFF")) })
             addView(text("‹", 24f, "#FFFFFF", true))
             setOnClickListener { shareApp() }
         })
@@ -281,11 +281,8 @@ class MainActivity : Activity() {
 
     // المشاركة: الرابط (واتساب والكلام) أو ملف التطبيق نفسه (بلوتوث والمشاركة القريبة، من غير نت)
     private val APK_LINK = "https://github.com/ekotb55-code/modaqqeq-shifts/releases/download/owners-latest/modaqqeq-owners.apk"
-    private fun shareApp() {
-        AlertDialog.Builder(this).setTitle("📤 شارك مدقق Owners")
-            .setItems(arrayOf("🔗 ابعت الرابط (واتساب، رسالة…)", "📦 ابعت التطبيق نفسه (بلوتوث، المشاركة القريبة)")) { _, i -> if (i == 0) shareLink() else shareApk() }
-            .setNegativeButton("إلغاء", null).show()
-    }
+    // الزرار بيبعت ملف التطبيق نفسه (APK) على طول
+    private fun shareApp() = shareApk()
     private fun shareLink() {
         val msg = "📲 مدقق Owners · تطبيق صاحب المحل والمدير من مدقق\nالمبيعات والورديات والتحويلات والمشتريات على موبايلك.\n\nنزّله من هنا:\n$APK_LINK\n\nبعد ما يخلص التحميل افتح الملف ودوس «تثبيت»، وادخل بنفس أكونت تطبيق الورديات."
         runCatching { startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, msg).putExtra(Intent.EXTRA_SUBJECT, "مدقق Owners"), "ابعت الرابط بـ…")) }
@@ -299,7 +296,7 @@ class MainActivity : Activity() {
             java.io.File(applicationInfo.sourceDir).inputStream().use { i -> out.outputStream().use { o -> i.copyTo(o) } }
             null
         }) { e ->
-            if (e != null) { toast("مقدرناش نجهّز الملف · ابعت الرابط بدل كده"); return@bg }
+            if (e != null) { toast("مقدرناش نجهّز الملف · هنبعت الرابط بداله"); shareLink(); return@bg }
             val f = java.io.File(java.io.File(cacheDir, "share"), "مدقق-Owners.apk")
             val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.share", f)
             val send = Intent(Intent.ACTION_SEND).setType("application/vnd.android.package-archive").putExtra(Intent.EXTRA_STREAM, uri)
