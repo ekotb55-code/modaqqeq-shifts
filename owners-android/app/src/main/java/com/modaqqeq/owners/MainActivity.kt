@@ -263,7 +263,50 @@ class MainActivity : Activity() {
                 setOnClickListener { go(k) }
             })
         }
+        // 📤 شارك التطبيق
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            background = GradientDrawable(GradientDrawable.Orientation.RIGHT_LEFT, intArrayOf(Color.parseColor(T.hero[1]), Color.parseColor(T.hero[2]))).apply { cornerRadius = dp(22).toFloat() }
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) }
+            addView(TextView(this@MainActivity).apply { text = "📤"; textSize = 22f; gravity = Gravity.CENTER
+                background = GradientDrawable().apply { cornerRadius = dp(16).toFloat(); setColor(0x33FFFFFF) }; layoutParams = LinearLayout.LayoutParams(dp(50), dp(50)).apply { marginEnd = dp(12) } })
+            addView(LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+                addView(text("شارك التطبيق", 16f, "#FFFFFF", true)); addView(text("واتساب، بلوتوث، المشاركة القريبة…", 12f, "#E6FFFFFF")) })
+            addView(text("‹", 24f, "#FFFFFF", true))
+            setOnClickListener { shareApp() }
+        })
         root.addView(text("مدقق Owners · نسخة ${packageManager.getPackageInfo(packageName, 0).versionName}", 11f, FAINT).apply { gravity = Gravity.CENTER; setPadding(0, dp(18), 0, 0) })
+    }
+
+    // المشاركة: الرابط (واتساب والكلام) أو ملف التطبيق نفسه (بلوتوث والمشاركة القريبة، من غير نت)
+    private val APK_LINK = "https://github.com/ekotb55-code/modaqqeq-shifts/releases/download/owners-latest/modaqqeq-owners.apk"
+    private fun shareApp() {
+        AlertDialog.Builder(this).setTitle("📤 شارك مدقق Owners")
+            .setItems(arrayOf("🔗 ابعت الرابط (واتساب، رسالة…)", "📦 ابعت التطبيق نفسه (بلوتوث، المشاركة القريبة)")) { _, i -> if (i == 0) shareLink() else shareApk() }
+            .setNegativeButton("إلغاء", null).show()
+    }
+    private fun shareLink() {
+        val msg = "📲 مدقق Owners · تطبيق صاحب المحل والمدير من مدقق\nالمبيعات والورديات والتحويلات والمشتريات على موبايلك.\n\nنزّله من هنا:\n$APK_LINK\n\nبعد ما يخلص التحميل افتح الملف ودوس «تثبيت»، وادخل بنفس أكونت تطبيق الورديات."
+        runCatching { startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, msg).putExtra(Intent.EXTRA_SUBJECT, "مدقق Owners"), "ابعت الرابط بـ…")) }
+            .onFailure { toast("مفيش تطبيق للمشاركة على الموبايل") }
+    }
+    private fun shareApk() {
+        toast("بيجهّز الملف…")
+        bg({
+            val dir = java.io.File(cacheDir, "share").apply { mkdirs() }
+            val out = java.io.File(dir, "مدقق-Owners.apk")
+            java.io.File(applicationInfo.sourceDir).inputStream().use { i -> out.outputStream().use { o -> i.copyTo(o) } }
+            null
+        }) { e ->
+            if (e != null) { toast("مقدرناش نجهّز الملف · ابعت الرابط بدل كده"); return@bg }
+            val f = java.io.File(java.io.File(cacheDir, "share"), "مدقق-Owners.apk")
+            val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.share", f)
+            val send = Intent(Intent.ACTION_SEND).setType("application/vnd.android.package-archive").putExtra(Intent.EXTRA_STREAM, uri)
+                .putExtra(Intent.EXTRA_TEXT, "مدقق Owners · افتح الملف ودوس «تثبيت»").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            runCatching { startActivity(Intent.createChooser(send, "ابعت التطبيق بـ…").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }
+                .onFailure { toast("مفيش تطبيق للمشاركة على الموبايل") }
+        }
     }
 
     private fun section(t: String) = root.addView(text(t, 13f, MUTED, true).apply { setPadding(dp(6), dp(18), dp(6), 0) })
@@ -1330,6 +1373,10 @@ class MainActivity : Activity() {
         root.addView(TextView(this).apply {
             text = "⚙️ الصلاحيات والإعدادات"; textSize = 13f; setTextColor(col(MUTED)); gravity = Gravity.CENTER
             setPadding(0, dp(4), 0, dp(8)); setOnClickListener { go("set_link") }
+        })
+        root.addView(TextView(this).apply {
+            text = "📤 شارك التطبيق"; textSize = 13f; setTextColor(col(MUTED)); gravity = Gravity.CENTER
+            setPadding(0, dp(4), 0, dp(8)); setOnClickListener { shareApp() }
         })
     }
 
