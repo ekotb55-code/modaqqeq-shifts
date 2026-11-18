@@ -988,14 +988,11 @@ class MainActivity : Activity() {
         return SimpleDateFormat(if (withDay) "EEEE d/M · h:mm a" else "h:mm a", Locale.forLanguageTag("ar-EG-u-nu-latn")).format(Date(ms))
     }
 
-    private val PURCHASES_PKG = "com.modaqqeq.purchases"
-    private val PURCHASES_WEB = "https://ekotb55-code.github.io/modaqqeq-dashboard/purchases/"
-    private fun purchasesInstalled() = packageManager.getLaunchIntentForPackage(PURCHASES_PKG) != null
+    // تطبيق «مدقق» الكامل (جرد + مشتريات + دعم + استلام) على الويب — لو متثبّت على الشاشة الرئيسية بيفتح هو على طول
+    private val MODAQQEQ_WEB = "https://ekotb55-code.github.io/modaqqeq-dashboard/modaqqeq/"
     private fun openPurchasesApp() {
-        val app = packageManager.getLaunchIntentForPackage(PURCHASES_PKG)
-        val ok = runCatching { startActivity(app ?: Intent(Intent.ACTION_VIEW, Uri.parse(PURCHASES_WEB))) }.isSuccess
-        if (!ok) toast("مقدرناش نفتح تطبيق المشتريات · افتح $PURCHASES_WEB من المتصفح")
-        else if (app == null) toast("بعد ما ترفع الفاتورة ارجع هنا واسحب لتحت علشان تظهر")
+        val ok = runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(MODAQQEQ_WEB))) }.isSuccess
+        toast(if (ok) "بعد ما ترفع الفاتورة ارجع هنا واسحب لتحت علشان تظهر" else "مقدرناش نفتح مدقق · افتح $MODAQQEQ_WEB من المتصفح")
     }
     private fun purchasesPage() {
         val data = Purchases.cached(this)
@@ -1005,7 +1002,7 @@ class MainActivity : Activity() {
             at > 0 -> "آخر تحديث " + SimpleDateFormat("h:mm a", Locale.forLanguageTag("ar-EG-u-nu-latn")).format(Date(at)) + (purErr?.let { " · ⚠️ $it" } ?: "")
             else -> purErr ?: ""
         }, { refreshPurchases(true) }, loadingPur)
-        // ➕ فاتورة جديدة: يفتح تطبيق «مشتريات ودعم فني» لو متسطب، ولو لأ نسخة الويب
+        // ➕ فاتورة جديدة: يفتح تطبيق «مدقق» الكامل
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(16), dp(12), dp(14), dp(12))
@@ -1015,7 +1012,7 @@ class MainActivity : Activity() {
                 background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0x33FFFFFF) }; layoutParams = LinearLayout.LayoutParams(dp(42), dp(42)).apply { marginEnd = dp(12) } })
             addView(LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
                 addView(text("ضيف فاتورة مشتريات", 16f, "#FFFFFF", true))
-                addView(text(if (purchasesInstalled()) "يفتح تطبيق «مشتريات ودعم فني»" else "يفتح «مشتريات ودعم فني» على الويب", 11.5f, "#E6FFFFFF")) })
+                addView(text("يفتح تطبيق «مدقق» ← المشتريات", 11.5f, "#E6FFFFFF")) })
             addView(text("‹", 24f, "#FFFFFF", true))
             setOnClickListener { openPurchasesApp() }
         })
