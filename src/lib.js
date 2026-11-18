@@ -185,6 +185,8 @@ export const normUsername = (u) => String(u || '').trim().toLowerCase()
   .replace(/[ً-ٰٟـ]/g, '')
   .replace(/[أإآٱ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').replace(/ؤ/g, 'و').replace(/ئ/g, 'ي')
   .replace(/\s+/g, '');
+// اسم المحل للمطابقة مع المشتريات (نفس normShop_ في apps-script/Code.gs)
+export const normShopName = (s) => String(s || '').trim().toLowerCase().replace(/[\u064B-\u0652\u0640]/g, '').replace(/[أإآٱ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').replace(/\s+/g, '');
 export const cashierEmail = (u) => {
   const n = normUsername(u);
   if (/^[a-z0-9._-]+$/.test(n)) return `${n}@cashier.modaqqeq.app`;

@@ -235,6 +235,10 @@ function doPost(e) {
     if (body.action === 'mykeys') return json_(myKeys_(body.idToken));
     if (body.action === 'pair') return json_(pair_(body.code));
     if (body.action === 'shopkeys') return json_(shopKeys_(body.shopId, body.token));
+    if (body.action === 'purchases') return json_(purchases_(body));
+    if (body.action === 'purchase') return json_(purchase_(body));
+    if (body.action === 'pimage') return json_(purImage_(body));
+    if (body.action === 'pstores') return json_(purStores_(body));
     return json_({ ok: false, error: 'unknown action' });
   } catch (err) { return json_({ ok: false, error: String(err) }); }
 }
@@ -452,11 +456,21 @@ function keysWhere_(filters) {
   });
 }
 function eqF_(field, v) { return { fieldFilter: { field: { fieldPath: field }, op: 'EQUAL', value: { stringValue: String(v) } } }; }
-function myKeys_(idToken) {
-  if (!idToken) return { ok: false, error: 'login' };
+// مين صاحب الطلب (بتسجيل دخوله في مدقق) — بنفتكره ساعة إلا ربع علشان مانسألش جوجل كل مرة
+function uidOf_(idToken) {
+  if (!idToken) return '';
+  const cache = CacheService.getScriptCache();
+  const ck = 'tok:' + md5_(idToken);
+  const hit = cache.get(ck);
+  if (hit) return hit;
   const r = UrlFetchApp.fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + WEB_KEY_, { method: 'post', contentType: 'application/json', payload: JSON.stringify({ idToken: String(idToken) }), muteHttpExceptions: true });
   let uid = '';
   try { uid = (JSON.parse(r.getContentText()).users || [])[0].localId || ''; } catch (e) { uid = ''; }
+  if (uid) cache.put(ck, uid, 45 * 60);
+  return uid;
+}
+function myKeys_(idToken) {
+  const uid = uidOf_(idToken);
   if (!uid) return { ok: false, error: 'login' };
   const ur = req_('get', FS + '/users/' + uid);
   const u = ur.code === 200 ? fields_(ur.json) : {};
@@ -484,6 +498,159 @@ function shopKeys_(shopId, token) {
   const sr = req_('get', FS + '/shops/' + shopId);
   return { ok: true, shopName: sr.code === 200 ? (fields_(sr.json).name || '') : '', keys: keysWhere_([eqF_('shopId', shopId), eqF_('holder', 'shop')]) };
 }
+// ───────── المشتريات لصاحب المحل ─────────
+// من شيت «فواتير المشتريات» بتاع لوحة الدعم (متشارك مع الحساب ده مشاهدة بس) — من غير ما نلمس مشروع «دليل الموظفين».
+// المحل بيتربط بالاسم: اسمه في تطبيق الورديات = اسمه في المشتريات، أو الاسم اللي اتختار في الإعدادات (purchasesName).
+function purSS_() {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty('PUR_SHEET');
+  if (id) { try { return SpreadsheetApp.openById(id); } catch (e) { /* اتشال أو اتغيّر: ندوّر تاني */ } }
+  const it = DriveApp.searchFiles("title = 'فواتير المشتريات' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false");
+  if (!it.hasNext()) throw new Error('nosheet');
+  const f = it.next();
+  props.setProperty('PUR_SHEET', f.getId());
+  return SpreadsheetApp.openById(f.getId());
+}
+function purRows_(ss, name) {
+  const sh = ss.getSheetByName(name);
+  if (!sh || sh.getLastRow() < 2) return { m: {}, rows: [] };
+  const v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getValues();
+  const m = {};
+  v[0].forEach(function (h, i) { h = String(h).trim(); if (h) m[h] = i; });
+  return { m: m, rows: v.slice(1).filter(function (r) { return String(r[m['id']] || r[m['id الفاتورة']] || '').trim(); }) };
+}
+// نفس توحيد الكتابة اللي في تطبيق الورديات (src/lib.js · normShopName)
+function normShop_(s) {
+  return String(s || '').trim().toLowerCase().replace(/[ً-ْـ]/g, '').replace(/[أإآٱ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').replace(/\s+/g, '');
+}
+function iso_(v) { return v instanceof Date ? v.toISOString() : (v ? String(v) : ''); }
+function purObj_(t, r) {
+  const g = function (c) { return (c in t.m) ? r[t.m[c]] : ''; };
+  const n = function (c) { return Number(g(c)) || 0; };
+  const list = function (c) { return String(g(c) || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean); };
+  return {
+    id: String(g('id')), store: String(g('المحل')), supplier: String(g('المورد')), number: String(g('رقم فاتورة المورد')),
+    createdAt: iso_(g('وقت الرفع')), user: String(g('الموظف')), count: n('عدد الأصناف'), total: n('الإجمالي'), notes: String(g('ملاحظات')),
+    status: String(g('الحالة')).trim(), receivedBy: String(g('استلمها')), receivedAt: iso_(g('وقت الاستلام')),
+    systemNo: String(g('رقم الفاتورة في السيستم')), balance: String(g('رصيد المورد')), doneBy: String(g('أدخلها')), doneAt: iso_(g('وقت الإدخال')),
+    photos: list('صور الفرع'), screens: list('سكرينات السيستم'), merged: String(g('الصورة المدمجة') || '').trim(),
+    typedTotal: g('الإجمالي المكتوب') === '' ? null : Number(g('الإجمالي المكتوب')), totalNote: String(g('ملاحظة الإجمالي')),
+    priceChanges: n('تعديلات أسعار البيع'), pricesBy: String(g('عدّل الأسعار')),
+    rejectReason: String(g('سبب الرفض')), rejectedBy: String(g('رفضها')), rejectedAt: iso_(g('وقت الرفض')), rejectCount: n('مرات الرفض'),
+    reviewedBy: String(g('راجعها الفرع')), reviewedAt: iso_(g('وقت المراجعة')), reviewNotes: String(g('ملاحظات المراجعة')),
+    urgeCount: n('مرات الاستعجال'), urgedAt: iso_(g('آخر استعجال')), urgeLog: String(g('سجل الاستعجال')),
+    report: String(g('تقرير المدير')), priceUps: n('زيادات الأسعار'), priceDowns: n('نقص الأسعار'),
+    qaBy: String(g('راجعتها الجودة')), qaAt: iso_(g('وقت اعتماد الجودة')), qaChecks: String(g('بنود الجودة')), qaNotes: String(g('ملاحظات الجودة')),
+    qaRejects: n('مرات رجوع الجودة'), qaLog: String(g('سجل الجودة'))
+  };
+}
+// محلات صاحب الأكونت: اسم كل واحد في المشتريات ← المحل
+function purAccess_(idToken) {
+  const uid = uidOf_(idToken);
+  if (!uid) return { error: 'login' };
+  const ur = req_('get', FS + '/users/' + uid);
+  const u = ur.code === 200 ? fields_(ur.json) : {};
+  if (!u.role || u.disabled || ['owner', 'manager', 'admin', 'support'].indexOf(u.role) < 0) return { error: 'role' };
+  const map = {}, shops = [];
+  (u.shopIds || []).forEach(function (id) {
+    const sr = req_('get', FS + '/shops/' + id);
+    if (sr.code !== 200) return;
+    const s = fields_(sr.json);
+    const key = normShop_(s.purchasesName || s.name);
+    map[key] = { id: id, name: s.name || '' };
+    shops.push({ id: id, name: s.name || '', key: key });
+  });
+  return { uid: uid, role: u.role, all: !(u.shopIds || []).length && ['admin', 'support'].indexOf(u.role) >= 0, map: map, shops: shops };
+}
+function purchases_(d) {
+  const a = purAccess_(d.idToken);
+  if (a.error) return { ok: false, error: a.error };
+  let ss;
+  try { ss = purSS_(); } catch (e) { return { ok: false, error: 'nosheet' }; }
+  const days = Math.min(Math.max(Number(d.days) || 7, 1), 92);
+  const since = Date.now() - days * 86400000;
+  const t = purRows_(ss, 'الفواتير');
+  const found = {};
+  const list = t.rows.map(function (r) { return purObj_(t, r); }).filter(function (v) {
+    const k = normShop_(v.store);
+    if (!a.all && !a.map[k]) return false;
+    found[k] = true;
+    return v.createdAt && new Date(v.createdAt).getTime() >= since;
+  }).map(function (v) {
+    const sh = a.map[normShop_(v.store)];
+    v.shopId = sh ? sh.id : ''; v.shopName = sh ? sh.name : v.store;
+    delete v.urgeLog; delete v.qaLog; // السجلات الطويلة في التفاصيل بس
+    return v;
+  });
+  list.sort(function (x, y) { return y.createdAt.localeCompare(x.createdAt); });
+  // المحلات اللي ملهاش أي فاتورة باسمها في الشيت (يعني مش مربوطة)
+  const unmatched = a.shops.filter(function (s) { return !found[s.key]; }).map(function (s) { return s.name; });
+  return { ok: true, list: list.slice(0, 600), unmatched: unmatched, days: days };
+}
+function purFind_(a, id) {
+  const ss = purSS_();
+  const t = purRows_(ss, 'الفواتير');
+  const r = t.rows.find(function (x) { return String(x[t.m['id']]) === String(id); });
+  if (!r) return null;
+  const v = purObj_(t, r);
+  if (!a.all && !a.map[normShop_(v.store)]) return null;
+  return { ss: ss, inv: v };
+}
+function purchase_(d) {
+  const a = purAccess_(d.idToken);
+  if (a.error) return { ok: false, error: a.error };
+  let f;
+  try { f = purFind_(a, d.id); } catch (e) { return { ok: false, error: 'nosheet' }; }
+  if (!f) return { ok: false, error: 'notfound' };
+  const l = purRows_(f.ss, 'أصناف الفواتير');
+  const g = function (r, c) { return (c in l.m) ? r[l.m[c]] : ''; };
+  const num = function (v) { return v === '' || v === null ? null : Number(v); };
+  const lines = l.rows.filter(function (r) { return String(g(r, 'id الفاتورة')) === String(d.id); }).map(function (r) {
+    return { n: g(r, 'م'), code: String(g(r, 'كود الصنف') || ''), barcode: String(g(r, 'الباركود')), name: String(g(r, 'اسم الصنف')), isNew: g(r, 'صنف جديد') === 'جديد',
+      unit: String(g(r, 'الوحدة')), qty: Number(g(r, 'الكمية')) || 0, cartonSize: g(r, 'قطع في الكرتونة'), pieces: Number(g(r, 'عدد القطع')) || 0,
+      piecePrice: Number(g(r, 'سعر القطعة')) || 0, total: Number(g(r, 'الإجمالي')) || 0,
+      oldPrice: num(g(r, 'سعر الشراء القديم')), oldSale: num(g(r, 'سعر البيع القديم')), newSale: num(g(r, 'سعر البيع الجديد')), saleAction: String(g(r, 'تعديل السعر') || '') };
+  });
+  const sh = a.map[normShop_(f.inv.store)];
+  f.inv.shopName = sh ? sh.name : f.inv.store;
+  return { ok: true, invoice: f.inv, lines: lines };
+}
+// صورة من صور الفاتورة بس (صور الفرع / سكرين السيستم / المدمجة)
+function purImage_(d) {
+  const a = purAccess_(d.idToken);
+  if (a.error) return { ok: false, error: a.error };
+  let f;
+  try { f = purFind_(a, d.id); } catch (e) { return { ok: false, error: 'nosheet' }; }
+  if (!f) return { ok: false, error: 'notfound' };
+  const ids = f.inv.photos.concat(f.inv.screens, f.inv.merged ? [f.inv.merged] : []);
+  if (ids.indexOf(String(d.file)) < 0) return { ok: false, error: 'notfound' };
+  try {
+    const b = DriveApp.getFileById(d.file).getBlob();
+    return { ok: true, data: 'data:' + (b.getContentType() || 'image/jpeg') + ';base64,' + Utilities.base64Encode(b.getBytes()) };
+  } catch (e) { return { ok: false, error: 'image' }; }
+}
+// شغّلها مرة من المحرر بعد ما شيت «فواتير المشتريات» يتشارك مع الحساب ده: بتاخد إذن قراءة الشيتات وتتأكد إنها شايفاه
+function purCheck() {
+  PropertiesService.getScriptProperties().deleteProperty('PUR_SHEET');
+  const ss = purSS_();
+  const t = purRows_(ss, 'الفواتير');
+  Logger.log('✅ شايف شيت المشتريات: ' + ss.getName() + ' · ' + t.rows.length + ' فاتورة');
+}
+// أسامي المحلات اللي في المشتريات (لإعدادات تطبيق الورديات)
+function purStores_(d) {
+  const uid = uidOf_(d.idToken);
+  if (!uid) return { ok: false, error: 'login' };
+  const ur = req_('get', FS + '/users/' + uid);
+  const u = ur.code === 200 ? fields_(ur.json) : {};
+  if (['admin', 'support'].indexOf(u.role) < 0) return { ok: false, error: 'role' };
+  let ss;
+  try { ss = purSS_(); } catch (e) { return { ok: false, error: 'nosheet' }; }
+  const t = purRows_(ss, 'الفواتير');
+  const seen = {};
+  t.rows.forEach(function (r) { const n = String(r[t.m['المحل']] || '').trim(); if (n) seen[n] = (seen[n] || 0) + 1; });
+  return { ok: true, stores: Object.keys(seen).sort().map(function (n) { return { name: n, count: seen[n] }; }) };
+}
+
 // نفس التعديل على كل نسخ التحويل (كل فرع ليه نسخة)
 function patchGroup_(mate, patch) {
   let docs = [mate];

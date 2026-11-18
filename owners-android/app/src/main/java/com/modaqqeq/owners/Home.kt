@@ -22,6 +22,7 @@ object Home {
         "transfers" to "📲 التحويلات النهارده",
         "open" to "🟢 الورديات المفتوحة دلوقتي",
         "balances" to "🏦 رصيد المحافظ",
+        "purchases" to "🛒 مشتريات النهارده",
     )
     fun cards(c: Context): Set<String> = prefs(c).getStringSet("cards", null) ?: CARDS.map { it.first }.toSet()
     fun setCards(c: Context, v: Set<String>) = prefs(c).edit().putStringSet("cards", v).apply()

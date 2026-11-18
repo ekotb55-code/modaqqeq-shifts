@@ -3,7 +3,7 @@ import { collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, query, serverT
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { Avatar, Icon, Modal, useToast } from '../ui.jsx';
-import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, MACHINE_PRESETS, REG_KIND, allOpen, isAdminRole, newRegister, newExpenseType, RATE_FROM, RATE_ON, repTopupOf, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, uidByLogin, matches, normUsername, DEFAULT_FEE_TIERS, tierFee, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, newVault, num, pickImage } from '../lib';
+import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, MACHINE_PRESETS, REG_KIND, allOpen, isAdminRole, newRegister, newExpenseType, RATE_FROM, RATE_ON, repTopupOf, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, uidByLogin, matches, normUsername, normShopName, DEFAULT_FEE_TIERS, tierFee, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, newVault, num, pickImage } from '../lib';
 import { logAct } from '../activity.js';
 import { CLOUD } from '../cloud.js';
 import { applyFormat, buildFormat, firstWords, parseSms } from '../smsFormat.js';
@@ -368,6 +368,7 @@ function ShopEditor({ shop, shops = [] }) {
           </div>
           <div className="stack" style={{ flex: '1 1 280px' }}>
             <label className="field">اسم المحل<input className="input" value={f.name} onChange={(e) => set('name', e.target.value)} /></label>
+            <PurchasesLink shop={shop} name={f.name} />
             <label className="field">لينك برنامج البيع<input className="input" dir="ltr" placeholder="https://" value={f.posUrl} onChange={(e) => set('posUrl', e.target.value)} /></label>
             <label className="field">اسم الحساب اللي بيستلم انستاباي (للمطابقة)<input className="input" value={f.walletName} onChange={(e) => set('walletName', e.target.value)} /></label>
             
@@ -1200,6 +1201,49 @@ function FeeTiers({ tiers, onChange }) {
         <button type="button" className="link" onClick={() => onChange(DEFAULT_FEE_TIERS)}>رجّع الأرقام الأصلية</button>
       </div>
       <span className="tiny muted" style={{ lineHeight: 1.7 }}>مثال: وصل للمحفظة {fmt(100 + tierFee(100, list))} يعني العميل اشترى بـ 100 والخدمة {fmt(tierFee(100, list))} · وصل {fmt(700 + tierFee(700, list))} يعني باع بـ 700. فوق آخر سطر بياخد آخر رقم خدمة.</span>
+    </div>
+  );
+}
+
+// ── المحل ده في المشتريات (لوحة الدعم) — علشان صاحب المحل يشوف فواتيره في «مدقق Owners» ──
+// بيتربط لوحده لو الاسم هو هو، أو تختار اسمه هناك من القايمة.
+let purStoresCache = null;
+function PurchasesLink({ shop, name }) {
+  const toast = useToast();
+  const [stores, setStores] = useState(purStoresCache);
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    if (purStoresCache || !CLOUD.url || !auth.currentUser) return;
+    let off = false;
+    (async () => {
+      try {
+        const idToken = await auth.currentUser.getIdToken();
+        const r = await fetch(CLOUD.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'pstores', idToken }) }).then((x) => x.json());
+        if (off) return;
+        if (r.ok) { purStoresCache = r.stores; setStores(r.stores); } else setErr(r.error || 'x');
+      } catch { if (!off) setErr('net'); }
+    })();
+    return () => { off = true; };
+  }, []);
+  const chosen = shop.purchasesName || '';
+  if (err === 'nosheet') return <span className="tiny muted">🛒 المشتريات: شيت «فواتير المشتريات» لسه مش متشارك مع سيرفر مدقق</span>;
+  if (err) return null;
+  if (!stores) return <span className="tiny muted">🛒 بندوّر على المحل في المشتريات…</span>;
+  const hit = stores.find((x) => normShopName(x.name) === normShopName(chosen || name));
+  const pick = (v) => updateDoc(doc(db, 'shops', shop.id), { purchasesName: v })
+    .then(() => { toast('اتحفظ'); logAct('setup', `${shop.name}: اسمه في المشتريات «${v || 'نفس الاسم'}»`, { shopId: shop.id }); })
+    .catch(() => toast('مش قادرين نحفظ', 'err'));
+  return (
+    <div className="stack" style={{ gap: 4, background: hit ? '#EAF7EE' : '#FFF4E0', borderRadius: 14, padding: '8px 12px' }}>
+      <span className="small" style={{ color: hit ? '#1B7F3B' : '#8A5A00', fontWeight: 700 }}>
+        {hit ? `🛒 ✓ مربوط بالمشتريات · «${hit.name}» · ${hit.count} فاتورة` : '🛒 ⚠️ مش لاقي محل بالاسم ده في المشتريات'}
+      </span>
+      <label className="small" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>اسمه في المشتريات
+        <select className="input" style={{ height: 40, flex: '1 1 180px' }} value={chosen} onChange={(e) => pick(e.target.value)}>
+          <option value="">نفس اسم المحل</option>
+          {stores.map((x) => <option key={x.name} value={x.name}>{x.name} · {x.count} فاتورة</option>)}
+        </select>
+      </label>
     </div>
   );
 }
