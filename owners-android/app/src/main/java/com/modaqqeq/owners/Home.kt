@@ -115,12 +115,15 @@ object Home {
                         .put("sales", rv?.optDouble("sales", Double.NaN)?.let { v -> if (v.isNaN()) JSONObject.NULL else v } ?: JSONObject.NULL)
                         .put("diffKind", lg?.optString("kind") ?: "").put("diffAmount", lg?.optDouble("amount", 0.0) ?: 0.0)
                         .put("expenses", JSONArray(exp.map { e -> JSONObject().put("amount", e.optDouble("amount", 0.0)).put("title", entryTitle(e)).put("kind", e.optString("kindLabel").ifBlank { "مصروف" })
-                            .put("at", e.optDouble("createdAt", 0.0)).put("cashier", sh.optString("cashierName")) }))
+                            .put("at", e.optDouble("createdAt", 0.0)).put("cashier", sh.optString("cashierName")).put("sid", sid) }))
                 })
                 val wIn = query(token, "walletIn", eq("shopId", id), eq("day", today))
                 shopArr.put(JSONObject().put("id", id).put("name", s.optString("name")).put("shifts", shiftsArr)
-                    .put("reviews", JSONArray(reviews.map { JSONObject().put("sales", it.optDouble("sales", Double.NaN).let { v -> if (v.isNaN()) JSONObject.NULL else v }).put("cashier", it.optString("cashierName")).put("expenses", it.optJSONObject("totals")?.optDouble("expenses", 0.0) ?: 0.0).put("closed", !it.isNull("closedAt")) }))
-                    .put("ledger", JSONArray(ledger.map { JSONObject().put("kind", it.optString("kind")).put("amount", it.optDouble("amount", 0.0)).put("day", it.optString("day")).put("cashier", it.optString("cashierName")) }))
+                    .put("reviews", JSONArray(reviews.map { JSONObject().put("id", it.optString("_id")).put("sales", it.optDouble("sales", Double.NaN).let { v -> if (v.isNaN()) JSONObject.NULL else v }).put("cashier", it.optString("cashierName"))
+                        .put("expenses", it.optJSONObject("totals")?.optDouble("expenses", 0.0) ?: 0.0).put("closed", !it.isNull("closedAt")).put("closedAt", it.optDouble("closedAt", 0.0))
+                        .put("by", it.optString("accountantName")).put("startedAt", it.optDouble("startedAt", 0.0)).put("diff", it.optDouble("diff", Double.NaN).let { v -> if (v.isNaN()) JSONObject.NULL else v }) }))
+                    .put("ledger", JSONArray(ledger.map { JSONObject().put("id", it.optString("_id")).put("kind", it.optString("kind")).put("amount", it.optDouble("amount", 0.0)).put("day", it.optString("day")).put("cashier", it.optString("cashierName"))
+                        .put("acked", it.optBoolean("acknowledged")).put("ackRequired", it.optBoolean("ackRequired")).put("by", it.optString("by")).put("at", it.optDouble("createdAt", 0.0)) }))
                     .put("open", JSONArray(open.map { JSONObject().put("cashier", it.optString("cashierName")).put("at", it.optDouble("openedAt", 0.0).takeIf { v -> v > 0 } ?: runCatching { parseTime(it.optString("openedAtLocal")) }.getOrDefault(0.0)) }))
                     .put("wallet", JSONArray(wIn.map { JSONObject().put("w", it.optString("wallet")).put("dir", it.optString("dir")).put("amount", it.optDouble("amount", 0.0)).put("status", it.optString("status"))
                         .put("bankOk", it.optBoolean("bankOk", true)).put("from", it.optString("fromName")).put("bal", it.optDouble("balance", Double.NaN).let { v -> if (v.isNaN()) JSONObject.NULL else v }).put("atMs", it.optDouble("atMs", 0.0)).put("group", it.optString("group")) })))
@@ -151,6 +154,57 @@ object Home {
             else -> e.optString("type")
         }
     }
+    // الوردية كاملة: اللي استلمه، والتسليم، وإعدادات المحل (الخزن والمكن)، وكل العمليات
+    fun shiftFull(c: Context, sid: String, shopId: String): Pair<JSONObject?, String?> {
+        val token = try { Account.idToken(c) } catch (e: Exception) { return null to "مفيش نت" } ?: return null to "ادخل بأكونتك تاني"
+        return try {
+            val sh = get(token, "shifts/$sid") ?: return null to "مقدرناش نجيب الوردية"
+            val shop = get(token, "shops/${shopId.ifBlank { sh.optString("shopId") }}") ?: JSONObject()
+            val (es, e) = shiftEntries(c, sid)
+            if (es == null) return null to e
+            JSONObject().put("shift", sh).put("shop", shop).put("entries", JSONArray(es)) to null
+        } catch (e: Exception) { null to "مفيش نت · جرّب تاني" }
+    }
+
+    // ── الفلوس في كل خزنة (نفس flows/computeShift في src/lib.js) ──
+    data class Safe(val key: String, val label: String, val open: Double, var inn: Double = 0.0, var out: Double = 0.0, val lines: MutableList<Pair<String, Double>> = mutableListOf())
+    fun safes(shift: JSONObject, entries: List<JSONObject>, shop: JSONObject): List<Safe> {
+        val rcv = shift.optJSONObject("receive") ?: JSONObject()
+        fun arr(o: JSONObject?, k: String) = o?.optJSONArray(k)?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) } } ?: emptyList()
+        val mKey = { m: JSONObject -> "m:${m.optString("machine")}|${m.optString("account")}" }
+        val vaults = arr(shop, "vaults").filter { it.optBoolean("active", true) && it.optString("name").isNotBlank() }
+        val modes = shop.optJSONObject("walletModes") ?: JSONObject()
+        val shopWallets = shop.optJSONArray("wallets")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: listOf("insta", "vf")
+        val list = LinkedHashMap<String, Safe>()
+        fun addSafe(k: String, label: String, open: Double) { if (k !in list) list[k] = Safe(k, label, open) }
+        addSafe("drawer", "درج الكاشير", rcv.optDouble("drawerTotal", 0.0))
+        if (!shop.optBoolean("noSide")) addSafe("side", "الدرج الجانبي", rcv.optDouble("side", 0.0))
+        vaults.forEach { v -> addSafe("vault:" + v.optString("id"), v.optString("name"), rcv.optJSONObject("vaults")?.optDouble(v.optString("id"), 0.0) ?: 0.0) }
+        (arr(rcv, "machines") + arr(shop, "machines")).forEach { m -> addSafe(mKey(m), "${m.optString("machine")} · ${m.optString("account")}", arr(rcv, "machines").firstOrNull { mKey(it) == mKey(m) }?.optDouble("value", 0.0) ?: 0.0) }
+        shopWallets.forEach { w -> addSafe(w, walletName(w), if (modes.optString(w) == "owner") 0.0 else rcv.optJSONObject("wallets")?.optDouble(w, 0.0) ?: 0.0) }
+        fun move(k: String, label: String, a: Double) { val s = list[k] ?: return; s.lines += label to a; if (a >= 0) s.inn += a else s.out -= a }
+        val firstAcc = { name: String -> arr(shop, "machines").firstOrNull { it.optString("machine") == name }?.let(mKey) ?: "m:$name|الرصيد" }
+        entries.filter { !(it.optString("type") == "transfer" && it.optBoolean("smsRejected")) }.forEach { e ->
+            val a = e.optDouble("amount", 0.0); val src = e.optString("src")
+            val flows: List<Triple<String, String, Double>> = when (e.optString("type")) {
+                "expense" -> listOf(Triple(src, "out:expense", a))
+                "income" -> listOf(Triple("in:income", src, a))
+                "transfer" -> listOf(Triple("in:customer", e.optString("wallet"), a))
+                "topup" -> listOf(Triple(if (e.optBoolean("credit")) "in:rep" else src, e.optString("machineKey").ifBlank { firstAcc(e.optString("machine")) }, a))
+                "repPay" -> listOf(Triple(src, "out:rep", a))
+                "move" -> { val to = e.optString("to").ifBlank { "side" }; listOf(Triple(src.ifBlank { if (to == "side") "drawer" else "side" }, to, a)) }
+                "withdraw" -> listOf(Triple(src, "out:owner", a))
+                "liquidate" -> { val fee = e.optDouble("fee", 0.0); if (fee > 0) listOf(Triple(src, e.optString("to"), a - fee), Triple(src, "out:fees", fee)) else listOf(Triple(src, e.optString("to"), a)) }
+                "xfer_out" -> listOf(Triple(src.ifBlank { "drawer" }, "out:reg", a))
+                "xfer_in" -> listOf(Triple("in:reg", src.ifBlank { "drawer" }, a))
+                else -> emptyList()
+            }
+            val t = entryTitle(e)
+            flows.forEach { (from, to, x) -> move(from, t, -x); move(to, t, x) }
+        }
+        return list.values.toList()
+    }
+
     // كل عمليات وردية (لشاشة تفاصيل الوردية)
     fun shiftEntries(c: Context, sid: String): Pair<List<JSONObject>?, String?> {
         val token = try { Account.idToken(c) } catch (e: Exception) { return null to "مفيش نت" } ?: return null to "ادخل بأكونتك تاني"
