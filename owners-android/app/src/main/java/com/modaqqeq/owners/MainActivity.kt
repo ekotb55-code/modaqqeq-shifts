@@ -122,10 +122,19 @@ class MainActivity : Activity() {
         swipe?.isRefreshing = loadingHome || loadingTr
         root.removeAllViews()
         val mode = Account.mode(this)
-        val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
-        top.addView(ImageView(this).apply { setImageResource(R.mipmap.ic_launcher); layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginEnd = dp(10) } })
-        top.addView(text(if (page == "menu") "الإعدادات" else "مدقق Owners", 24f, BLUE, true).apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1f) })
-        top.addView(button(if (page == "menu") "رجوع ←" else "☰", false) { go(if (page == "menu") "home" else "menu") }.apply { textSize = if (page == "menu") 14f else 22f; layoutParams = LinearLayout.LayoutParams(-2, dp(48)) })
+        // الهيدر: العلامة والاسم، وأيقونة القايمة من غير زرار تقيل
+        val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(2)) }
+        top.addView(ImageView(this).apply {
+            setImageResource(R.mipmap.ic_launcher); clipToOutline = true; background = round("#FFFFFF", 12)
+            layoutParams = LinearLayout.LayoutParams(dp(34), dp(34)).apply { marginEnd = dp(10) }
+        })
+        top.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+            addView(text(if (page == "menu") "الإعدادات" else "مدقق", 19f, if (page == "menu") INK else BLUE, true))
+            addView(text(if (page == "menu") "الأكونت والصلاحيات والمحافظ" else when (Account.mode(this@MainActivity)) {
+                "user" -> "Owners · ${Account.name(this@MainActivity)}"; "shop" -> "Owners · موبايل المحل"; else -> "Owners" }, 11.5f, "#8A8AA0"))
+        })
+        top.addView(iconBtn(if (page == "menu") "→" else "☰") { go(if (page == "menu") "home" else "menu") })
         root.addView(top)
         if (page == "menu") { menuPage(); return }
 
@@ -288,28 +297,14 @@ class MainActivity : Activity() {
         val multi = sel.isEmpty() && all.size > 1
         val tag = { s: JSONObject -> if (multi) " · ${s.optString("name")}" else "" }
 
-        val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(14), 0, 0) }
-        head.addView(text("🏠 النهارده", 20f, INK, true).apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1f) })
-        head.addView(button(if (loadingHome) "⏳" else "🔄", false) { refreshHome(true) }.apply { layoutParams = LinearLayout.LayoutParams(dp(56), dp(44)) })
-        head.addView(button("⚙️", false) { homeSettings() }.apply { layoutParams = LinearLayout.LayoutParams(dp(56), dp(44)).apply { marginStart = dp(6) } })
-        root.addView(head)
         val at = data?.optLong("at") ?: 0
-        root.addView(text(when {
+        title("النهارده", when {
             loadingHome && at == 0L -> "بنجيب الأرقام…"
-            at > 0 -> "آخر تحديث: " + SimpleDateFormat("h:mm a", Locale.forLanguageTag("ar-EG-u-nu-latn")).format(Date(at)) + (homeErr?.let { " · ⚠️ $it" } ?: "")
+            at > 0 -> "آخر تحديث " + SimpleDateFormat("h:mm a", Locale.forLanguageTag("ar-EG-u-nu-latn")).format(Date(at)) + (homeErr?.let { " · ⚠️ $it" } ?: "")
             else -> homeErr ?: ""
-        }, 12f, "#8A8AA0"))
+        }, { refreshHome(true) }, loadingHome)
         if (data == null) return
-
-        // المحلات
-        if (all.size > 1) {
-            val sc = android.widget.HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, dp(8), 0, 0) }
-            (listOf("" to "كل المحلات") + all.map { it.optString("id") to it.optString("name") }).forEach { (id, n) ->
-                row.addView(button(n, id == sel) { Home.setShop(this, id); render() }.apply { layoutParams = LinearLayout.LayoutParams(-2, dp(40)).apply { marginEnd = dp(6) } })
-            }
-            sc.addView(row); root.addView(sc)
-        }
+        if (all.size > 1) filterRow(listOf(dropChip(listOf("" to "كل المحلات") + all.map { it.optString("id") to it.optString("name") }, sel) { Home.setShop(this, it); render() }))
         if (all.isEmpty()) { root.addView(text("مفيش محلات على الأكونت ده", 13f, "#6B6A80")); return }
 
         // نفس التحويل ممكن يكون له نسخة في كل فرع على نفس الحساب: نعدّه مرة واحدة
@@ -441,30 +436,61 @@ class MainActivity : Activity() {
         sc.addView(row); root.addView(sc)
     }
     private var showAllDone = false
+    // أيقونة من غير خلفية (القايمة، التحديث…)
+    private fun iconBtn(t: String, onClick: () -> Unit) = TextView(this).apply {
+        text = t; textSize = 22f; gravity = Gravity.CENTER; setTextColor(Color.parseColor(INK))
+        val tv = android.util.TypedValue(); context.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, tv, true); setBackgroundResource(tv.resourceId)
+        layoutParams = LinearLayout.LayoutParams(dp(44), dp(44)); setOnClickListener { onClick() }
+    }
+    // فلتر في سطر واحد: «النهارده ▾» ولما تدوس عليه تختار
+    private fun dropChip(opts: List<Pair<String, String>>, sel: String, pick: (String) -> Unit) = TextView(this).apply {
+        val cur = opts.firstOrNull { it.first == sel } ?: opts.first()
+        val active = cur.first != opts.first().first
+        text = cur.second + "  ▾"; textSize = 13f; setTypeface(typeface, Typeface.BOLD); gravity = Gravity.CENTER
+        setTextColor(Color.parseColor(if (active) "#FFFFFF" else INK)); background = round(if (active) INK else "#FFFFFF", 99)
+        setPadding(dp(14), dp(8), dp(14), dp(8))
+        layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(6) }
+        setOnClickListener { v ->
+            val m = android.widget.PopupMenu(this@MainActivity, v)
+            opts.forEachIndexed { i, (_, l) -> m.menu.add(0, i, i, (if (opts[i].first == cur.first) "✓  " else "") + l) }
+            m.setOnMenuItemClickListener { pick(opts[it.itemId].first); true }
+            m.show()
+        }
+    }
+    private fun filterRow(views: List<View>) {
+        val sc = android.widget.HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, dp(10), 0, 0) }
+        views.forEach { row.addView(it) }
+        sc.addView(row); root.addView(sc)
+    }
+    private fun title(t: String, sub: String, onRefresh: () -> Unit, loading: Boolean) {
+        val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(2), dp(14), 0, 0) }
+        head.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+            addView(text(t, 21f, INK, true)); if (sub.isNotBlank()) addView(text(sub, 11.5f, "#8A8AA0"))
+        })
+        head.addView(iconBtn(if (loading) "⏳" else "↻") { onRefresh() }.apply { setTextColor(Color.parseColor(BLUE)) })
+        root.addView(head)
+    }
 
     private fun transfers() {
         val data = Transfers.cached(this)
-        val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(16), 0, 0) }
-        val ht = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, -2, 1f) }
-        ht.addView(text("التحويلات", 22f, INK, true))
         val at = data?.optLong("at") ?: 0
-        ht.addView(text(when {
+        title("التحويلات", when {
             loadingTr -> "بيتحدّث…"
             at > 0 -> "آخر تحديث " + SimpleDateFormat("h:mm a", Locale.forLanguageTag("ar-EG-u-nu-latn")).format(Date(at)) + (trErr?.let { " · ⚠️ $it" } ?: "")
             else -> trErr ?: ""
-        }, 12f, "#8A8AA0"))
-        head.addView(ht)
-        head.addView(TextView(this).apply { text = if (loadingTr) "⏳" else "↻"; textSize = 22f; gravity = Gravity.CENTER; setTextColor(Color.parseColor(BLUE)); background = round("#FFFFFF", 99)
-            layoutParams = LinearLayout.LayoutParams(dp(48), dp(48)); setOnClickListener { refreshTransfers(true) } })
-        root.addView(head)
-
-        chipRow(listOf("1" to "النهارده", "2" to "من امبارح", "7" to "آخر 7 أيام"), Transfers.days(this).toString()) { Transfers.setDays(this, it.toInt()); refreshTransfers(false) }
+        }, { refreshTransfers(true) }, loadingTr)
         val shopsAll = objs(j(data, "shops"))
         val raw = objs(j(data, "list"))
         val wallets = raw.map { it.optString("wallet") }.distinct()
-        if (wallets.size > 1) chipRow(listOf("" to "كل المحافظ") + wallets.map { it to Home.walletName(it) }, Transfers.wallet(this)) { Transfers.setWallet(this, it); render() }
         val selShop = Home.shop(this).takeIf { id -> shopsAll.any { it.optString("id") == id } } ?: ""
-        if (shopsAll.size > 1) chipRow(listOf("" to "كل المحلات") + shopsAll.map { it.optString("id") to it.optString("name") }, selShop) { Home.setShop(this, it); render() }
+        // الفلاتر كلها في سطر واحد
+        filterRow(listOfNotNull(
+            dropChip(listOf("1" to "النهارده", "2" to "من امبارح", "7" to "آخر 7 أيام"), Transfers.days(this).toString()) { Transfers.setDays(this, it.toInt()); refreshTransfers(false) },
+            if (wallets.size > 1) dropChip(listOf("" to "كل المحافظ") + wallets.map { it to Home.walletName(it) }, Transfers.wallet(this)) { Transfers.setWallet(this, it); render() } else null,
+            if (shopsAll.size > 1) dropChip(listOf("" to "كل المحلات") + shopsAll.map { it.optString("id") to it.optString("name") }, selShop) { Home.setShop(this, it); render() } else null,
+        ))
 
         undo?.let { (t, back) ->
             val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; background = round(INK, 18); setPadding(dp(16), dp(8), dp(8), dp(8))
@@ -519,56 +545,56 @@ class MainActivity : Activity() {
         fun row(x: JSONObject, copies: List<JSONObject>, btns: List<Triple<String, String, () -> Unit>>, fresh: Boolean = false) {
             val w = x.optString("wallet"); val (cols, abbr, soft) = walletLook(w)
             val box = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(12), dp(14), dp(12))
-                background = GradientDrawable().apply { cornerRadius = dp(22).toFloat(); setColor(Color.WHITE); if (fresh) setStroke(dp(2), Color.parseColor("#C6FF1A")) }
-                elevation = dp(1).toFloat(); layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) }
+                orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(10), dp(12), dp(10))
+                background = GradientDrawable().apply { cornerRadius = dp(18).toFloat(); setColor(Color.WHITE); if (fresh) setStroke(dp(2), Color.parseColor("#C6FF1A")) }
+                layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) }
             }
+            // سطر ١: الدايرة · الاسم · المبلغ
             val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
             line.addView(TextView(this).apply {
-                text = abbr; textSize = if (abbr.length > 2) 11f else 13f; setTypeface(typeface, Typeface.BOLD); setTextColor(Color.WHITE); gravity = Gravity.CENTER
+                text = abbr; textSize = if (abbr.length > 2) 9.5f else 11.5f; setTypeface(typeface, Typeface.BOLD); setTextColor(Color.WHITE); gravity = Gravity.CENTER
                 background = GradientDrawable(GradientDrawable.Orientation.TL_BR, cols).apply { shape = GradientDrawable.OVAL }
-                layoutParams = LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(12) }
+                layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply { marginEnd = dp(10) }
             })
             val mid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, -2, 1f) }
-            mid.addView(text(x.optString("fromName").ifBlank { "عميل" }, 15f, INK, true).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
+            mid.addView(text(x.optString("fromName").ifBlank { "عميل" }, 14.5f, INK, true).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
             val shopTxt = if (shopsAll.size > 1) " · " + copies.mapNotNull { shopName[it.optString("shopId")] }.distinct().joinToString("، ") else ""
-            mid.addView(text("${Home.walletName(w)} · ${tf.format(Date(x.optDouble("atMs").toLong()))}$shopTxt", 12f, "#8A8AA0").apply { maxLines = 2 })
+            mid.addView(text("${Home.walletName(w)} · ${tf.format(Date(x.optDouble("atMs").toLong()))}$shopTxt", 11.5f, "#8A8AA0").apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
             line.addView(mid)
-            line.addView(LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL; gravity = Gravity.END
-                addView(text(Transfers.money(x.optDouble("amount")), 19f, INK, true).apply { textDirection = View.TEXT_DIRECTION_LTR })
-                addView(text("جنيه", 11f, "#8A8AA0").apply { gravity = Gravity.END })
-            })
+            line.addView(text(Transfers.money(x.optDouble("amount")) + " ج", 16.5f, INK, true).apply { setPadding(dp(8), 0, 0, 0) })
             box.addView(line)
-            // الشارات
-            val tags = android.widget.LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(dp(56), 0, 0, 0) }
-            val st = x.optString("status"); val by = x.optString("decidedByName")
+            // سطر ٢: الحالة والشارات، والزرار في نفس السطر
+            val st = x.optString("status")
+            val by = x.optString("decidedByName").let { if (it.contains("الإشعار")) "من الإشعار" else it }
+            val tags = mutableListOf<View>()
+            fun tag(t: String, bg: String, fg: String) { tags += pill(t, bg, fg, 10.5f).apply { setPadding(dp(8), dp(2), dp(8), dp(2)) } }
             when {
-                live(x) -> tags.addView(pill("⏳ ظاهر للكاشير", "#FFF3D6", "#8A5A00"))
-                st == "big" -> tags.addView(pill("⚠️ مستني قرارك", "#FFE3E3", "#B3261E"))
-                st == "claimed" -> tags.addView(pill("✋ أكّده ${x.optString("claimedByName")} · فاتورة ${x.optString("claimInvoice").ifBlank { "—" }}", "#E3F0FF", "#1565D8"))
-                st == "approved" -> tags.addView(pill("✓ تبع المحل" + (x.optString("claimedByName").takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""), "#E3F7E8", "#1B7F3B"))
-                st == "rejected" -> tags.addView(pill("✗ مرفوض" + (by.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""), "#FDE7E7", "#B3261E"))
-                st == "personal" -> tags.addView(pill("👤 شخصي" + (by.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""), soft, "#5B2A9E"))
-                else -> tags.addView(pill("عدّى وقته", "#EEF0F4", "#6B6A80"))
+                live(x) -> tag("⏳ ظاهر للكاشير", "#FFF3D6", "#8A5A00")
+                st == "big" -> tag("⚠️ مستني قرارك", "#FFE3E3", "#B3261E")
+                st == "claimed" -> tag("✋ ${x.optString("claimedByName")} · فاتورة ${x.optString("claimInvoice").ifBlank { "—" }}", "#E3F0FF", "#1565D8")
+                st == "approved" -> tag("✓ تبع المحل" + (x.optString("claimedByName").takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""), "#E3F7E8", "#1B7F3B")
+                st == "rejected" -> tag("✗ مرفوض", "#FDE7E7", "#B3261E")
+                st == "personal" -> tag("👤 شخصي" + (by.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""), soft, "#5B2A9E")
+                else -> tag("عدّى وقته", "#EEF0F4", "#6B6A80")
             }
-            if (x.optString("src") == "note") tags.addView(
-                if (x.optBoolean("bankOk")) pill("✓ رسالة البنك", "#E3F7E8", "#1B7F3B")
-                else if (now - x.optDouble("atMs") > 30 * 60_000) pill("⚠️ من غير رسالة بنك", "#FFF3D6", "#8A5A00") else pill("مستني رسالة البنك", "#EEF0F4", "#6B6A80"))
-            if (twin(x) && st !in listOf("rejected", "personal")) tags.addView(pill("⚠️ ممكن متكرر", "#FFE3E3", "#B3261E"))
-            box.addView(android.widget.HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; layoutDirection = View.LAYOUT_DIRECTION_RTL; addView(tags) })
-            if (btns.isNotEmpty()) {
-                val br = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(dp(56), dp(10), 0, 0) }
-                btns.forEach { (l, kind, f) ->
-                    val (bgc, fg) = when (kind) { "ok" -> "#1B7F3B" to "#FFFFFF"; "no" -> "#FDE7E7" to "#B3261E"; "lime" -> "#C6FF1A" to INK; else -> "#EEF0FB" to INK }
-                    br.addView(TextView(this).apply { text = l; textSize = 13.5f; setTypeface(typeface, Typeface.BOLD); setTextColor(Color.parseColor(fg)); gravity = Gravity.CENTER
-                        background = round(bgc, 99); setPadding(dp(16), dp(9), dp(16), dp(9)); setOnClickListener { f() }
-                        layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) } })
-                }
-                box.addView(br)
+            if (x.optString("src") == "note" && st !in listOf("personal", "rejected")) {
+                if (x.optBoolean("bankOk")) tag("✓ البنك", "#E3F7E8", "#1B7F3B")
+                else if (now - x.optDouble("atMs") > 30 * 60_000) tag("⚠️ من غير رسالة بنك", "#FFF3D6", "#8A5A00")
             }
-            box.alpha = 0f; box.translationY = dp(8).toFloat()
-            box.animate().alpha(1f).translationY(0f).setDuration(220).start()
+            if (twin(x) && st !in listOf("rejected", "personal")) tag("⚠️ ممكن متكرر", "#FFE3E3", "#B3261E")
+            val l2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(46), dp(4), 0, 0) }
+            val tagBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            tags.forEach { tagBox.addView(it) }
+            l2.addView(android.widget.HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; layoutDirection = View.LAYOUT_DIRECTION_RTL; addView(tagBox) }, LinearLayout.LayoutParams(0, -2, 1f))
+            btns.forEach { (l, kind, f) ->
+                val (bgc, fg) = when (kind) { "ok" -> "#1B7F3B" to "#FFFFFF"; "no" -> "#FDE7E7" to "#B3261E"; "lime" -> "#C6FF1A" to INK; else -> "#EEF0FB" to BLUE }
+                l2.addView(TextView(this).apply { text = l; textSize = 12.5f; setTypeface(typeface, Typeface.BOLD); setTextColor(Color.parseColor(fg)); gravity = Gravity.CENTER
+                    background = round(bgc, 99); setPadding(dp(12), dp(6), dp(12), dp(6)); setOnClickListener { f() }
+                    layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(6); topMargin = dp(4) } })
+            }
+            box.addView(l2)
+            box.alpha = 0f; box.translationY = dp(6).toFloat()
+            box.animate().alpha(1f).translationY(0f).setDuration(200).start()
             root.addView(box)
         }
         fun header(t: String, n: Int, hint: String, color: String) {
@@ -586,7 +612,7 @@ class MainActivity : Activity() {
             addView(text("✓  مفيش حاجة مستنياك دلوقتي", 15f, "#1B7F3B", true).apply { gravity = Gravity.CENTER })
         })
         if (lBig.isNotEmpty()) { header("⚠️ مستنية قرارك", lBig.size, "أكبر من الحد", "#B3261E")
-            lBig.forEach { (x, cp) -> row(x, cp, listOfNotNull(Triple("ابعته للكاشير", "ok", { act({ Transfers.setAll(this, cp, "new", "اتبعت للكاشيرية", release = true) }, "اتبعت للكاشيرية") { Transfers.setAll(this, cp, "big", "رجع زي ما كان") } }),
+            lBig.forEach { (x, cp) -> row(x, cp, listOfNotNull(Triple("للكاشير", "ok", { act({ Transfers.setAll(this, cp, "new", "اتبعت للكاشيرية", release = true) }, "اتبعت للكاشيرية") { Transfers.setAll(this, cp, "big", "رجع زي ما كان") } }),
                 if (x.optBoolean("allowPersonal", true)) personalBtn(x, cp, "big") else null)) } }
         if (lClaim.isNotEmpty()) { header("✋ أكّدها الكاشير", lClaim.size, "طابقها بالفاتورة", "#1565D8")
             lClaim.forEach { (x, cp) -> row(x, cp, listOf(
@@ -613,7 +639,7 @@ class MainActivity : Activity() {
                 val b: Triple<String, String, () -> Unit>? = when (st) {
                     "approved" -> Triple("↩ رجّعه", "", { act({ Transfers.setOne(this, x, "claimed", "رجع لـ«أكّدها الكاشير»") }, "رجع لـ«أكّدها الكاشير»", null) })
                     "rejected" -> Triple("↩ رجّعه", "", { act({ Transfers.refuse(this, x, true) }, "رجع · المبلغ رجع في حساب الكاشير", null) })
-                    "personal" -> Triple("ابعته للكاشير", "", { act({ Transfers.setAll(this, cp, "new", "اتبعت للكاشيرية", release = true) }, "اتبعت للكاشيرية") { Transfers.setAll(this, cp, "personal", "رجع زي ما كان") } })
+                    "personal" -> Triple("للكاشير", "", { act({ Transfers.setAll(this, cp, "new", "اتبعت للكاشيرية", release = true) }, "اتبعت للكاشيرية") { Transfers.setAll(this, cp, "personal", "رجع زي ما كان") } })
                     else -> Triple("اظهره تاني", "", { act({ Transfers.setAll(this, cp, "new", "ظهر تاني للكاشيرية", release = true) }, "ظهر تاني للكاشيرية", null) })
                 }
                 row(x, cp, listOfNotNull(b))
