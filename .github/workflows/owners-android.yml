@@ -21,10 +21,18 @@ jobs:
       - name: Build APK
         working-directory: owners-android
         env:
-          # مفتاح تجريبي (مرحلة التجربة) — قبل التسليم للعملاء يتنقل لـ GitHub Secrets
-          OWNERS_KEYSTORE: ${{ github.workspace }}/owners-android/keystore/test.jks
-          OWNERS_KS_PASS: owners-test
-        run: gradle --no-daemon :app:assembleRelease
+          # المفتاح الحقيقي: الملف في المشروع وباسورده سرّي في GitHub Secrets (OWNERS_KS_PASS).
+          # لحد ما الباسورد يتحط، بنفضل نوقّع بالمفتاح التجريبي.
+          KS_PASS: ${{ secrets.OWNERS_KS_PASS }}
+        run: |
+          if [ -n "$KS_PASS" ]; then
+            export OWNERS_KEYSTORE="$GITHUB_WORKSPACE/owners-android/keystore/release.jks" OWNERS_KS_PASS="$KS_PASS"
+            echo "signing with the release key"
+          else
+            export OWNERS_KEYSTORE="$GITHUB_WORKSPACE/owners-android/keystore/test.jks" OWNERS_KS_PASS="owners-test"
+            echo "::warning::OWNERS_KS_PASS is not set — signing with the TEST key"
+          fi
+          gradle --no-daemon :app:assembleRelease
       - name: Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
