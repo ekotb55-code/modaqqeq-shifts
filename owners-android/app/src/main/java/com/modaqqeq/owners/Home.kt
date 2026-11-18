@@ -19,8 +19,8 @@ object Home {
         "sales" to "💰 مبيعات النهارده",
         "expenses" to "🧾 مصروفات النهارده",
         "diff" to "⚖️ العجز والزيادة الشهر ده",
-        "transfers" to "📲 التحويلات النهارده",
-        "open" to "🟢 الورديات المفتوحة دلوقتي",
+        "transfers" to "📲 وصل للمالك النهارده",
+        "open" to "🧾 الورديات",
         "balances" to "🏦 رصيد المحافظ",
         "purchases" to "🛒 مشتريات النهارده",
     )
@@ -64,10 +64,12 @@ object Home {
         return if (r.first == 200) fields(JSONObject(r.second)) else null
     }
     internal fun eq(field: String, v: String) = JSONObject().put("fieldFilter", JSONObject().put("field", JSONObject().put("fieldPath", field)).put("op", "EQUAL").put("value", JSONObject().put("stringValue", v)))
-    internal fun query(token: String, coll: String, vararg filters: JSONObject): List<JSONObject> {
+    internal fun query(token: String, coll: String, vararg filters: JSONObject): List<JSONObject> = queryIn(token, "", coll, *filters)
+    // parent: "" للمجموعات الأساسية، أو "shifts/<id>" لعمليات وردية
+    internal fun queryIn(token: String, parent: String, coll: String, vararg filters: JSONObject): List<JSONObject> {
         val where = if (filters.size == 1) filters[0] else JSONObject().put("compositeFilter", JSONObject().put("op", "AND").put("filters", JSONArray(filters.toList())))
         val body = JSONObject().put("structuredQuery", JSONObject().put("from", JSONArray().put(JSONObject().put("collectionId", coll))).put("where", where).put("limit", 500))
-        val r = Net.authed("$FS:runQuery", token, body.toString())
+        val r = Net.authed(if (parent.isEmpty()) "$FS:runQuery" else "$FS/$parent:runQuery", token, body.toString())
         if (r.first != 200) throw Exception("read $coll ${r.first}")
         val a = JSONArray(r.second)
         return (0 until a.length()).mapNotNull { a.getJSONObject(it).optJSONObject("document") }.map { d -> fields(d).put("_id", d.getString("name").substringAfterLast('/')) }
@@ -98,8 +100,25 @@ object Home {
                 val reviews = query(token, "reviews", eq("shopId", id), eq("day", today))
                 val ledger = query(token, "ledger", eq("shopId", id), eq("month", month))
                 val open = query(token, "shifts", eq("shopId", id), eq("status", "open"))
+                // ورديات النهارده (أي حالة) + المفتوحة من أيام قبل كده، ومصروفات كل واحدة لايف
+                val todays = query(token, "shifts", eq("shopId", id), eq("day", today))
+                val shiftList = (todays + open.filter { o -> todays.none { it.optString("_id") == o.optString("_id") } })
+                val revById = reviews.associateBy { it.optString("_id") }
+                val ledById = ledger.associateBy { it.optString("_id") }
+                val shiftsArr = JSONArray(shiftList.map { sh ->
+                    val sid = sh.optString("_id")
+                    val exp = runCatching { queryIn(token, "shifts/$sid", "entries", eq("type", "expense")) }.getOrDefault(emptyList()).filter { !it.optBoolean("deleted") }
+                    val rv = revById[sid]; val lg = ledById[sid]
+                    JSONObject().put("id", sid).put("cashier", sh.optString("cashierName")).put("status", sh.optString("status")).put("day", sh.optString("day"))
+                        .put("openedAt", sh.optDouble("openedAt", 0.0)).put("submittedAt", sh.optDouble("submittedAt", 0.0)).put("closedAt", sh.optDouble("closedAt", 0.0))
+                        .put("closedBy", sh.optString("closedBy")).put("register", sh.optString("registerName", sh.optString("register")))
+                        .put("sales", rv?.optDouble("sales", Double.NaN)?.let { v -> if (v.isNaN()) JSONObject.NULL else v } ?: JSONObject.NULL)
+                        .put("diffKind", lg?.optString("kind") ?: "").put("diffAmount", lg?.optDouble("amount", 0.0) ?: 0.0)
+                        .put("expenses", JSONArray(exp.map { e -> JSONObject().put("amount", e.optDouble("amount", 0.0)).put("title", entryTitle(e)).put("kind", e.optString("kindLabel").ifBlank { "مصروف" })
+                            .put("at", e.optDouble("createdAt", 0.0)).put("cashier", sh.optString("cashierName")) }))
+                })
                 val wIn = query(token, "walletIn", eq("shopId", id), eq("day", today))
-                shopArr.put(JSONObject().put("id", id).put("name", s.optString("name"))
+                shopArr.put(JSONObject().put("id", id).put("name", s.optString("name")).put("shifts", shiftsArr)
                     .put("reviews", JSONArray(reviews.map { JSONObject().put("sales", it.optDouble("sales", Double.NaN).let { v -> if (v.isNaN()) JSONObject.NULL else v }).put("cashier", it.optString("cashierName")).put("expenses", it.optJSONObject("totals")?.optDouble("expenses", 0.0) ?: 0.0).put("closed", !it.isNull("closedAt")) }))
                     .put("ledger", JSONArray(ledger.map { JSONObject().put("kind", it.optString("kind")).put("amount", it.optDouble("amount", 0.0)).put("day", it.optString("day")).put("cashier", it.optString("cashierName")) }))
                     .put("open", JSONArray(open.map { JSONObject().put("cashier", it.optString("cashierName")).put("at", it.optDouble("openedAt", 0.0).takeIf { v -> v > 0 } ?: runCatching { parseTime(it.optString("openedAtLocal")) }.getOrDefault(0.0)) }))
@@ -113,4 +132,36 @@ object Home {
     }
 
     fun walletName(k: String) = WALLET[k] ?: k
+
+    // نفس وصف العمليات اللي في شاشة الكاشير (src/cashier/Dash.jsx · entryTitle)
+    fun entryTitle(e: JSONObject): String {
+        fun j(vararg p: String?) = p.filter { !it.isNullOrBlank() }.joinToString(" · ")
+        val money = { d: Double -> java.text.DecimalFormat("#,##0.##", java.text.DecimalFormatSymbols(Locale.US)).format(d) }
+        return when (e.optString("type")) {
+            "expense" -> j(e.optString("kindLabel").ifBlank { "مصروف" }, e.optString("sub"), if (e.optString("kind") == "supplier") (if (e.optString("invoice") == "invoice") "(فاتورة)" else "(توريد بدون فاتورة)") else "", e.optString("note"))
+            "income" -> j("إيراد", e.optString("reason"), e.optString("note"))
+            "transfer" -> j("تحويل ${walletName(e.optString("wallet"))}", e.optString("smsName"), e.optString("invoiceNo").takeIf { it.isNotBlank() }?.let { "فاتورة $it" }, if (e.optBoolean("smsRejected")) "❌ صاحب المحل رفضه" else if (e.optString("smsId").isNotBlank()) "✓ برسالة البنك" else "")
+            "topup" -> j(if (e.optBoolean("credit")) "شحن آجل (دين للمندوب)" else "شحن رصيد", e.optString("machine"))
+            "repPay" -> j("سداد لمندوب", e.optString("machine"))
+            "move" -> if (e.optString("to", "side") == "side") "نقل من الدرج للجانبي" else "نقل من الجانبي للدرج"
+            "withdraw" -> j("سحب لصاحب المحل", e.optString("note"))
+            "liquidate" -> j("تسييل/تحويل ${e.optString("fromLabel")} ← ${e.optString("toLabel")}", e.optString("note"))
+            "xfer_out" -> j("فلوس لـ ${e.optString("toName").ifBlank { "كاشير تاني" }}", e.optString("note"))
+            "xfer_in" -> j("استلام من ${e.optString("fromName").ifBlank { "كاشير تاني" }}", if (e.has("sentAmount") && e.optBoolean("diffFromSent")) "(اتبعت ${money(e.optDouble("sentAmount"))})" else "")
+            else -> e.optString("type")
+        }
+    }
+    // كل عمليات وردية (لشاشة تفاصيل الوردية)
+    fun shiftEntries(c: Context, sid: String): Pair<List<JSONObject>?, String?> {
+        val token = try { Account.idToken(c) } catch (e: Exception) { return null to "مفيش نت" } ?: return null to "ادخل بأكونتك تاني"
+        return try {
+            val body = JSONObject().put("structuredQuery", JSONObject().put("from", JSONArray().put(JSONObject().put("collectionId", "entries"))).put("limit", 1000))
+            val r = Net.authed("$FS/shifts/$sid:runQuery", token, body.toString())
+            if (r.first != 200) return null to "مقدرناش نجيب عمليات الوردية"
+            val a = JSONArray(r.second)
+            val list = (0 until a.length()).mapNotNull { a.getJSONObject(it).optJSONObject("document") }.map { d -> fields(d).put("_id", d.getString("name").substringAfterLast('/')) }
+                .filter { !it.optBoolean("deleted") }.sortedBy { it.optDouble("createdAt", 0.0) }
+            list to null
+        } catch (e: Exception) { null to "مفيش نت · جرّب تاني" }
+    }
 }

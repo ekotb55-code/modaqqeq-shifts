@@ -119,7 +119,10 @@ class MainActivity : Activity() {
         root.alpha = 0.3f; root.animate().alpha(1f).setDuration(180).start()
     }
     @Deprecated("back")
-    override fun onBackPressed() { if (page == "purchase") go("purchases") else if (page != "home") go("home") else super.onBackPressed() }
+    private val SUB = mapOf("menu" to "home", "purchase" to "purchases", "shift" to "shifts", "shifts" to "home", "expenses" to "home")
+    private val SUB_TITLE = mapOf("menu" to ("الإعدادات" to "الأكونت والصلاحيات والمحافظ"), "purchase" to ("فاتورة مشتريات" to "كل اللي متسجّل عليها"),
+        "shift" to ("الوردية" to "كل عملياتها"), "shifts" to ("الورديات" to "النهارده والمفتوحة"), "expenses" to ("المصروفات" to "كل مصروفات النهارده لايف"))
+    override fun onBackPressed() { SUB[page]?.let { go(it) } ?: if (page != "home") go("home") else super.onBackPressed() }
 
     private fun allOk(): Boolean {
         val pm = getSystemService(PowerManager::class.java)
@@ -152,14 +155,21 @@ class MainActivity : Activity() {
             setImageResource(R.mipmap.ic_launcher); clipToOutline = true; background = round("#FFFFFF", 12)
             layoutParams = LinearLayout.LayoutParams(dp(34), dp(34)).apply { marginEnd = dp(10) }
         })
+        val sub = SUB_TITLE[page]
         top.addView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
-            addView(text(when (page) { "menu" -> "الإعدادات"; "purchase" -> "فاتورة مشتريات"; else -> "مدقق" }, 19f, if (page == "menu" || page == "purchase") INK else BLUE, true))
-            addView(text(if (page == "menu") "الأكونت والصلاحيات والمحافظ" else if (page == "purchase") "كل اللي متسجّل عليها" else when (Account.mode(this@MainActivity)) {
+            addView(text(sub?.first ?: "مدقق", 19f, if (sub != null) INK else BLUE, true))
+            // فلتر الفروع: كل اللي تحته بيبقى للفرع ده بس
+            val shopsK = objs(j(Home.cached(this@MainActivity), "shops"))
+            if (Account.mode(this@MainActivity) == "user" && page != "menu" && shopsK.size > 1) {
+                val sel = Home.shop(this@MainActivity).takeIf { id -> shopsK.any { it.optString("id") == id } } ?: ""
+                addView(dropChip(listOf("" to "📍 كل الفروع") + shopsK.map { it.optString("id") to "📍 " + it.optString("name") }, sel) { Home.setShop(this@MainActivity, it); showAllDone = false; render() }
+                    .apply { textSize = 12f; setPadding(dp(12), dp(5), dp(12), dp(5)); (layoutParams as LinearLayout.LayoutParams).apply { topMargin = dp(3); gravity = Gravity.START } })
+            } else addView(text(sub?.second ?: when (Account.mode(this@MainActivity)) {
                 "user" -> "Owners · ${Account.name(this@MainActivity)}"; "shop" -> "Owners · موبايل المحل"; else -> "Owners" }, 11.5f, "#8A8AA0"))
         })
-        if (Account.mode(this) == "user" && page != "menu" && page != "purchase") top.addView(avatar(34) { go("menu") }.apply { (layoutParams as LinearLayout.LayoutParams).marginEnd = dp(4) })
-        top.addView(iconBtn(if (page == "menu" || page == "purchase") "→" else "☰") { go(when (page) { "menu" -> "home"; "purchase" -> "purchases"; else -> "menu" }) })
+        if (Account.mode(this) == "user" && sub == null) top.addView(avatar(34) { go("menu") }.apply { (layoutParams as LinearLayout.LayoutParams).marginEnd = dp(4) })
+        top.addView(iconBtn(if (sub != null) "→" else "☰") { go(SUB[page] ?: "menu") })
         root.addView(top)
         if (page == "menu") { menuPage(); return }
 
@@ -182,7 +192,7 @@ class MainActivity : Activity() {
         // الصفحتين
         val tabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; background = round("#FFFFFF", 99); setPadding(dp(5), dp(5), dp(5), dp(5))
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) } }
-        if (page != "purchase") listOf("home" to "🏠 الرئيسية", "transfers" to "📲 التحويلات", "purchases" to "🛒 المشتريات").forEach { (k, l) ->
+        if (SUB_TITLE[page] == null) listOf("home" to "🏠 الرئيسية", "transfers" to "📲 التحويلات", "purchases" to "🛒 المشتريات").forEach { (k, l) ->
             val on = page == k
             tabs.addView(TextView(this).apply {
                 text = l; textSize = 13.5f; gravity = Gravity.CENTER; setTypeface(typeface, if (on) Typeface.BOLD else Typeface.NORMAL)
@@ -191,8 +201,8 @@ class MainActivity : Activity() {
                 setPadding(0, dp(11), 0, dp(11)); setOnClickListener { if (!on) { showAllDone = false; go(k) } }
             }, LinearLayout.LayoutParams(0, -2, 1f))
         }
-        if (page != "purchase") root.addView(tabs)
-        when (page) { "transfers" -> transfers(); "purchases" -> purchasesPage(); "purchase" -> purchaseDetail(); else -> home() }
+        if (SUB_TITLE[page] == null) root.addView(tabs)
+        when (page) { "transfers" -> transfers(); "purchases" -> purchasesPage(); "purchase" -> purchaseDetail(); "shifts" -> shiftsPage(); "shift" -> shiftDetail(); "expenses" -> expensesPage(); else -> home() }
     }
 
     // ☰: الأكونت، الصلاحيات، المحافظ، السجل، وإعدادات الصفحة الرئيسية
@@ -330,7 +340,6 @@ class MainActivity : Activity() {
         val at = data?.optLong("at") ?: 0
         hero(at, shops)
         if (data == null) return
-        if (all.size > 1) filterRow(listOf(dropChip(listOf("" to "كل المحلات") + all.map { it.optString("id") to it.optString("name") }, sel) { Home.setShop(this, it); render() }))
         if (all.isEmpty()) { root.addView(text("مفيش محلات على الأكونت ده", 13f, "#6B6A80")); return }
 
         // نفس التحويل ممكن يكون له نسخة في كل فرع على نفس الحساب: نعدّه مرة واحدة
@@ -367,10 +376,13 @@ class MainActivity : Activity() {
             tiles += tile("💰 مبيعات النهارده", if (known.isEmpty()) "—" else money.format(known.sumOf { it.optDouble("sales") }) + " ج",
                 if (known.isEmpty()) "لسه مفيش وردية اتراجعت النهارده" else "من ${known.size} وردية اتراجعت", "#B6F000", "")
         }
+        val todayShifts = shops.flatMap { s -> objs(j(s, "shifts")).map { it to s } }
         if ("expenses" in chosen) {
-            val closed = rev.filter { it.optBoolean("closed") }
-            tiles += tile("🧾 مصروفات النهارده", money.format(closed.sumOf { it.optDouble("expenses") }) + " ج",
-                if (closed.isEmpty()) "من الورديات اللي اتقفلت · لسه مفيش" else "من ${closed.size} وردية اتقفلت", "#FF7A1A", "")
+            val exps = todayShifts.flatMap { (sh, _) -> objs(j(sh, "expenses")) }
+            val byKind = exps.groupBy { it.optString("kind") }.map { (k, l) -> k to l.sumOf { it.optDouble("amount") } }.sortedByDescending { it.second }.take(3)
+            tiles += tile("🧾 مصروفات النهارده", money.format(exps.sumOf { it.optDouble("amount") }) + " ج",
+                if (exps.isEmpty()) "لسه مفيش مصروفات النهارده" else "${exps.size} مصروف\n" + byKind.joinToString("\n") { "${it.first}: ${money.format(it.second)}" }, "#FF7A1A", "")
+                .apply { setOnClickListener { go("expenses") } }
         }
         if ("diff" in chosen) {
             val led = shops.flatMap { objs(j(it, "ledger")) }
@@ -382,13 +394,24 @@ class MainActivity : Activity() {
             tiles += tile("⚖️ عجز الشهر ده", money.format(sh) + " ج", "زيادة ${money.format(ov)} ج · ${led.size} وردية$topTxt", "#FF7EB0", "")
         }
         if ("transfers" in chosen) {
-            val got = wall.filter { it.first.optString("dir") != "out" && it.first.optString("status") !in listOf("personal", "rejected") }
-            val by = got.groupBy { it.first.optString("w") }.map { (w, l) -> "${Home.walletName(w)}: ${money.format(l.sumOf { it.first.optDouble("amount") })} ج (${l.size})" }
-            tiles += tile("📲 تحويلات النهارده", money.format(got.sumOf { it.first.optDouble("amount") }) + " ج", if (by.isEmpty()) "لسه مفيش" else by.joinToString("\n"), "#A07CFF", "")
+            // كل اللي وصل محافظ صاحب المحل (حتى الشخصي) — من غير محافظ المحل اللي بتتسجل لوحدها ومن غير المرفوض
+            val got = wall.filter { it.first.optString("dir") != "out" && it.first.optString("status") !in listOf("auto", "rejected") }.map { it.first }
+            val sum = { l: List<JSONObject> -> money.format(l.sumOf { it.optDouble("amount") }) }
+            val shopSide = got.filter { it.optString("status") in listOf("approved", "claimed") }
+            val pers = got.filter { it.optString("status") == "personal" }
+            val rest = got.filter { it.optString("status") !in listOf("approved", "claimed", "personal") }
+            val by = got.groupBy { it.optString("w") }.map { (w, l) -> "${Home.walletName(w)}: ${sum(l)}" }
+            tiles += tile("📲 وصل للمالك النهارده", sum(got) + " ج",
+                if (got.isEmpty()) "لسه مفيش" else "تبع المحل ${sum(shopSide)} · شخصي ${sum(pers)}" + (if (rest.isNotEmpty()) " · لسه ${sum(rest)}" else "") + "\n" + by.joinToString("\n"), "#A07CFF", "")
+                .apply { setOnClickListener { go("transfers") } }
         }
         if ("open" in chosen) {
             val o = shops.flatMap { s -> objs(j(s, "open")).map { it to s } }
-            tiles += tile("🟢 ورديات مفتوحة", "${o.size}", if (o.isEmpty()) "مفيش ورديات مفتوحة" else o.joinToString("\n") { (x, s) -> "${x.optString("cashier")} · من ${ago(x.optDouble("at"))}${tag(s)}" }, "#1565D8", "")
+            val closedN = todayShifts.count { it.first.optString("status") == "closed" }
+            val waitN = todayShifts.count { it.first.optString("status") in listOf("submitted", "reviewing", "disputed", "reopened") }
+            tiles += tile("🧾 الورديات", "${o.size} مفتوحة", (listOfNotNull(if (waitN > 0) "$waitN مستنية المحاسب" else null, if (closedN > 0) "$closedN اتقفلت" else null).joinToString(" · ").ifBlank { "النهارده" }) + "\n" +
+                o.joinToString("\n") { (x, s) -> "${x.optString("cashier")} · من ${ago(x.optDouble("at"))}${tag(s)}" }, "#1565D8", "")
+                .apply { setOnClickListener { go("shifts") } }
         }
         if ("balances" in chosen) {
             val last = HashMap<String, JSONObject>()
@@ -472,6 +495,14 @@ class MainActivity : Activity() {
         sc.addView(row); root.addView(sc)
     }
     private var showAllDone = false
+    // أيقونة تطبيق المحفظة نفسه (InstaPay / الأهلي / فودافون كاش) من الموبايل — لو مش متسطب، الدايرة الملونة
+    private val iconCache = HashMap<String, android.graphics.drawable.Drawable?>()
+    private fun walletIcon(w: String): android.graphics.drawable.Drawable? = iconCache.getOrPut(w) {
+        val want = if (w.startsWith("insta")) "insta" else if (w.startsWith("vf")) "vf" else w
+        val pkg = Store.conns(this).firstOrNull { it.wallet.startsWith(want) && it.apps.isNotEmpty() }?.apps?.firstOrNull()
+            ?: Defaults.apps(this, w).firstOrNull()?.first
+        pkg?.let { runCatching { packageManager.getApplicationIcon(it) }.getOrNull() }
+    }
     // أيقونة من غير خلفية (القايمة، التحديث…)
     private fun iconBtn(t: String, onClick: () -> Unit) = TextView(this).apply {
         text = t; textSize = 22f; gravity = Gravity.CENTER; setTextColor(Color.parseColor(INK))
@@ -525,7 +556,6 @@ class MainActivity : Activity() {
         filterRow(listOfNotNull(
             dropChip(listOf("1" to "النهارده", "2" to "من امبارح", "7" to "آخر 7 أيام"), Transfers.days(this).toString()) { Transfers.setDays(this, it.toInt()); refreshTransfers(false) },
             if (wallets.size > 1) dropChip(listOf("" to "كل المحافظ") + wallets.map { it to Home.walletName(it) }, Transfers.wallet(this)) { Transfers.setWallet(this, it); render() } else null,
-            if (shopsAll.size > 1) dropChip(listOf("" to "كل المحلات") + shopsAll.map { it.optString("id") to it.optString("name") }, selShop) { Home.setShop(this, it); render() } else null,
         ))
 
         undo?.let { (t, back) ->
@@ -572,6 +602,26 @@ class MainActivity : Activity() {
             }, LinearLayout.LayoutParams(0, -2, 1f).apply { if (i > 0) marginStart = dp(8) })
         }
         root.addView(stats)
+        // 📅 كل يوم: وصل كام، منهم تبع المحل كام وشخصي كام
+        if (Transfers.days(this) > 1) {
+            val byDay = groups.map { it.first }.filter { it.optString("status") != "rejected" }.groupBy { it.optString("day") }.toSortedMap(compareByDescending { it })
+            if (byDay.isNotEmpty()) root.addView(card().apply {
+                addView(text("📅 كل يوم", 15f, INK, true))
+                val dayF = SimpleDateFormat("EEEE d/M", Locale.forLanguageTag("ar-EG-u-nu-latn"))
+                val today = Home.dayKey(System.currentTimeMillis()); val yest = Home.dayKey(System.currentTimeMillis() - 86_400_000)
+                byDay.forEach { (d, l) ->
+                    val label = when (d) { today -> "النهارده"; yest -> "امبارح"; else -> runCatching { dayF.format(SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(d)!!) }.getOrDefault(d) }
+                    val shopN = l.filter { it.optString("status") in listOf("approved", "claimed") }.sumOf { it.optDouble("amount") }
+                    val persN = l.filter { it.optString("status") == "personal" }.sumOf { it.optDouble("amount") }
+                    addView(LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(9), 0, dp(9))
+                        addView(LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+                            addView(text(label, 14f, INK, true))
+                            addView(text("تبع المحل ${Transfers.money(shopN)} · شخصي ${Transfers.money(persN)} · ${l.size} تحويل", 11.5f, "#8A8AA0")) })
+                        addView(text(Transfers.money(l.sumOf { it.optDouble("amount") }) + " ج", 16f, BLUE, true)) })
+                    addView(View(this@MainActivity).apply { setBackgroundColor(Color.parseColor("#EEF0F8")); layoutParams = LinearLayout.LayoutParams(-1, dp(1)) })
+                }
+            })
+        }
 
         val tf = SimpleDateFormat("h:mm a", Locale.forLanguageTag("ar-EG-u-nu-latn"))
         fun twin(x: JSONObject) = groups.any { (y, _) -> y !== x && y.optString("wallet") == x.optString("wallet") && y.optDouble("amount") == x.optDouble("amount") &&
@@ -587,7 +637,9 @@ class MainActivity : Activity() {
             }
             // سطر ١: الدايرة · الاسم · المبلغ
             val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
-            line.addView(TextView(this).apply {
+            val ic = walletIcon(w)
+            line.addView(if (ic != null) ImageView(this).apply { setImageDrawable(ic); layoutParams = LinearLayout.LayoutParams(dp(38), dp(38)).apply { marginEnd = dp(10) } }
+            else TextView(this).apply {
                 text = abbr; textSize = if (abbr.length > 2) 9.5f else 11.5f; setTypeface(typeface, Typeface.BOLD); setTextColor(Color.WHITE); gravity = Gravity.CENTER
                 background = GradientDrawable(GradientDrawable.Orientation.TL_BR, cols).apply { shape = GradientDrawable.OVAL }
                 layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply { marginEnd = dp(10) }
@@ -735,7 +787,6 @@ class MainActivity : Activity() {
         val st = Purchases.status(this)
         filterRow(listOfNotNull(
             dropChip(listOf("1" to "النهارده", "2" to "من امبارح", "7" to "آخر 7 أيام", "30" to "آخر 30 يوم"), days.toString()) { val d = it.toInt(); Purchases.setDays(this, d); if (d > (data.optInt("days", 2) - 1)) refreshPurchases(false) else render() },
-            if (shops.size > 1) dropChip(listOf("" to "كل المحلات") + shops, selShop) { Home.setShop(this, it); render() } else null,
             if (sups.size > 1) dropChip(listOf("" to "كل الموردين") + sups.map { it to it }, sup) { Purchases.setSupplier(this, it); render() } else null,
             dropChip(listOf("" to "كل الحالات", "wait" to "لسه مدخلتش", "done" to "تم الإدخال", "rej" to "مرفوضة"), st) { Purchases.setStatus(this, it); render() },
         ))
@@ -1129,6 +1180,131 @@ class MainActivity : Activity() {
     }
 
     // كارت ملخص بألوان تطبيق الورديات (لون صريح + دايرة فيها الأيقونة)
+    // ── 🧾 الورديات / الوردية / المصروفات ──
+    private var shiftSel: JSONObject? = null
+    private var shiftEntries: List<JSONObject>? = null
+    private var shiftErr: String? = null
+    private var shiftLoading = false
+    private fun branchShops(): List<JSONObject> {
+        val all = objs(j(Home.cached(this), "shops"))
+        val sel = Home.shop(this).takeIf { id -> all.any { it.optString("id") == id } } ?: ""
+        return if (sel.isEmpty()) all else all.filter { it.optString("id") == sel }
+    }
+    private fun fmtT(ms: Double, day: Boolean = false) = if (ms <= 0) "" else SimpleDateFormat(if (day) "EEEE d/M · h:mm a" else "h:mm a", Locale.forLanguageTag("ar-EG-u-nu-latn")).format(Date(ms.toLong()))
+    private fun shiftLook(st: String): Triple<String, String, String> = when (st) {
+        "open" -> Triple("🟢 مفتوحة", "#E3F7E8", "#1B7F3B")
+        "submitted" -> Triple("📨 اتسلّمت · مستنية المحاسب", "#FFF3D6", "#8A5A00")
+        "reviewing" -> Triple("🔎 المحاسب بيراجعها", "#E3F0FF", "#1565D8")
+        "reopened" -> Triple("↩ اتفتحت تاني", "#F0E6FF", "#5B2A9E")
+        "disputed" -> Triple("⚠️ الكاشير اعترض", "#FFE3E3", "#B3261E")
+        "closed" -> Triple("✓ اتقفلت", "#EEF0F4", "#3A3950")
+        else -> Triple(st, "#EEF0F4", "#6B6A80")
+    }
+    private fun emptyCard(t: String) = root.addView(LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; background = round("#FFFFFF", 22); setPadding(dp(16), dp(18), dp(16), dp(18))
+        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14) }
+        addView(text(t, 15f, "#6B6A80", true).apply { gravity = Gravity.CENTER })
+    })
+
+    private fun shiftsPage() {
+        val shops = branchShops()
+        val list = shops.flatMap { s -> objs(j(s, "shifts")).map { it to s } }.sortedByDescending { it.first.optDouble("openedAt") }
+        if (list.isEmpty()) { emptyCard(if (Home.cached(this) == null) "بنجيب الورديات…" else "مفيش ورديات النهارده"); return }
+        val multi = shops.size > 1
+        list.forEach { (x, s) ->
+            val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(12), dp(14), dp(12)); background = round("#FFFFFF", 22)
+                layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) }
+                setOnClickListener { shiftSel = JSONObject(x.toString()).put("_shop", s.optString("name")); shiftEntries = null; shiftErr = null; go("shift") } }
+            val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
+            line.addView(TextView(this).apply { text = x.optString("cashier").trim().take(1).ifBlank { "؟" }; textSize = 16f; setTypeface(typeface, Typeface.BOLD); gravity = Gravity.CENTER; setTextColor(Color.parseColor(INK))
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#B6F000")) }; layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginEnd = dp(10) } })
+            line.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+                addView(text(x.optString("cashier").ifBlank { "كاشير" }, 15.5f, INK, true))
+                addView(text(listOfNotNull("من ${fmtT(x.optDouble("openedAt"))}", fmtT(x.optDouble("submittedAt")).takeIf { it.isNotBlank() }?.let { "سلّم $it" },
+                    if (multi) s.optString("name") else null).joinToString(" · "), 11.5f, "#8A8AA0")) })
+            val (sl, sb, sf) = shiftLook(x.optString("status"))
+            line.addView(pill(sl, sb, sf, 10.5f))
+            box.addView(line)
+            // الأرقام
+            val exp = objs(j(x, "expenses")).sumOf { it.optDouble("amount") }
+            val nums = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, dp(10), 0, 0) }
+            fun num(l: String, v: String, bg: String, fg: String) = nums.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(10), dp(8), dp(10), dp(8)); background = round(bg, 16)
+                addView(text(l, 11f, fg)); addView(text(v, 15f, fg, true)) }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(6) })
+            num("المبيعات", if (x.isNull("sales")) "—" else money.format(x.optDouble("sales")), "#E2FAB0", "#2B3A00")
+            num("المصروفات", money.format(exp), "#FFE8D6", "#7A3300")
+            val dk = x.optString("diffKind"); val da = x.optDouble("diffAmount")
+            num(if (dk == "overage") "زيادة" else "عجز", if (dk.isBlank() || da == 0.0) (if (x.optString("status") == "closed") "0" else "—") else money.format(da), if (dk == "overage") "#E3F7E8" else "#FFE3EA", if (dk == "overage") "#1B7F3B" else "#9A0036")
+            box.addView(nums)
+            root.addView(box)
+        }
+    }
+
+    private fun shiftDetail() {
+        val x = shiftSel ?: run { go("shifts"); return }
+        val (sl, _, _) = shiftLook(x.optString("status"))
+        root.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(14), dp(16), dp(14)); background = round(BLUE, 28)
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) }
+            addView(text(x.optString("cashier").ifBlank { "كاشير" }, 22f, "#FFFFFF", true))
+            addView(text(listOfNotNull(x.optString("_shop"), x.optString("register").takeIf { it.isNotBlank() }).joinToString(" · "), 12.5f, "#D6E6FF"))
+            addView(text("فتح ${fmtT(x.optDouble("openedAt"), true)}" + (fmtT(x.optDouble("submittedAt")).takeIf { it.isNotBlank() }?.let { "\nسلّم $it" } ?: "") +
+                (fmtT(x.optDouble("closedAt")).takeIf { it.isNotBlank() }?.let { "\nاتقفلت $it" + (x.optString("closedBy").takeIf { b -> b.isNotBlank() }?.let { b -> " · $b" } ?: "") } ?: ""), 12.5f, "#FFFFFF").apply { setPadding(0, dp(6), 0, 0) })
+            addView(pill(sl, "#FFFFFF", INK, 12f).apply { (layoutParams as LinearLayout.LayoutParams).topMargin = dp(8) })
+        })
+        val es = shiftEntries
+        if (es == null) {
+            root.addView(text(shiftErr ?: "بنجيب عمليات الوردية…", 14f, if (shiftErr != null) "#B3261E" else "#8A8AA0").apply { setPadding(dp(4), dp(16), dp(4), 0) })
+            if (shiftErr == null && !shiftLoading) { shiftLoading = true; bg({ val (l, e) = Home.shiftEntries(this, x.optString("id")); shiftEntries = l; shiftErr = e; null }) { shiftLoading = false; if (page == "shift") render() } }
+            return
+        }
+        // إجمالي كل نوع
+        val groups = es.groupBy { it.optString("type") }
+        val names = mapOf("expense" to "🧾 المصروفات", "income" to "💵 الإيرادات", "transfer" to "📲 تحويلات المحافظ", "topup" to "📶 شحن رصيد", "repPay" to "🤝 سداد مندوبين",
+            "withdraw" to "👤 سحب لصاحب المحل", "move" to "↔️ نقل بين الدرجين", "liquidate" to "🔁 تسييل", "xfer_out" to "➡️ فلوس لكاشير تاني", "xfer_in" to "⬅️ استلام من كاشير")
+        if (es.isEmpty()) { emptyCard("مفيش عمليات في الوردية دي"); return }
+        groups.entries.sortedByDescending { e -> e.value.sumOf { it.optDouble("amount") } }.forEach { (t, l) ->
+            root.addView(card().apply {
+                addView(LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+                    addView(text("${names[t] ?: t} · ${l.size}", 15f, INK, true).apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1f) })
+                    addView(text(money.format(l.sumOf { it.optDouble("amount") }) + " ج", 15f, INK, true)) })
+                l.forEach { e ->
+                    addView(LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, dp(8), 0, dp(8))
+                        addView(LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+                            addView(text(Home.entryTitle(e), 13.5f, INK))
+                            addView(text(fmtT(e.optDouble("createdAt")), 11f, "#8A8AA0")) })
+                        addView(text(money.format(e.optDouble("amount")), 14f, INK, true)) })
+                    addView(View(this@MainActivity).apply { setBackgroundColor(Color.parseColor("#EEF0F8")); layoutParams = LinearLayout.LayoutParams(-1, dp(1)) })
+                }
+            })
+        }
+    }
+
+    private fun expensesPage() {
+        val shops = branchShops()
+        val all = shops.flatMap { s -> objs(j(s, "shifts")).flatMap { sh -> objs(j(sh, "expenses")).map { JSONObject(it.toString()).put("_shop", s.optString("name")) } } }
+            .sortedByDescending { it.optDouble("at") }
+        if (all.isEmpty()) { emptyCard(if (Home.cached(this) == null) "بنجيب المصروفات…" else "مفيش مصروفات النهارده"); return }
+        // الإجمالي والأنواع
+        root.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(14), dp(16), dp(14)); background = round("#FF7A1A", 28)
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) }
+            addView(text("مصروفات النهارده", 13f, INK, true))
+            addView(text(money.format(all.sumOf { it.optDouble("amount") }) + " ج", 30f, INK, true))
+            addView(text("${all.size} مصروف", 12f, "#3A1A00"))
+            val kinds = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, dp(6), 0, 0) }
+            all.groupBy { it.optString("kind") }.map { it.key to it.value.sumOf { x -> x.optDouble("amount") } }.sortedByDescending { it.second }
+                .forEach { (k, v) -> kinds.addView(pill("$k ${money.format(v)}", "#FFFFFF", INK, 11.5f)) }
+            addView(android.widget.HorizontalScrollView(this@MainActivity).apply { isHorizontalScrollBarEnabled = false; layoutDirection = View.LAYOUT_DIRECTION_RTL; addView(kinds) })
+        })
+        val multi = shops.size > 1
+        all.forEach { e ->
+            root.addView(LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(14), dp(10), dp(14), dp(10)); background = round("#FFFFFF", 18); layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) }
+                addView(LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+                    addView(text(e.optString("title"), 14f, INK, true))
+                    addView(text(listOfNotNull(e.optString("cashier"), fmtT(e.optDouble("at")), if (multi) e.optString("_shop") else null).filter { it.isNotBlank() }.joinToString(" · "), 11.5f, "#8A8AA0")) })
+                addView(text(money.format(e.optDouble("amount")) + " ج", 16f, INK, true)) })
+        }
+    }
+
     private fun tile(title: String, big: String, sub: String, c1: String, @Suppress("UNUSED_PARAMETER") c2: String) = LinearLayout(this).apply {
         val dark = run { val c = Color.parseColor(c1); (0.299 * Color.red(c) + 0.587 * Color.green(c) + 0.114 * Color.blue(c)) > 150 }
         val fg = if (dark) INK else "#FFFFFF"; val soft = if (dark) "#3A3950" else "#EEF2FF"
