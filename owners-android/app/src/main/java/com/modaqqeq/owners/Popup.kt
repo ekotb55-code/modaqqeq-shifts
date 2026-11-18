@@ -27,13 +27,14 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import org.json.JSONObject
 import java.text.DecimalFormat
+import java.util.Locale
 
 // The floating window (like Truecaller): amount, who sent it, «شخصي» and «تمام».
 // No "show over other apps" permission → a notification with the same buttons.
 object Popup {
     private val main = Handler(Looper.getMainLooper())
     private const val CH = "transfers"
-    private val fmt = DecimalFormat("#,##0.##")
+    private val fmt = DecimalFormat("#,##0.##", java.text.DecimalFormatSymbols(Locale.US))
 
     fun show(c: Context, amount: Double, from: String, wallet: String, big: Boolean, actUrl: String) {
         val title = (if (big) "⚠️ تحويل كبير " else "💰 وصل ") + fmt.format(amount) + " ج"

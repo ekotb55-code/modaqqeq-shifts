@@ -115,7 +115,7 @@ class MainActivity : Activity() {
         }
         if (Account.mode(this).isNotEmpty()) {
             val last = Account.lastSync(this)
-            if (last > 0) acc.addView(text("آخر تحديث للمحافظ: " + SimpleDateFormat("d/M h:mm a", Locale("ar", "EG")).format(Date(last)), 12f, "#A9A8BC"))
+            if (last > 0) acc.addView(text("آخر تحديث للمحافظ: " + SimpleDateFormat("d/M h:mm a", Locale.forLanguageTag("ar-EG-u-nu-latn")).format(Date(last)), 12f, "#A9A8BC"))
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(8), 0, 0) }
             row.addView(button("🔄 حدّث المحافظ", false) { bg({ Account.sync(this) }) { e -> toast(e ?: "اتحدّثت ✓"); render() } })
             row.addView(button(if (Account.isShopPhone(this)) "فك الربط" else "خروج", false) {
@@ -195,7 +195,7 @@ class MainActivity : Activity() {
         log.addView(text("٣) آخر حاجات اتبعتت لمدقق", 17f, bold = true))
         val arr = Store.log(this)
         if (arr.length() == 0) log.addView(text("لسه مفيش", 13f, "#6B6A80"))
-        val tf = SimpleDateFormat("d/M h:mm a", Locale("ar", "EG"))
+        val tf = SimpleDateFormat("d/M h:mm a", Locale.forLanguageTag("ar-EG-u-nu-latn"))
         for (i in 0 until arr.length()) {
             val o = arr.getJSONObject(i)
             log.addView(text("${o.optString("res")}  ·  ${tf.format(Date(o.optLong("at")))}  ·  ${o.optString("src")}", 13f, bold = true).apply { setPadding(0, dp(8), 0, 0) })
@@ -206,7 +206,7 @@ class MainActivity : Activity() {
     }
 
     private var showPerms = false
-    private val money = DecimalFormat("#,##0.##")
+    private val money = DecimalFormat("#,##0.##", java.text.DecimalFormatSymbols(Locale.US))
     private fun j(o: JSONObject?, k: String) = o?.optJSONArray(k) ?: JSONArray()
     private fun objs(a: JSONArray) = (0 until a.length()).map { a.getJSONObject(it) }
     private fun ago(ms: Double): String {
@@ -232,7 +232,7 @@ class MainActivity : Activity() {
         val at = data?.optLong("at") ?: 0
         root.addView(text(when {
             loadingHome && at == 0L -> "بنجيب الأرقام…"
-            at > 0 -> "آخر تحديث: " + SimpleDateFormat("h:mm a", Locale("ar", "EG")).format(Date(at)) + (homeErr?.let { " · ⚠️ $it" } ?: "")
+            at > 0 -> "آخر تحديث: " + SimpleDateFormat("h:mm a", Locale.forLanguageTag("ar-EG-u-nu-latn")).format(Date(at)) + (homeErr?.let { " · ⚠️ $it" } ?: "")
             else -> homeErr ?: ""
         }, 12f, "#8A8AA0"))
         if (data == null) return
@@ -291,7 +291,10 @@ class MainActivity : Activity() {
             val led = shops.flatMap { objs(j(it, "ledger")) }
             val sh = led.filter { it.optString("kind") == "shortage" }.sumOf { it.optDouble("amount") }
             val ov = led.filter { it.optString("kind") == "overage" }.sumOf { it.optDouble("amount") }
-            tiles += tile("⚖️ عجز الشهر ده", money.format(sh) + " ج", "زيادة ${money.format(ov)} ج · ${led.size} وردية", "#C62828", "#EF5350")
+            // أكبر عجز ظاهر علشان لو فيه رقم غلط (مبيعات اتكتبت غلط مثلًا) يبان على طول
+            val top = led.filter { it.optString("kind") == "shortage" }.maxByOrNull { it.optDouble("amount") }
+            val topTxt = top?.let { "\nأكبرهم: ${money.format(it.optDouble("amount"))} ج · ${it.optString("cashier")} ${it.optString("day").takeLast(5).split("-").reversed().joinToString("/")}" } ?: ""
+            tiles += tile("⚖️ عجز الشهر ده", money.format(sh) + " ج", "زيادة ${money.format(ov)} ج · ${led.size} وردية$topTxt", "#C62828", "#EF5350")
         }
         if ("transfers" in chosen) {
             val got = wall.filter { it.first.optString("dir") != "out" && it.first.optString("status") !in listOf("personal", "rejected") }
@@ -308,7 +311,7 @@ class MainActivity : Activity() {
                 val k = x.optString("w") + (if (multi) "|" + s.optString("name") else "")
                 if ((last[k]?.optDouble("atMs") ?: -1.0) < x.optDouble("atMs")) last[k] = JSONObject(x.toString()).put("_shop", s.optString("name"))
             } }
-            val tf = SimpleDateFormat("h:mm a", Locale("ar", "EG"))
+            val tf = SimpleDateFormat("h:mm a", Locale.forLanguageTag("ar-EG-u-nu-latn"))
             tiles += tile("🏦 رصيد المحافظ", if (last.isEmpty()) "—" else "${last.size} محفظة",
                 if (last.isEmpty()) "مفيش رسايل فيها رصيد النهارده" else last.values.joinToString("\n") { "${Home.walletName(it.optString("w"))}${if (multi) " · " + it.optString("_shop") else ""}: ${money.format(it.optDouble("bal"))} ج · ${tf.format(Date(it.optDouble("atMs").toLong()))}" },
                 "#0B4F2E", "#43A047")
