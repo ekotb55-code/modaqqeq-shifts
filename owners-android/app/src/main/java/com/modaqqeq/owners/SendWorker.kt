@@ -25,6 +25,11 @@ class SendWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
             val j = runCatching { JSONObject(reply) }.getOrNull()
             when {
                 j == null -> Store.addLog(applicationContext, src, text, "✗ رد غريب من مدقق")
+                !j.optBoolean("ok") && busy(j.optString("error")) -> {
+                    // حد جوجل اليومي خلص: الرسالة متضيعش، تتبعت تاني لما يتجدد
+                    if (runAttemptCount == 0) Store.addLog(applicationContext, src, text, "⏳ سيرفر مدقق وصل لحد جوجل اليومي · هتتبعت لوحدها بعدين")
+                    return@withContext if (runAttemptCount >= 40) Result.failure() else Result.retry()
+                }
                 !j.optBoolean("ok") -> Store.addLog(applicationContext, src, text, "✗ " + arabicError(j.optString("error")))
                 j.optBoolean("dup") -> Store.addLog(applicationContext, src, text, "✓ وصل قبل كده")
                 j.optBoolean("matched") -> Store.addLog(applicationContext, src, text, "✓ اتربط بنفس التحويل")
@@ -42,9 +47,11 @@ class SendWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
         }
     }
 
-    private fun arabicError(e: String) = when (e) {
-        "bad key" -> "الرابط غلط أو اتلغى"
-        else -> "مدقق رفض الرسالة"
+    private fun busy(e: String) = Regex("urlfetch|too many|كثيرة جد|Service invoked", RegexOption.IGNORE_CASE).containsMatchIn(e)
+    private fun arabicError(e: String) = when {
+        e == "bad key" -> "الرابط غلط أو اتلغى"
+        e.isBlank() -> "مدقق رفض الرسالة"
+        else -> "مدقق رفض الرسالة ($e)"
     }
 
     companion object {
@@ -52,7 +59,7 @@ class SendWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
             val req = OneTimeWorkRequestBuilder<SendWorker>()
                 .setInputData(workDataOf("url" to url, "text" to text, "src" to src))
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
-                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                 .build()
             WorkManager.getInstance(c).enqueue(req)
         }
