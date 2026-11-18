@@ -14,6 +14,9 @@ import javax.crypto.spec.PBEKeySpec
 // قفل التطبيق: رقم سري من ٤ أرقام (متخزن متشفّر على الموبايل بس) + البصمة.
 object Lock {
     private fun prefs(c: Context) = c.getSharedPreferences("lock", Context.MODE_PRIVATE)
+    const val LEN = 6
+    // الأرقام القديمة كانت ٤ · اللي عنده رقم قديم يدخل بيه مرة ويختار رقم من ٦
+    fun len(c: Context) = prefs(c).getInt("len", 4)
     fun has(c: Context) = prefs(c).getString("hash", null) != null
     private fun hash(pin: String, salt: ByteArray): String {
         val k = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(PBEKeySpec(pin.toCharArray(), salt, 30_000, 256))
@@ -21,7 +24,7 @@ object Lock {
     }
     fun set(c: Context, pin: String) {
         val salt = ByteArray(16).also { SecureRandom().nextBytes(it) }
-        prefs(c).edit().putString("salt", Base64.encodeToString(salt, Base64.NO_WRAP)).putString("hash", hash(pin, salt)).putInt("fails", 0).putLong("until", 0).apply()
+        prefs(c).edit().putString("salt", Base64.encodeToString(salt, Base64.NO_WRAP)).putString("hash", hash(pin, salt)).putInt("len", pin.length).putInt("fails", 0).putLong("until", 0).apply()
     }
     fun check(c: Context, pin: String): Boolean {
         val p = prefs(c)

@@ -1408,21 +1408,22 @@ class MainActivity : Activity() {
     private fun pinPage(kind: String) {
         if (kind == "set" && pinStage.isEmpty()) pinStage = "set1"
         val setting = kind == "set"
+        val pinLen = if (setting) Lock.LEN else Lock.len(this)
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(0, dp(30), 0, 0) }
         col.addView(avatar(92))
         col.addView(text(Account.name(this).ifBlank { "مدقق Owners" }, 22f, INK, true).apply { gravity = Gravity.CENTER; setPadding(0, dp(12), 0, 0) })
         col.addView(text(when {
             pinMsg.isNotBlank() -> pinMsg
-            setting && pinStage == "set1" -> "اختار رقم سري من ٤ أرقام تفتح بيه التطبيق"
+            setting && pinStage == "set1" -> "اختار رقم سري من ٦ أرقام تفتح بيه التطبيق"
             setting -> "اكتب الرقم تاني علشان نتأكد"
             else -> "اكتب الرقم السري"
         }, 14f, if (pinMsg.isNotBlank()) "#B3261E" else MUTED).apply { gravity = Gravity.CENTER; setPadding(dp(12), dp(4), dp(12), dp(18)) })
         // النقط
         val dots = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER }
-        repeat(4) { i ->
+        repeat(pinLen) { i ->
             dots.addView(View(this).apply {
                 background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setStroke(dp(2), col(if (pinMsg.isNotBlank()) "#B3261E" else INK)); if (i < pinBuf.length) setColor(col(INK)) }
-                layoutParams = LinearLayout.LayoutParams(dp(22), dp(22)).apply { marginStart = dp(8); marginEnd = dp(8) }
+                layoutParams = LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginStart = dp(6); marginEnd = dp(6) }
             })
         }
         col.addView(dots)
@@ -1444,7 +1445,7 @@ class MainActivity : Activity() {
                         when (k) {
                             "del" -> { pinBuf = pinBuf.dropLast(1); pinMsg = ""; render() }
                             "bio" -> askBio()
-                            else -> { if (pinBuf.length < 4) { pinBuf += k; pinMsg = ""; render(); if (pinBuf.length == 4) Handler(Looper.getMainLooper()).postDelayed({ pinDone(setting) }, 120) } }
+                            else -> { if (pinBuf.length < pinLen) { pinBuf += k; pinMsg = ""; render(); if (pinBuf.length == pinLen) Handler(Looper.getMainLooper()).postDelayed({ pinDone(setting) }, 120) } }
                         }
                     }
                 }, LinearLayout.LayoutParams(0, dp(66), 1f).apply { if (i > 0) marginStart = dp(12) })
@@ -1469,7 +1470,12 @@ class MainActivity : Activity() {
             Lock.set(this, p); pinStage = ""; pinFirst = ""; pinMsg = ""; unlocked = true; toast("✓ الرقم السري اتحفظ"); render(); return
         }
         bg({ if (Lock.check(this, p)) null else "x" }) { e ->
-            if (e == null) { unlocked = true; pinMsg = ""; render(); refreshHome(false) }
+            if (e == null) {
+                unlocked = true; pinMsg = ""
+                // رقم قديم من ٤: يختار رقم جديد من ٦ دلوقتي
+                if (Lock.len(this) != Lock.LEN) { Lock.clear(this); pinStage = ""; toast("الرقم السري بقى ٦ أرقام · اختار رقم جديد") }
+                render(); refreshHome(false)
+            }
             else { pinMsg = if (Lock.waitSec(this) > 0) "محاولات كتير غلط" else "الرقم غلط"; render() }
         }
     }
