@@ -20,6 +20,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
@@ -62,32 +63,56 @@ object Popup {
             app.createDisplayContext(screen).createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null)
         } else app
         val wm = c.getSystemService(WindowManager::class.java)
+        val big = title.startsWith("⚠️")
+        // ألوان فرحانة: أزرق ← بنفسجي ← وردي، والتحويل الكبير برتقالي ← أحمر
         val card = LinearLayout(c).apply {
             orientation = LinearLayout.VERTICAL
             layoutDirection = View.LAYOUT_DIRECTION_RTL
-            setPadding(dp(c, 18), dp(c, 14), dp(c, 18), dp(c, 12))
-            background = GradientDrawable().apply { cornerRadius = dp(c, 24).toFloat(); setColor(Color.parseColor("#15142A")) }
-            elevation = dp(c, 8).toFloat()
+            setPadding(dp(c, 18), dp(c, 14), dp(c, 18), dp(c, 14))
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                if (big) intArrayOf(Color.parseColor("#FF8A00"), Color.parseColor("#FF4D6D"), Color.parseColor("#E0218A"))
+                else intArrayOf(Color.parseColor("#1E6BFF"), Color.parseColor("#7B3FF2"), Color.parseColor("#E040A0"))).apply {
+                cornerRadius = dp(c, 26).toFloat(); setStroke(dp(c, 2), Color.parseColor("#55FFFFFF"))
+            }
+            elevation = dp(c, 10).toFloat()
         }
         fun text(t: String, size: Float, color: String, bold: Boolean = false) = TextView(c).apply {
             this.text = t; textSize = size; setTextColor(Color.parseColor(color)); if (bold) setTypeface(typeface, Typeface.BOLD)
             textDirection = View.TEXT_DIRECTION_RTL; gravity = Gravity.START
         }
-        card.addView(text("مدقق Owners", 12f, "#9FB4FF", true))
-        card.addView(text(title, 22f, "#FFFFFF", true))
-        if (line.isNotBlank()) card.addView(text(line, 15f, "#E6E6F0"))
-        card.addView(text(hint, 12f, "#A9A8BC"))
-        val row = LinearLayout(c).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, dp(c, 10), 0, 0) }
+        // علامة مدقق + اسم التطبيق
+        val head = LinearLayout(c).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
+        head.addView(ImageView(c).apply {
+            setImageResource(R.mipmap.ic_launcher)
+            background = GradientDrawable().apply { cornerRadius = dp(c, 14).toFloat(); setColor(Color.WHITE) }
+            setPadding(dp(c, 3), dp(c, 3), dp(c, 3), dp(c, 3))
+            layoutParams = LinearLayout.LayoutParams(dp(c, 44), dp(c, 44)).apply { marginEnd = dp(c, 10) }
+        })
+        head.addView(LinearLayout(c).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(text("مدقق", 17f, "#FFFFFF", true))
+            addView(text("Owners · تحويل جديد", 12f, "#E8E4FF"))
+        })
+        card.addView(head)
+        card.addView(text(title, 28f, "#FFFFFF", true).apply { setPadding(0, dp(c, 10), 0, 0) })
+        if (line.isNotBlank()) card.addView(text(line, 15f, "#FFFFFF"))
+        card.addView(text(hint, 12f, "#1E1B3A", true).apply {
+            background = GradientDrawable().apply { cornerRadius = dp(c, 99).toFloat(); setColor(Color.parseColor(if (big) "#FFE08A" else "#D9F99D")) }
+            setPadding(dp(c, 10), dp(c, 3), dp(c, 10), dp(c, 3))
+            layoutParams = LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(c, 6) }
+        })
+        val row = LinearLayout(c).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, dp(c, 12), 0, 0) }
         var removed = false
         val remove = { if (!removed) { removed = true; runCatching { wm.removeView(card) } } }
         fun btn(t: String, bg: String, fg: String, onClick: () -> Unit) = Button(c).apply {
-            text = t; textSize = 15f; isAllCaps = false; setTextColor(Color.parseColor(fg))
+            text = t; textSize = 16f; isAllCaps = false; setTextColor(Color.parseColor(fg)); setTypeface(typeface, Typeface.BOLD)
             background = GradientDrawable().apply { cornerRadius = dp(c, 99).toFloat(); setColor(Color.parseColor(bg)) }
+            stateListAnimator = null
             setOnClickListener { onClick() }
-            layoutParams = LinearLayout.LayoutParams(0, dp(c, 46), 1f).apply { marginStart = dp(c, 4); marginEnd = dp(c, 4) }
+            layoutParams = LinearLayout.LayoutParams(0, dp(c, 48), 1f).apply { marginStart = dp(c, 4); marginEnd = dp(c, 4) }
         }
-        if (actUrl.isNotBlank()) row.addView(btn("شخصي", "#B6F000", "#15142A") { remove(); Personal.mark(c, actUrl) })
-        row.addView(btn("تمام", "#2E2D45", "#FFFFFF") { remove() })
+        if (actUrl.isNotBlank()) row.addView(btn("شخصي", "#C6FF1A", "#1E1B3A") { remove(); Personal.mark(c, actUrl) })
+        row.addView(btn("تمام", "#33FFFFFF", "#FFFFFF") { remove() })
         card.addView(row)
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT,
