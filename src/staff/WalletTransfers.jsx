@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { collection, doc, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { WalletMark, useToast } from '../ui.jsx';
-import { fmt, todayKey, walletModeOf } from '../lib';
+import { fmt, todayKey, walletModeOf, walletHolderOf, walletVisible } from '../lib';
 import { logAct } from '../activity.js';
 import { pushEvent } from '../cloud.js';
 import { windowOf } from '../cashier/WalletIn.jsx';
@@ -24,7 +24,7 @@ export default function WalletTransfers({ shops, profile }) {
   const key = owned.map((s) => s.id).join(',') + '|' + days;
   useEffect(() => {
     const subs = owned.map((s) => onSnapshot(query(collection(db, 'walletIn'), where('shopId', '==', s.id), where('day', 'in', lastDays(days))),
-      (q) => setMap((m) => ({ ...m, [s.id]: q.docs.map((d) => ({ id: d.id, ...d.data() })).filter((x) => x.status !== 'auto' && x.dir !== 'out') })),
+      (q) => setMap((m) => ({ ...m, [s.id]: q.docs.map((d) => ({ id: d.id, ...d.data() })).filter((x) => x.status !== 'auto' && x.dir !== 'out' && walletVisible(s, x, profile)) })),
       (e) => console.warn('walletIn', e.code)));
     return () => subs.forEach((u) => u());
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -85,7 +85,7 @@ export default function WalletTransfers({ shops, profile }) {
     if (er) b.update(er, { smsRejected: true, smsRejectedBy: profile.name, smsRejectedAt: Date.now() });
     if (!(await commit(b, 'اترفض · المبلغ بقى على الكاشير', () => unrefuse(x)))) return;
     logAct('sms_refuse', `رفض ${label(x)} اللي ${x.claimedByName} أكّده (فاتورة ${x.claimInvoice || '—'})`, { shopId: x.shopId, shiftId: x.claimedShiftId });
-    pushEvent({ type: 'sms_refused', shopId: x.shopId, shiftId: x.claimedShiftId, to: 'staff', title: `❌ ${profile.name} رفض تحويل ${fmt(x.amount)} ج`, body: `اللي ${x.claimedByName} أكّده · المبلغ ده بقى على الكاشير` });
+    pushEvent({ type: 'sms_refused', holder: walletHolderOf(shops.find((s) => s.id === x.shopId), x), shopId: x.shopId, shiftId: x.claimedShiftId, to: 'staff', title: `❌ ${profile.name} رفض تحويل ${fmt(x.amount)} ج`, body: `اللي ${x.claimedByName} أكّده · المبلغ ده بقى على الكاشير` });
   };
 
   if (!owned.length) return <div className="wrap"><div className="card empty">مفيش محافظ «بتروح لصاحب المحل» في المحلات دي</div></div>;

@@ -30,7 +30,7 @@ object Transfers {
             ids.forEach { id ->
                 val s = Home.get(token, "shops/$id") ?: return@forEach
                 shops.put(JSONObject().put("id", id).put("name", s.optString("name")))
-                Home.query(token, "walletIn", Home.eq("shopId", id), inDays).filter { it.optString("status") != "auto" && it.optString("dir") != "out" }.forEach { list.put(it) }
+                Home.query(token, "walletIn", Home.eq("shopId", id), inDays).filter { it.optString("status") != "auto" && it.optString("dir") != "out" && Home.mineWallet(s, it, uid) }.forEach { list.put(it) }
             }
             prefs(c).edit().putString("last", JSONObject().put("at", now).put("shops", shops).put("list", list).toString()).apply()
             null
@@ -94,7 +94,7 @@ object Transfers {
         if (sh.isNotBlank() && en.isNotBlank()) w += upd("shifts/$sh/entries/$en", mapOf("smsRejected" to !back, "smsRejectedBy" to Account.name(c), "smsRejectedAt" to now))
         w += activity(c, if (back) "sms_unrefuse" else "sms_refuse", if (back) "رجّع ${label(x)} اللي كان رفضه" else "رفض ${label(x)} اللي ${x.optString("claimedByName")} أكّده (فاتورة ${x.optString("claimInvoice").ifBlank { "—" }})", x.optString("shopId"), sh.ifBlank { null })
         if (!back) w += create("outbox/" + UUID.randomUUID().toString().replace("-", "").take(20), mapOf(
-            "type" to "sms_refused", "shopId" to x.optString("shopId"), "shiftId" to sh.ifBlank { null }, "to" to "staff", "toUid" to null,
+            "type" to "sms_refused", "holder" to x.optString("holder"), "shopId" to x.optString("shopId"), "shiftId" to sh.ifBlank { null }, "to" to "staff", "toUid" to null,
             "title" to "❌ ${Account.name(c)} رفض تحويل ${money(x.optDouble("amount"))} ج".take(120), "body" to "اللي ${x.optString("claimedByName")} أكّده · المبلغ ده بقى على الكاشير".take(240),
             "byUid" to (Account.uid(c) ?: ""), "atMs" to now))
         return commit(c, w)

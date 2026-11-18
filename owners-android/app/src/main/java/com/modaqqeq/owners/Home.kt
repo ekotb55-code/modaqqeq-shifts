@@ -79,6 +79,12 @@ object Home {
     internal fun dayKey(ms: Long) = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = cairo }.format(Date(ms))
     private val WALLET = mapOf("insta" to "انستاباي", "insta2" to "انستاباي شخصي", "vf" to "فودافون كاش", "vf2" to "فودافون كاش شخصي", "nbe" to "الأهلي فون كاش")
 
+    // محفظة شخصية «مع» أونر/مدير تاني: تحويلاتها متظهرش هنا. «مع موبايل المحل» أو مش متحددة: تظهر.
+    internal fun mineWallet(shop: JSONObject, x: JSONObject, uid: String): Boolean {
+        val h = shop.optJSONObject("walletHolders")?.optString(x.optString("wallet"))?.takeIf { it.isNotBlank() } ?: x.optString("holder")
+        return h.isBlank() || h == "shop" || h == uid
+    }
+
     // Everything the home needs, for the shops this account may see. Returns an error text or null.
     fun load(c: Context): String? {
         val token = try { Account.idToken(c) } catch (e: Exception) { return "مفيش نت" } ?: return "ادخل بأكونتك تاني"
@@ -121,7 +127,7 @@ object Home {
                         .put("expenses", JSONArray(exp.map { e -> JSONObject().put("amount", e.optDouble("amount", 0.0)).put("title", entryTitle(e)).put("kind", e.optString("kindLabel").ifBlank { "مصروف" })
                             .put("at", e.optDouble("createdAt", 0.0)).put("cashier", sh.optString("cashierName")).put("sid", sid) }))
                 })
-                val wIn = query(token, "walletIn", eq("shopId", id), eq("day", today))
+                val wIn = query(token, "walletIn", eq("shopId", id), eq("day", today)).filter { mineWallet(s, it, uid) }
                 shopArr.put(JSONObject().put("id", id).put("name", s.optString("name")).put("shifts", shiftsArr)
                     .put("reviews", JSONArray(reviews.map { JSONObject().put("id", it.optString("_id")).put("sales", it.optDouble("sales", Double.NaN).let { v -> if (v.isNaN()) JSONObject.NULL else v }).put("cashier", it.optString("cashierName"))
                         .put("expenses", it.optJSONObject("totals")?.optDouble("expenses", 0.0) ?: 0.0).put("closed", !it.isNull("closedAt")).put("closedAt", it.optDouble("closedAt", 0.0))

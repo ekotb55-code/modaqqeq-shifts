@@ -330,6 +330,13 @@ export function walletSmsTotals(list, tiers) {
   });
   return t;
 }
+// محفظة شخصية «مع» أونر/مدير معيّن: الأونرز والمديرين التانيين ميشوفوش تحويلاتها. «مع موبايل المحل» أو مش متحددة: الكل يشوف.
+export const walletHolderOf = (shop, x) => shop?.walletHolders?.[x?.wallet] ?? x?.holder ?? '';
+export const walletVisible = (shop, x, profile) => {
+  if (!['owner', 'manager'].includes(profile?.role)) return true;
+  const h = walletHolderOf(shop, x);
+  return !h || h === 'shop' || h === profile.id;
+};
 export const walletModeOf = (shop, k) => (shop?.walletModes?.[k] === 'shop' ? 'shop' : 'owner');
 export const walletModesOf = (shop) => Object.fromEntries(WALLETS.map((w) => [w.key, walletModeOf(shop, w.key)]));
 export const machineKey = (m) => `m:${m.machine}|${m.account}`;

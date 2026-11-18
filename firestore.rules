@@ -163,7 +163,7 @@ service cloud.firestore {
     match /outbox/{id} {
       allow create: if signedIn() && request.resource.data.byUid == request.auth.uid
         && (isAdmin() || inShop(request.resource.data.shopId))
-        && request.resource.data.keys().hasOnly(['type', 'shopId', 'shiftId', 'to', 'toUid', 'title', 'body', 'byUid', 'atMs'])
+        && request.resource.data.keys().hasOnly(['type', 'shopId', 'shiftId', 'to', 'toUid', 'title', 'body', 'byUid', 'atMs', 'holder'])
         && request.resource.data.title is string && request.resource.data.title.size() <= 120
         && request.resource.data.body is string && request.resource.data.body.size() <= 240;
       allow read, update, delete: if false;

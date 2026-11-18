@@ -6,7 +6,7 @@ import { auth, db, SUPER_ADMINS } from '../firebase';
 import Activity from './Activity.jsx';
 import MyPhoto from '../MyPhoto.jsx';
 import { Avatar, Icon, Modal, useToast } from '../ui.jsx';
-import { DEFAULT_SHOP, ROLE_LABEL, allOpen, dateStr, isAdminRole, matches, toDate, walletModeOf } from '../lib';
+import { DEFAULT_SHOP, ROLE_LABEL, allOpen, dateStr, isAdminRole, matches, toDate, walletModeOf, walletVisible } from '../lib';
 import Review from './Review.jsx';
 import Ledger from './Ledger.jsx';
 import Reports from './Reports.jsx';
@@ -34,7 +34,7 @@ export default function StaffApp({ profile }) {
     canReview && { id: 'safes', label: 'الخزن' },
     { id: 'reports', label: 'التقارير' },
     { id: 'ledger', label: 'العجز والزيادة' },
-    shops.some((sh) => (sh.wallets || []).some((w) => walletModeOf(sh, w) === 'owner')) && { id: 'wallet', label: 'التحويلات' },
+    shops.some((sh) => (sh.wallets || []).some((w) => walletModeOf(sh, w) === 'owner' && walletVisible(sh, { wallet: w }, profile))) && { id: 'wallet', label: 'التحويلات' },
     isAdmin && { id: 'setup', label: 'الإعداد' },
     canSeeLog && { id: 'activity', label: 'سجل الدخول' },
   ].filter(Boolean);
@@ -112,6 +112,20 @@ export default function StaffApp({ profile }) {
     setShopSel(ref.id);
     toast('المحل اتعمل');
   };
+
+  // «مع مين؟» بتاعة كل محفظة بتتنسخ على المحل (walletHolders) علشان الأونر والمدير يشوف كل واحد محافظه بس
+  const [smsKeys, setSmsKeys] = useState(null);
+  useEffect(() => (isAdmin ? onSnapshot(collection(db, 'smsKeys'), (q) => setSmsKeys(q.docs.map((d) => d.data())), () => {}) : undefined), [isAdmin]);
+  useEffect(() => {
+    if (!isAdmin || !smsKeys || !shops.length) return;
+    const want = {};
+    [...smsKeys].sort((a, b) => (a.atMs || 0) - (b.atMs || 0)).forEach((k) => {
+      if (!k.wallet || !k.holder) return;
+      [...new Set([k.shopId, ...(k.shopIds || [])].filter(Boolean))].forEach((sid) => { (want[sid] = want[sid] || {})[k.wallet] = k.holder; });
+    });
+    const flat = (o) => JSON.stringify(Object.keys(o || {}).sort().map((x) => [x, o[x]]));
+    shops.forEach((sh) => { if (flat(want[sh.id]) !== flat(sh.walletHolders)) updateDoc(doc(db, 'shops', sh.id), { walletHolders: want[sh.id] || {} }).catch(() => {}); });
+  }, [isAdmin, smsKeys, shops]);
 
   useEffect(() => {
     const norm = (s) => ({ ...DEFAULT_SHOP, ...s.data(), id: s.id });

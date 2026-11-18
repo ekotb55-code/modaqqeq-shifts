@@ -164,7 +164,7 @@ export function ClaimModal({ s, shop, shift, profile, onClose }) {
       }
       logAct('sms_claim', `أكّد تحويل ${SRC_LABEL[s.wallet] || ''} ${fmt(s.amount)} ج من ${s.fromName || 'عميل'} · فاتورة ${inv.trim()} (رسالة البنك)`, { shopId: shift.shopId, shiftId: shift.id });
       // The owner sees every confirmation and can refuse it if the money isn't the shop's.
-      if (s.notifyClaim !== false) pushEvent({ type: 'sms_claim', shopId: shift.shopId, shiftId: shift.id, to: 'staff', title: `✋ ${profile.name} أكّد تحويل ${fmt(s.amount)} ج`, body: `من ${s.fromName || 'عميل'} · فاتورة ${inv.trim()} · لو مش بتاع المحل ارفضه من «التحويلات»` });
+      if (s.notifyClaim !== false) pushEvent({ type: 'sms_claim', holder: shop?.walletHolders?.[s.wallet] ?? s.holder ?? '', shopId: shift.shopId, shiftId: shift.id, to: 'staff', title: `✋ ${profile.name} أكّد تحويل ${fmt(s.amount)} ج`, body: `من ${s.fromName || 'عميل'} · فاتورة ${inv.trim()} · لو مش بتاع المحل ارفضه من «التحويلات»` });
       toast('اتسجل التحويل ✓');
       onClose();
     } catch (e) {

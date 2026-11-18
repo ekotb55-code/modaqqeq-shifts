@@ -84,7 +84,9 @@ function sendNotifications_() {
     else if (ev.to === 'staff' && ev.shopId) {
       if (!staffCache[ev.shopId]) staffCache[ev.shopId] = staffOf_(ev.shopId);
       const key = PREF_OF[ev.type] || 'handover';
-      uids = staffCache[ev.shopId].filter(function (u) { return wants_(u, key); }).map(function (u) { return u.id; });
+      // تحويل على محفظة شخصية: من الأونرز والمديرين يوصل لصاحبها بس
+      const h = ev.holder && ev.holder !== 'shop' ? ev.holder : '';
+      uids = staffCache[ev.shopId].filter(function (u) { return wants_(u, key) && !(h && (u.role === 'owner' || u.role === 'manager') && u.id !== h); }).map(function (u) { return u.id; });
     }
     uids = uids.filter(function (u) { return u && u !== ev.byUid; });
     console.log('event ' + ev.type + ' → ' + ev.to + ' · ' + uids.length + ' people');
@@ -393,6 +395,8 @@ function smsOne_(key, text) {
   base.needInvoice = !!g.invoice;
   base.notifyClaim = !!g.notify;
   base.allowPersonal = !!g.personal;
+  // «مع مين؟»: المحفظة الشخصية يشوفها ويتنبّه بيها صاحبها بس (الأونر/المدير التانيين لأ)
+  base.holder = k.holder || '';
   const shopIds = (k.shopIds && k.shopIds.length ? k.shopIds : [k.shopId]).filter(function (x, i, a) { return x && a.indexOf(x) === i; });
   const group = key + '_' + refKey;
   let saved = 0;
@@ -404,13 +408,13 @@ function smsOne_(key, text) {
   // صاحب المحل: إشعار لكل تحويل، فيه زرار «شخصي» يشيله من عند الكاشيرية من غير ما يفتح التطبيق (أندرويد).
   // sms_big القديم بقى جوّه الإشعار ده.
   const actUrl = ScriptApp.getService().getUrl() + '?a=personal&g=' + encodeURIComponent(group) + '&t=' + actToken_(group);
-  req_('post', FS + '/outbox', { fields: toFields_({ type: 'sms_owner', shopId: shopIds[0], shiftId: '', to: 'staff', toUid: '', byUid: '', atMs: now.getTime(), go: 'wallet', actUrl: g.personal ? actUrl : '',
+  req_('post', FS + '/outbox', { fields: toFields_({ type: 'sms_owner', holder: k.holder || '', shopId: shopIds[0], shiftId: '', to: 'staff', toUid: '', byUid: '', atMs: now.getTime(), go: 'wallet', actUrl: g.personal ? actUrl : '',
     title: (big ? '⚠️ تحويل كبير ' : '💰 وصل ') + p.amount + ' ج' + (p.fromName ? ' من ' + p.fromName : ''),
     body: big ? 'أكبر من الحد · مش ظاهر للكاشير · ابعته للكاشير من «التحويلات» أو دوس «شخصي»' : (g.personal ? 'ظاهر للكاشيرية دلوقتي · لو بتاعك إنت دوس «شخصي»' : 'ظاهر للكاشيرية دلوقتي') }) });
   shopIds.forEach(function (sid) {
     if (big) return;
     const ev = big
-      ? { type: 'sms_big', shopId: sid, shiftId: '', to: 'staff', toUid: '', byUid: '', atMs: now.getTime(), title: '⚠️ تحويل كبير ' + p.amount + ' ج', body: (p.fromName ? 'من ' + p.fromName + ' · ' : '') + 'أكبر من الحد · مش هيظهر للكاشير إلا لو بعته من «التحويلات»' }
+      ? { type: 'sms_big', holder: k.holder || '', shopId: sid, shiftId: '', to: 'staff', toUid: '', byUid: '', atMs: now.getTime(), title: '⚠️ تحويل كبير ' + p.amount + ' ج', body: (p.fromName ? 'من ' + p.fromName + ' · ' : '') + 'أكبر من الحد · مش هيظهر للكاشير إلا لو بعته من «التحويلات»' }
       : { type: 'sms', shopId: sid, shiftId: '', to: 'shopCashiers', toUid: '', byUid: '', atMs: now.getTime(), title: '💰 وصل تحويل ' + p.amount + ' ج', body: (p.fromName ? 'من ' + p.fromName + ' · ' : '') + (base.windowMin ? 'لو ده عميلك أكّده في التطبيق خلال ' + base.windowMin + ' دقيقة' : 'لو ده عميلك أكّده في التطبيق') };
     req_('post', FS + '/outbox', { fields: toFields_(ev) });
   });

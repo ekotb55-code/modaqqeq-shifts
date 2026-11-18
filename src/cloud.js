@@ -44,11 +44,11 @@ export function fetchPhoto(src) {
 
 // ── notifications ──
 // to: 'staff' (accountants of the shop) or 'cashier' (toUid).
-export function pushEvent({ type, shopId, shiftId, to, toUid = null, title, body = '' }) {
+export function pushEvent({ type, shopId, shiftId, to, toUid = null, title, body = '', holder = '' }) {
   if (!cloudReady() || !auth.currentUser) return;
   addDoc(collection(db, 'outbox'), {
     type, shopId: shopId || null, shiftId: shiftId || null, to, toUid, title: String(title).slice(0, 120), body: String(body || '').slice(0, 240),
-    byUid: auth.currentUser.uid, atMs: Date.now(),
+    byUid: auth.currentUser.uid, atMs: Date.now(), ...(holder ? { holder } : {}),
   }).catch(() => {});
 }
 
