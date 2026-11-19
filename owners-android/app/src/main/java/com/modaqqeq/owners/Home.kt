@@ -23,8 +23,15 @@ object Home {
         "open" to "🧾 الورديات",
         "balances" to "🏦 رصيد المحافظ",
         "purchases" to "🛒 مشتريات النهارده",
+        "finpos" to "💼 الموقف المالي",
     )
-    fun cards(c: Context): Set<String> = prefs(c).getStringSet("cards", null) ?: CARDS.map { it.first }.toSet()
+    fun cards(c: Context): Set<String> {
+        val p = prefs(c)
+        val s = p.getStringSet("cards", null) ?: return CARDS.map { it.first }.toSet()
+        // كارت الموقف المالي جديد: يظهر مرة لوحده للي كان مختار كروته قبل كده
+        if (!p.getBoolean("fpAdded", false)) { val n = s + "finpos"; p.edit().putStringSet("cards", n).putBoolean("fpAdded", true).apply(); return n }
+        return s
+    }
     fun setCards(c: Context, v: Set<String>) = prefs(c).edit().putStringSet("cards", v).apply()
     fun shortageMin(c: Context) = prefs(c).getInt("shortMin", 50)
     fun longHours(c: Context) = prefs(c).getInt("longH", 12)

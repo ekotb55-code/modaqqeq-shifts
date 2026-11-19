@@ -41,6 +41,7 @@ function setup() {
   ScriptApp.getProjectTriggers().forEach(function (t) { ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('tick').timeBased().everyMinutes(1).create();
   ScriptApp.newTrigger('cleanup').timeBased().everyDays(1).atHour(4).create();
+  ScriptApp.newTrigger('finPosAll').timeBased().everyDays(1).atHour(4).create(); // الموقف المالي (FinPos.gs)
 
   // نتأكد إن السكريبت قادر يقرا قاعدة البيانات ويبعت إشعارات
   const r1 = req_('get', FS + '/users?pageSize=1');
@@ -81,6 +82,9 @@ function sendNotifications_() {
     if (ev.to === 'cashier' && ev.toUid) uids = [ev.toUid];
     else if (ev.to === 'shopCashiers' && ev.shopId) uids = runUsers_({ fieldFilter: { field: { fieldPath: 'shopIds' }, op: 'ARRAY_CONTAINS', value: { stringValue: ev.shopId } } })
       .filter(function (u) { return u.role === 'cashier' && !u.disabled; }).map(function (u) { return u.id; });
+    // الموقف المالي: أونرز الفرع بس
+    else if (ev.to === 'owners' && ev.shopId) uids = runUsers_({ fieldFilter: { field: { fieldPath: 'shopIds' }, op: 'ARRAY_CONTAINS', value: { stringValue: ev.shopId } } })
+      .filter(function (u) { return u.role === 'owner' && !u.disabled; }).map(function (u) { return u.id; });
     else if (ev.to === 'staff' && ev.shopId) {
       if (!staffCache[ev.shopId]) staffCache[ev.shopId] = staffOf_(ev.shopId);
       const key = PREF_OF[ev.type] || 'handover';
@@ -241,6 +245,8 @@ function doPost(e) {
     if (body.action === 'purchase') return json_(purchase_(body));
     if (body.action === 'pimage') return json_(purImage_(body));
     if (body.action === 'pstores') return json_(purStores_(body));
+    if (body.action === 'finpos') return json_(finPosList_(body));
+    if (body.action === 'finposnow') return json_(finPosNow_(body));
     return json_({ ok: false, error: 'unknown action' });
   } catch (err) { return json_({ ok: false, error: String(err) }); }
 }
