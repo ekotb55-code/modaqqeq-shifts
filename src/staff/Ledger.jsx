@@ -5,6 +5,7 @@ import { useToast } from '../ui.jsx';
 import { fmt, num, todayKey } from '../lib';
 import { useByShops } from './Reports.jsx';
 import { logAct } from '../activity.js';
+import { ReopenClosedModal, canReopenClosed } from './Review.jsx';
 
 export default function Ledger({ profile, shops, canReview }) {
   const [month, setMonth] = useState(todayKey().slice(0, 7));
@@ -53,6 +54,7 @@ function LedgerRow({ r, kind, shopName, canReview, profile }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState(r.reason || '');
   const [adj, setAdj] = useState(r.adjustedAmount ?? r.amount);
+  const [reopen, setReopen] = useState(false);
   const status = r.status || (r.confirmed ? 'deducted' : 'pending');
   const amount = num(r.adjustedAmount ?? r.amount);
   const save = async (patch, msg) => {
@@ -71,6 +73,13 @@ function LedgerRow({ r, kind, shopName, canReview, profile }) {
           <span className={'badge ' + STATUS[status][1]}>{STATUS[status][0]}</span>
         </span>
       </div>
+      {open && canReopenClosed(profile) && r.shiftId && (
+        <div className="spread" style={{ background: '#E6F4FF', borderRadius: 18, padding: 12, marginTop: 8, gap: 10 }}>
+          <span className="small" style={{ lineHeight: 1.7 }}>الكاشير قال على سبب أو مصروف؟ <b>افتح الوردية</b> وضيفه من جوه، ولما تتقفل تاني الرقم هنا هيتصلّح لوحده.</span>
+          <button type="button" className="btn sm" onClick={() => setReopen(true)}>↩︎ افتح الوردية للمراجعة</button>
+        </div>
+      )}
+      {reopen && <ReopenClosedModal shift={{ id: r.shiftId, shopId: r.shopId, cashierName: r.cashierName }} profile={profile} onClose={() => setReopen(false)} />}
       {open && canReview && (
         <div className="stack" style={{ background: 'var(--bg)', borderRadius: 18, padding: 12, marginTop: 8 }}>
           <div className="row" style={{ gap: 10, alignItems: 'flex-end' }}>

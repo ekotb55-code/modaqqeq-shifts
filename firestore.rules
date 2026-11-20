@@ -155,7 +155,8 @@ service cloud.firestore {
       allow update: if reviewerOf(resource.data.shopId)
         || (signedIn() && resource.data.cashierUid == request.auth.uid 
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acknowledged', 'acknowledgedAt']));
-      allow delete: if isAdmin();
+      // لما وردية تتقفل تاني ونتيجتها تبقى صفر، سطر العجز/الزيادة بتاعها بيتمسح
+      allow delete: if reviewerOf(resource.data.shopId);
     }
 
     // ── Free Apps Script helper (it works with the project owner's own access, rules don't apply to it) ──

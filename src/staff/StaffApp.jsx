@@ -97,6 +97,12 @@ export default function StaffApp({ profile }) {
     setTab(canReview ? 'review' : 'reports');
     setTimeout(() => window.dispatchEvent(new CustomEvent('mdq-open-shift', { detail: n.shiftId })), 50);
   };
+  // وردية اتفتحت للمراجعة تاني (من التقارير أو من سجل العجز): روح عليها في «المراجعة»
+  useEffect(() => {
+    const h = (e) => openNote({ shiftId: e.detail?.shiftId, shopId: e.detail?.shopId });
+    window.addEventListener('mdq-go-shift', h);
+    return () => window.removeEventListener('mdq-go-shift', h);
+  });
   const setupShop = effSel && effSel !== 'all' ? effSel : null;
   const selName = effSel === 'all' ? 'كل الفروع' : shops.find((x) => x.id === effSel)?.name;
   useEffect(() => { if (selName && shops.length > 1) logAct('branch', `اختار ${selName === 'كل الفروع' ? 'كل الفروع' : `فرع ${selName}`}`, { shopId: effSel !== 'all' ? effSel : null }); }, [selName]); // eslint-disable-line react-hooks/exhaustive-deps

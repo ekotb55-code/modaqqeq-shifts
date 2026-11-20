@@ -319,6 +319,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
   const [addOpen, setAddOpen] = useState(false);
   const [addInit, setAddInit] = useState(null); // a cashier request being turned into an expense
   const [reopenOpen, setReopenOpen] = useState(false);
+  const [reopenClosedOpen, setReopenClosedOpen] = useState(false);
   const logFix = (what, from, to) => ({ corrections: [...(shift.corrections || []), { what, from, to, by: profile.name, at: new Date().toISOString() }] });
   const fixEntry = async (e, amount) => {
     try {
@@ -458,6 +459,18 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
         <section className="card spread" data-tour="force">
           <span className="muted">الوردية لسه شغالة. لو الكاشير مشي من غير ما يسلّم تقدر تقفلها بالنيابة عنه.</span>
           <button type="button" className="btn soft sm" onClick={forceSubmit}>قفل بالنيابة</button>
+        </section>
+      )}
+
+      {closed && canReopenClosed(profile) && (
+        <section className="card spread no-print" style={{ gap: 10 }}>
+          <span className="muted" style={{ lineHeight: 1.7 }}>الوردية مقفولة بنتيجة <b>{diffText(shift.diff)}</b>. لو طلع مصروف أو سبب مش متسجل، رجّعها للمراجعة وضيفه من جوه.</span>
+          <button type="button" className="btn soft sm" onClick={() => setReopenClosedOpen(true)}><Icon d="undo" size={16} />افتح الوردية للمراجعة تاني</button>
+        </section>
+      )}
+      {reviewing && shift.closeReopenedBy && (
+        <section className="card" style={{ background: '#E6F4FF', lineHeight: 1.7 }}>
+          <span><b>الوردية دي كانت مقفولة ورجعت للمراجعة</b> · فتحها {shift.closeReopenedBy}{shift.closeReopenNote ? ` · ${shift.closeReopenNote}` : ''}. ضيف المصروف أو السبب من «إضافة مصروف أو إيراد (تصحيح)» تحت، وقفّلها تاني.</span>
         </section>
       )}
 
@@ -653,6 +666,7 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
       </section>
       {addOpen && <AddCorrection shift={shift} shop={shop} profile={profile} initial={addInit} onSaved={() => { if (addInit) markRequest(addInit.index, 'added'); }} onClose={() => { setAddOpen(false); setAddInit(null); }} />}
       {reopenOpen && <ReopenModal shift={shift} profile={profile} onClose={() => setReopenOpen(false)} />}
+      {reopenClosedOpen && <ReopenClosedModal shift={shift} profile={profile} onClose={() => setReopenClosedOpen(false)} />}
       {forceOpen && <ForceClose shift={shift} fullShop={fullShop} shop={shop} entries={entries} profile={profile} onClose={() => setForceOpen(false)} />}
 
       <div className="row" style={{ gap: 16 }}>
@@ -797,6 +811,44 @@ function AddCorrection({ shift, shop, profile, onClose, initial, onSaved }) {
       <label className="field">المبلغ<input className="input" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus /></label>
       <label className="field">السبب<input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="مثلًا: مصروف الكاشير نسي يسجله" /></label>
       <button type="button" className="btn full" onClick={save} disabled={busy}>{busy ? 'لحظة…' : 'أضف'}</button>
+    </Modal>
+  );
+}
+
+// ↩︎ وردية مقفولة ترجع «بتتراجع»: الإدارة ودعم مدقق والمحاسب بس.
+// المحاسب يضيف المصروف أو السبب من جوه («إضافة مصروف أو إيراد»)، ولما يقفلها تاني العجز/الزيادة بيتحسبوا من جديد وسجل العجز بيتصلّح لوحده.
+export const canReopenClosed = (profile) => ['admin', 'support', 'accountant'].includes(profile?.role);
+export async function reopenClosedShift(shift, profile, note) {
+  const b = writeBatch(db);
+  b.update(doc(db, 'reviews', shift.id), { startedAt: serverTimestamp(), reopenedAfterClose: true });
+  b.update(doc(db, 'shifts', shift.id), {
+    status: 'reviewing', reviewer: profile.name, reviewStartedAt: serverTimestamp(),
+    closeReopenNote: (note || '').trim(), closeReopenedBy: profile.name, closeReopenedAt: serverTimestamp(), closeReopenCount: (shift.closeReopenCount || 0) + 1,
+  });
+  await b.commit();
+  logAct('reopen', `رجّع وردية ${shift.cashierName} المقفولة للمراجعة تاني${(note || '').trim() ? ` · ${note.trim()}` : ''}`, { shopId: shift.shopId, shiftId: shift.id });
+  // افتحها في «المراجعة» على طول
+  window.dispatchEvent(new CustomEvent('mdq-go-shift', { detail: { shiftId: shift.id, shopId: shift.shopId } }));
+}
+
+export function ReopenClosedModal({ shift, profile, onClose }) {
+  const toast = useToast();
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    if (!note.trim()) { toast('اكتب السبب الأول', 'err'); return; }
+    setBusy(true);
+    try { await reopenClosedShift(shift, profile, note); toast('الوردية رجعت للمراجعة · ضيف المصروف وقفّلها تاني'); onClose(); }
+    catch (e) { console.error(e); toast('مش قادرين نفتحها', 'err'); setBusy(false); }
+  };
+  return (
+    <Modal title="افتح الوردية للمراجعة تاني" icon="undo" color="var(--blue)" onClose={onClose} width={480}>
+      <span className="small" style={{ lineHeight: 1.8 }}>
+        وردية <b>{shift.cashierName}</b> هترجع «بتتراجع». من جوه دوس <b>«إضافة مصروف أو إيراد (تصحيح)»</b> وضيف اللي ناقص، وبعدين قفّلها تاني:
+        العجز أو الزيادة هيتحسبوا من جديد، وسجل العجز والزيادة هيتصلّح لوحده، و{shift.cashierName} هيوصله إشعار بالنتيجة الجديدة.
+      </span>
+      <label className="field">ليه بتفتحها؟<input className="input" autoFocus value={note} onChange={(e) => setNote(e.target.value)} placeholder="مثلًا: أيمن قال فيه مصروف محل زجاج 2800 مش متسجل" /></label>
+      <button type="button" className="btn full" onClick={go} disabled={busy}>{busy ? 'بيفتحها…' : 'افتحها للمراجعة'}</button>
     </Modal>
   );
 }
