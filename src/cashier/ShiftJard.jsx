@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Avatar, Icon, Modal, useDraft, useToast } from '../ui.jsx';
 import { fmt, num } from '../lib';
-import { jardFinish, jardStart, shiftJardOf } from '../shiftJard.js';
+import { jardFinish, jardRecheck, jardStart, shiftJardOf } from '../shiftJard.js';
 import { verifyCashierPin } from '../sessions.js';
 import { logAct } from '../activity.js';
 import { isDesktop } from '../remoteDraft';
@@ -66,6 +66,8 @@ export default function ShiftJard({ shop, shift, profile, cashiers = [], onClose
   const [invoice, setInvoice] = useDraft(dkey, 'invoice', false);
   // على الكمبيوتر: العد بيتحوّل على موبايل الكاشير لوحده (زي التصوير) - ويقدر يعدّ من هنا لو عايز
   const [viaPhone, setViaPhone] = useDraft(dkey, 'viaPhone', () => isDesktop());
+  // أصناف اتباع منها أثناء العد: بتتعد تاني هي بس (أرقام «م»)
+  const [recount, setRecount] = useDraft(dkey, 'recount', null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [pinOut, setPinOut] = useState('');
@@ -74,14 +76,36 @@ export default function ShiftJard({ shop, shift, profile, cashiers = [], onClose
   const others = cashiers.filter((c) => c.uid !== profile.id);
   const selfUser = { uid: profile.id, username: cashiers.find((c) => c.uid === profile.id)?.username || profile.username || '', name: profile.name };
   const incoming = others.find((c) => c.uid === inUid) || null;
-  const items = sess?.items || [];
+  const allItems = sess?.items || [];
+  const items = recount ? allItems.filter((it) => recount.includes(it.n)) : allItems;
   const left = items.filter((it) => String(counts[it.n] ?? '').trim() === '').length;
 
-  const toConfirm = () => { setStep('confirm'); setOkOut(false); setOkIn(false); };
+  const toConfirm = () => { setRecount(null); setStep('confirm'); setOkOut(false); setOkIn(false); };
+  // «خلّصنا العد»: نراجع كميات البرنامج تاني - اللي اتباع منه أثناء العد يتعد تاني (هو بس)
+  const doneCounting = async (c = counts) => {
+    setBusy(true); setErr('');
+    try {
+      const j = await jardRecheck(cfg, sess.id);
+      const ch = (j.changed || []).map((x) => x.n);
+      if (ch.length) {
+        const next = { ...c };
+        ch.forEach((n) => { delete next[n]; });
+        setCounts(next);
+        setRecount(ch);
+        toast(`${ch.length} صنف اتباع منه وانتوا بتعدّوا · عدّوه تاني`, 'err');
+      } else toConfirm();
+    } catch (e) {
+      // البرنامج مش بيرد: مانوقفش التسليم - بنكمّل على الكميات اللي اتسحبت
+      toConfirm();
+      // (سكريبت قديم لسه مافيهوش المراجعة: بنكمّل من غير رسالة)
+      if (!/action/.test(e.message)) setErr('مقدرناش نراجع كميات البرنامج تاني (' + e.message + ') · كمّلنا على الكميات اللي اتسحبت أول الجرد');
+    }
+    setBusy(false);
+  };
   const phoneState = useJardOnPhone({
-    uid: profile.id, on: step === 'count' && viaPhone, sess, counts,
+    uid: profile.id, on: step === 'count' && viaPhone && !busy, sess, items, note: recount ? 'الأصناف دي اتباع منها وانتوا بتعدّوا · عدّوها تاني دلوقتي' : '', counts,
     onCounts: (c) => setCounts(c),
-    onDone: (c) => { setCounts(c); clearJardOnPhone(profile.id); toConfirm(); toast('العد وصل من الموبايل · أكّدوا بالرقم السري'); },
+    onDone: (c) => { const all = { ...counts, ...c }; setCounts(all); doneCounting(all); clearJardOnPhone(profile.id); },
     onBack: () => { setViaPhone(false); clearJardOnPhone(profile.id); },
   });
   const countHere = () => { setViaPhone(false); clearJardOnPhone(profile.id); };
@@ -111,7 +135,7 @@ export default function ShiftJard({ shop, shift, profile, cashiers = [], onClose
   const finish = async () => {
     setBusy(true); setErr('');
     try {
-      const c = Object.fromEntries(items.map((it) => [it.n, num(counts[it.n])]));
+      const c = Object.fromEntries(allItems.map((it) => [it.n, num(counts[it.n])]));
       const j = await jardFinish(cfg, { id: sess.id, counts: c, user: `${profile.name} + ${incoming?.name || ''}` });
       if (!j.lines) throw new Error('الفروقات ماوصلتش · جرّب تاني');
       setRes({ session: j.session, lines: j.lines });
@@ -143,7 +167,8 @@ export default function ShiftJard({ shop, shift, profile, cashiers = [], onClose
       <>
         <div className="stack" style={{ alignItems: 'center', textAlign: 'center', gap: 10, padding: '8px 0' }}>
           <span className={'pshot-phone' + (phoneState === 'opened' ? ' on' : '')} aria-hidden="true">📲</span>
-          <strong style={{ fontSize: 20 }}>{phoneState === 'opened' ? 'العد شغال على الموبايل…' : 'كمّل العد من الموبايل'}</strong>
+          <strong style={{ fontSize: 20 }}>{phoneState === 'opened' ? 'العد شغال على الموبايل…' : recount ? 'عدّوا الأصناف دي تاني من الموبايل' : 'كمّل العد من الموبايل'}</strong>
+          {recount && <span className="small" style={{ color: '#9B1C1C', fontWeight: 700 }}>الأصناف دي اتباع منها وانتوا بتعدّوا · عدّوها تاني دلوقتي</span>}
           {phoneState === 'opened' ? (
             <span className="pshot-what">اتعد {filled} من {items.length} صنف</span>
           ) : (
@@ -153,7 +178,7 @@ export default function ShiftJard({ shop, shift, profile, cashiers = [], onClose
               <li>لما تدوسوا «خلّصنا العد» الشاشة دي هتكمّل لوحدها.</li>
             </ol>
           )}
-          <span className="pshot-wait"><i /><i /><i /> مستنيين الموبايل</span>
+          <span className="pshot-wait"><i /><i /><i /> {busy ? 'بنراجع كميات البرنامج…' : 'مستنيين الموبايل'}</span>
         </div>
         <button type="button" className="btn soft full" onClick={countHere}>هعدّ من هنا على الكمبيوتر</button>
       </>
@@ -161,7 +186,9 @@ export default function ShiftJard({ shop, shift, profile, cashiers = [], onClose
   } else if (step === 'count') {
     body = (
       <>
-        <span className="small muted">اعدّوا كل صنف واكتبوا العدد اللي قدامكم. لو الصنف خلصان اكتب 0.</span>
+        {recount
+          ? <div className="alert warn small"><strong>الأصناف دي اتباع منها وانتوا بتعدّوا · عدّوها تاني دلوقتي</strong></div>
+          : <span className="small muted">اعدّوا كل صنف واكتبوا العدد اللي قدامكم. لو الصنف خلصان اكتب 0.</span>}
         <div className="stack" style={{ gap: 8, maxHeight: '55vh', overflowY: 'auto', paddingInlineEnd: 4 }}>
           {items.map((it) => {
             const v = String(counts[it.n] ?? '');
@@ -177,8 +204,8 @@ export default function ShiftJard({ shop, shift, profile, cashiers = [], onClose
             );
           })}
         </div>
-        <button type="button" className="btn full" style={{ height: 56 }} disabled={left > 0} onClick={toConfirm}>
-          {left > 0 ? `فاضل ${left} صنف` : 'خلّصنا العد · نأكد'}
+        <button type="button" className="btn full" style={{ height: 56 }} disabled={left > 0 || busy} onClick={() => doneCounting()}>
+          {busy ? 'بنراجع كميات البرنامج…' : left > 0 ? `فاضل ${left} صنف` : 'خلّصنا العد · نأكد'}
         </button>
         {isDesktop() && <button type="button" className="link" onClick={() => setViaPhone(true)}>📲 كمّل العد من الموبايل</button>}
       </>

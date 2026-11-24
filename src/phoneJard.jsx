@@ -13,10 +13,10 @@ const FRESH_MS = 12 * 3600e3;
 
 // على الكمبيوتر: بيبعت الجرد للموبايل وبيسمع. onCounts(counts) مع كل حفظ، onDone(counts) لما العد يخلص، onBack() لو الموبايل رجّعه.
 // بيرجّع حالة الموبايل: waiting (لسه مافتحش) | opened (بيعدّوا دلوقتي)
-export function useJardOnPhone({ uid, on, sess, counts, onCounts, onDone, onBack }) {
+export function useJardOnPhone({ uid, on, sess, items, note = '', counts, onCounts, onDone, onBack }) {
   const [state, setState] = useState('waiting');
   const cb = useRef({});
-  cb.current = { onCounts, onDone, onBack, counts };
+  cb.current = { onCounts, onDone, onBack, counts, items: items || sess?.items || [], note };
   const id = sess?.id || '';
   useEffect(() => {
     if (!on || !uid || !id) return undefined;
@@ -24,7 +24,7 @@ export function useJardOnPhone({ uid, on, sess, counts, onCounts, onDone, onBack
     let pushed = false;
     const push = () => {
       pushed = true;
-      setDoc(ref(uid), { jard: { id, items: (sess.items || []).map((it) => ({ n: it.n, name: it.name || '', subs: String(it.subs || '').split(',')[0].trim() })), counts: cb.current.counts || {}, status: 'waiting', atMs: Date.now() } }, { merge: true }).catch(() => {});
+      setDoc(ref(uid), { jard: { id, note: cb.current.note || '', items: cb.current.items.map((it) => ({ n: it.n, name: it.name || '', subs: String(it.subs || '').split(',')[0].trim() })), counts: cb.current.counts || {}, status: 'waiting', atMs: Date.now() } }, { merge: true }).catch(() => {});
     };
     const unsub = onSnapshot(ref(uid), (s) => {
       if (s.metadata.hasPendingWrites) return;
@@ -86,7 +86,9 @@ export function PhoneJardListener({ uid }) {
           <strong style={{ fontSize: 20 }}>📋 جرد الوردية</strong>
           <span className="small" style={{ fontWeight: 700, color: left ? '#9B1C1C' : '#0E7A4F' }}>{left ? `فاضل ${left} من ${items.length}` : 'كله اتعد ✓'}</span>
         </div>
-        <span className="tiny muted">اعدّوا كل صنف واكتبوا العدد اللي قدامكم. الخلصان اكتبله 0.</span>
+        {j.note
+          ? <span className="small" style={{ color: '#9B1C1C', fontWeight: 700, lineHeight: 1.7 }}>{j.note}</span>
+          : <span className="tiny muted">اعدّوا كل صنف واكتبوا العدد اللي قدامكم. الخلصان اكتبله 0.</span>}
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
         {items.map((it) => {

@@ -37,6 +37,8 @@ async function call(cfg, action, data = {}, timeoutMs = 120000) {
 export const jardStart = (cfg, { shiftId, user }) => call(cfg, 'rndStart', { kind: 'وردية', shift: shiftId, user });
 // counts = { م: الكمية }
 export const jardFinish = (cfg, { id, counts, user }) => call(cfg, 'rndFinish', { id, counts, user, countedAt: new Date().toISOString() });
+// آخر العد: بيسحب الكميات تاني وبيرجّع الأصناف اللي اتباع منها أثناء الجرد (تتعد تاني)
+export const jardRecheck = (cfg, id) => call(cfg, 'rndRecheck', { id });
 export const jardReport = (cfg, id) => call(cfg, 'rndReport', { id });
 // للإعدادات: الأصناف الثابتة اللي في شيت الفرع
 // check: بيتأكد كمان إن كل صنف موجود في برنامج البيع (بالاسم أو الباركود)
