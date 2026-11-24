@@ -11,7 +11,8 @@ service cloud.firestore {
     function isTopAdmin() { return isSuper() || (hasProfile() && me().role == 'admin'); }
     // Support may manage everyone except Modaqqeq admins.
     function notAdminUser(uid) { return get(/databases/$(database)/documents/users/$(uid)).data.role != 'admin'; }
-    function inShop(shopId) { return hasProfile() && shopId in me().shopIds; }
+    // العامل (worker) مالوش صلاحيات الكاشير: لا فلوس ولا ورديات ولا بيانات المحل.
+    function inShop(shopId) { return hasProfile() && me().role != 'worker' && shopId in me().shopIds; }
     function staffOf(shopId) {
       return isAdmin() || (inShop(shopId) && me().role in ['reviewer', 'accountant', 'manager', 'owner']);
     }

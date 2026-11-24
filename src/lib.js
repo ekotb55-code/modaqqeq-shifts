@@ -125,7 +125,7 @@ export const entrySign = (e) => (e?.type === 'topup' && e.credit ? 0 : ENTRY_TYP
 
 export const SRC_LABEL = { drawer: 'درج الكاشير', side: 'الدرج الجانبي', insta: 'انستاباي', insta2: 'انستاباي شخصي', vf: 'فودافون كاش', vf2: 'فودافون كاش شخصي', nbe: 'الأهلي فون كاش', 'out:owner': 'صاحب المحل' };
 
-export const ROLE_LABEL = { admin: 'إدارة مدقق', support: 'دعم مدقق', reviewer: 'محاسب', accountant: 'محاسب', manager: 'مدير فرع', owner: 'أونر', cashier: 'كاشير' };
+export const ROLE_LABEL = { admin: 'إدارة مدقق', support: 'دعم مدقق', reviewer: 'محاسب', accountant: 'محاسب', manager: 'مدير فرع', owner: 'أونر', cashier: 'كاشير', worker: 'عامل' };
 
 export const isAdminRole = (r) => r === 'admin' || r === 'support';
 

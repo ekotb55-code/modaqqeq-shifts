@@ -7,6 +7,7 @@ import { Spinner } from './ui.jsx';
 import CashierApp from './cashier/CashierApp.jsx';
 import Login from './staff/StaffLogin.jsx';
 import StaffApp from './staff/StaffApp.jsx';
+import WorkerHome from './worker/WorkerHome.jsx';
 import { Intro } from './theme.jsx';
 import { logSessionStart } from './activity.js';
 
@@ -57,7 +58,9 @@ export default function App() {
 
   let body;
   if (user === undefined) body = <Spinner text="بنفتح التطبيق…" />;
-  else if (user && profile) body = profile.role === 'cashier' ? <CashierApp key={ses} profile={profile} /> : <StaffApp key={ses} profile={profile} />;
+  else if (user && profile) body = profile.role === 'cashier' ? <CashierApp key={ses} profile={profile} />
+    : profile.role === 'worker' ? <WorkerHome key={ses} profile={profile} />
+      : <StaffApp key={ses} profile={profile} />;
   else body = <Login error={err} />;
   return <>{body}{intro && <Intro onDone={endIntro} />}</>;
 }

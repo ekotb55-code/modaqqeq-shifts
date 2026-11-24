@@ -7,6 +7,7 @@ import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, MACHINE_PRESETS, REG_KI
 import { jardFixed, shiftJardOf } from '../shiftJard.js';
 import { logAct } from '../activity.js';
 import { CLOUD } from '../cloud.js';
+import Workers from './Workers.jsx';
 import { applyFormat, buildFormat, firstWords, parseSms } from '../smsFormat.js';
 
 export default function Setup({ profile, shops, sel, setSel }) {
@@ -394,6 +395,8 @@ function ShopEditor({ shop, shops = [] }) {
       </section>
 
       <Cashiers shop={shop} pub={pub} />
+
+      <Workers shop={shop} pub={pub} />
 
       <ShopPeople shop={shop} />
 
@@ -1078,7 +1081,7 @@ function StaffAccounts({ shops, profile }) {
   const [busy, setBusy] = useState(false);
   const [stopped, setStopped] = useState([]);
   useEffect(() => onSnapshot(collection(db, 'users'), (q) => {
-    const all = q.docs.map((d) => ({ id: d.id, ...d.data() })).filter((u) => u.role !== 'cashier');
+    const all = q.docs.map((d) => ({ id: d.id, ...d.data() })).filter((u) => u.role !== 'cashier' && u.role !== 'worker');
     setUsers(all.filter((u) => !u.disabled));
     setStopped(all.filter((u) => u.disabled));
   }, () => {}), []);
