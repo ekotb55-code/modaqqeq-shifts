@@ -10,8 +10,38 @@ const tours = new Map();
 const subs = new Set();
 const ping = () => subs.forEach((f) => f());
 const seenKey = (t) => `mdq-tour-${t.uid || 'x'}-${t.id}`;
-const isSeen = (t) => { try { return localStorage.getItem(seenKey(t)) === '1'; } catch { return true; } };
-const markSeen = (t) => { try { localStorage.setItem(seenKey(t), '1'); } catch { /* ignore */ } };
+// الجولة بتظهر تاني كاملة مع كل نسخة جديدة (رقم النسخة بيتحط وقت البناء)
+// eslint-disable-next-line no-undef
+const BUILD = typeof __BUILD__ !== 'undefined' ? __BUILD__ : '1';
+const isSeen = (t) => { try { return localStorage.getItem(seenKey(t)) === BUILD; } catch { return true; } };
+const markSeen = (t) => { try { localStorage.setItem(seenKey(t), BUILD); } catch { /* ignore */ } };
+
+// ───────── الشرح بالصوت (مصري ومتشكّل) ─────────
+let voiceOn = (() => { try { return localStorage.getItem('mdqTourVoice') !== '0'; } catch { return true; } })();
+let arVoice = null;
+const pickVoice = () => {
+  try {
+    const vs = speechSynthesis.getVoices().filter((v) => /^ar/i.test(v.lang));
+    arVoice = vs.find((v) => /^ar[-_]EG/i.test(v.lang)) || vs[0] || null;
+  } catch { /* ignore */ }
+};
+if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+  pickVoice();
+  try { speechSynthesis.addEventListener('voiceschanged', pickVoice); } catch { /* ignore */ }
+}
+const plain = (s) => String(s || '').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu, '').replace(/[•☰←→«»"✓]/g, ' ');
+const hush = () => { try { speechSynthesis.cancel(); } catch { /* ignore */ } };
+function speak(step) {
+  if (!voiceOn || !step || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  try {
+    hush();
+    const u = new SpeechSynthesisUtterance(plain(step.say || `${step.title}. ${step.text}`));
+    u.lang = arVoice ? arVoice.lang : 'ar-EG';
+    if (arVoice) u.voice = arVoice;
+    u.rate = 0.95;
+    speechSynthesis.speak(u);
+  } catch { /* ignore */ }
+}
 
 export function useTour(id, steps, { uid, prio = 1, enabled = true } = {}) {
   const ref = useRef(steps);
@@ -75,6 +105,16 @@ function Tour({ steps, onDone }) {
   const step = list[i];
   const last = i === list.length - 1;
   const next = () => (last ? onDone() : setI(i + 1));
+  const [voice, setVoice] = useState(voiceOn);
+  const toggleVoice = () => {
+    voiceOn = !voiceOn;
+    try { localStorage.setItem('mdqTourVoice', voiceOn ? '1' : '0'); } catch { /* ignore */ }
+    setVoice(voiceOn);
+    if (voiceOn) speak(step); else hush();
+  };
+  // كل خطوة بتتقري بصوت، والصوت بيقف لما الجولة تخلص
+  useEffect(() => { speak(step); }, [step]);
+  useEffect(() => hush, []);
 
   useEffect(() => {
     if (!step) return undefined;
@@ -137,6 +177,11 @@ function Tour({ steps, onDone }) {
         <div className="tour-head">
           <strong>{step.title}</strong>
           {list.length > 1 && <span className="tour-count">{i + 1} / {list.length}</span>}
+          <button type="button" className="tour-voice" onClick={toggleVoice} title={voice ? 'اقفل الصوت' : 'شغّل الصوت'}
+            aria-label={voice ? 'اقفل الصوت' : 'شغّل الصوت'}
+            style={{ border: 0, borderRadius: '50%', width: 34, height: 34, fontSize: 17, cursor: 'pointer', background: voice ? '#E7F1FB' : '#eee', marginInlineStart: 6 }}>
+            {voice ? '🔊' : '🔇'}
+          </button>
         </div>
         <p className="tour-text">{step.text}</p>
         {list.length > 1 && <div className="tour-dots" aria-hidden="true">{list.map((s, k) => <i key={k} className={k === i ? 'on' : k < i ? 'past' : ''} />)}</div>}
