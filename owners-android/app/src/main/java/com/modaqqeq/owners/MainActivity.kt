@@ -680,7 +680,7 @@ class MainActivity : Activity() {
             val pd = Purchases.cached(this)
             val today = Home.dayKey(System.currentTimeMillis())
             val ids = shops.map { it.optString("id") }.toSet()
-            val pl = objs(j(pd, "list")).filter { Purchases.dayOf(it.optString("createdAt")) == today && (it.optString("shopId") in ids || it.optString("shopId").isEmpty()) }
+            val pl = objs(j(pd, "list")).filter { Purchases.dayOf(it.optString("createdAt")) == today && (it.optString("shopId") in ids || (sel.isEmpty() && it.optString("shopId").isEmpty())) }
             val wait = pl.count { Purchases.pending(it.optString("status")) }
             tiles += tile("🛒 مشتريات النهارده", if (pd == null) "—" else money.format(pl.sumOf { it.optDouble("total") }) + " ج",
                 if (pd == null) "دوس ↻ علشان تتجاب" else if (pl.isEmpty()) "مفيش فواتير اترفعت النهارده" else "${pl.size} فاتورة" + if (wait > 0) " · $wait لسه مدخلتش السيستم" else " · كلها اتدخلت ✓",
@@ -1063,8 +1063,10 @@ class MainActivity : Activity() {
         val days = Purchases.days(this)
         val okDays = (0 until days).map { Home.dayKey(now - it * 86_400_000L) }.toSet()
         val inPeriod = all.filter { Purchases.dayOf(it.optString("createdAt")) in okDays }
-        val shops = inPeriod.map { it.optString("shopId") to it.optString("shopName") }.distinct()
-        val selShop = Home.shop(this).takeIf { id -> shops.any { it.first == id } } ?: ""
+        // الفرع المختار بيتأكد من قايمة فروع الأكونت (زي فلتر الفروع اللي فوق)، مش من الفواتير:
+        // لو الفرع ملوش فواتير في الفترة دي يبان فاضي، مش يرجع يعرض كل الفروع
+        val selShop = Home.shop(this).takeIf { id -> objs(j(Home.cached(this), "shops")).any { it.optString("id") == id } } ?: ""
+        val shops = inPeriod.map { it.optString("shopId") }.distinct()   // لاسم الفرع على الفاتورة لو فيه أكتر من فرع
         val sups = inPeriod.filter { selShop.isEmpty() || it.optString("shopId") == selShop }.map { it.optString("supplier") }.filter { it.isNotBlank() }.distinct().sorted()
         val sup = Purchases.supplier(this).takeIf { it in sups } ?: ""
         val st = Purchases.status(this)
