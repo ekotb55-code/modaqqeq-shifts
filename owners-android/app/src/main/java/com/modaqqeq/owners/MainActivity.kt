@@ -136,6 +136,8 @@ class MainActivity : Activity() {
         "set_account" to ("👤 الأكونت" to "الصورة والقفل والخروج"), "set_link" to ("🔗 الربط" to "الصلاحيات والمحافظ والسجل"), "set_screen" to ("🎨 الشاشة" to "الشكل والكروت والتنبيهات"), "set_users" to ("👥 الأكونتات" to "مديرين لفروعك"))
     override fun onBackPressed() { if (Account.mode(this).isEmpty() && page == "set_link") { go("home"); return }; (if (page == "shift") shiftBack else SUB[page])?.let { go(it) } ?: if (page != "home") go("home") else super.onBackPressed() }
 
+    // الموبايل ده محتاج صلاحيات القراية؟ لأ لو «مش بيقرا محافظ» أو مفيش ولا محفظة شغالة عليه (أونر أو مدير مش موصّل)
+    private fun needsPerms() = Account.isShopPhone(this) || Store.active(this).isNotEmpty()
     private fun allOk(): Boolean {
         val pm = getSystemService(PowerManager::class.java)
         return notifAccess() && has(Manifest.permission.RECEIVE_SMS) && Settings.canDrawOverlays(this) &&
@@ -173,8 +175,8 @@ class MainActivity : Activity() {
         appBar()
         when (page) { "menu" -> { menuPage(); return }; "set_account" -> { setAccount(); return }; "set_link" -> { setLink(); return }; "set_screen" -> { setScreen(); return }; "set_users" -> { setUsers(); return } }
 
-        // صلاحية مقفولة؟ تنبيه صغير يفتح ☰
-        if (!allOk()) root.addView(card().apply {
+        // صلاحية مقفولة؟ تنبيه صغير يفتح ☰ · بس لو الموبايل ده فعلًا بيقرا محافظ
+        if (needsPerms() && !allOk()) root.addView(card().apply {
             background = GradientDrawable().apply { cornerRadius = dp(20).toFloat(); setColor(col("#FFF4E0")) }
             addView(text("⚠️ فيه صلاحية مقفولة على الموبايل ده · التحويلات ممكن متوصلش. دوس هنا وفعّلها", 14f, "#8A5A00", true))
             setOnClickListener { go("set_link") }
@@ -375,6 +377,23 @@ class MainActivity : Activity() {
             addView(button("👤 ادخل بأكونتك") { page = "home"; render() }.apply { layoutParams = LinearLayout.LayoutParams(-1, dp(52)).apply { topMargin = dp(10) } })
             addView(button("📱 ده موبايل المحل", false) { pairDialog() }.apply { layoutParams = LinearLayout.LayoutParams(-1, dp(52)).apply { topMargin = dp(8) } })
         })
+        if (Account.mode(this) == "user") {
+            val off = Store.readOff(this)
+            root.addView(card().apply {
+                val head = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
+                head.addView(text("📲 الموبايل ده بيقرا المحافظ (انستا وغيرها)", 15.5f, bold = true).apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1f) })
+                head.addView(android.widget.Switch(this@MainActivity).apply {
+                    isChecked = !off
+                    thumbTintList = android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()), intArrayOf(Color.parseColor(T.main), Color.parseColor("#FFFFFF")))
+                    trackTintList = android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()), intArrayOf(Color.parseColor(T.mainSoft), Color.parseColor(T.line)))
+                    setOnCheckedChangeListener { _, v -> Store.setReadOff(this@MainActivity, !v); render() }
+                })
+                addView(head)
+                addView(text(if (off) "مقفول · الموبايل ده مش موصّل بانستا ولا أي محفظة، فمش هيقرا حاجة ومش هيطلب صلاحيات ولا يطلّع تنبيهات. فعّله لو المحفظة اتنقلت عليه."
+                    else "لو الموبايل ده مش عليه انستا ولا أي محفظة اقفله، والصلاحيات والتنبيهات هتختفي من عليه.", 12.5f, MUTED).apply { setPadding(0, dp(4), 0, 0) })
+            })
+            if (off) return
+        }
         section("✅ الصلاحيات على التليفون ده")
         val perms = card()
         permRow(perms, "قراءة إشعارات التطبيقات (انستاباي، الأهلي فون كاش…)", notifAccess()) { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
