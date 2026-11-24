@@ -48,7 +48,11 @@ object Store {
         prefs(c).edit().putString("conns", arr.toString()).apply()
     }
 
-    fun active(c: Context) = conns(c).filter { it.on }
+    // «الموبايل ده مش بيقرا محافظ»: موبايل أونر أو مدير مش عليه انستا ولا محافظ → مفيش قراية ولا صلاحيات ولا تنبيهات
+    fun readOff(c: Context) = prefs(c).getBoolean("readOff", false)
+    fun setReadOff(c: Context, v: Boolean) = prefs(c).edit().putBoolean("readOff", v).apply()
+
+    fun active(c: Context) = if (readOff(c)) emptyList() else conns(c).filter { it.on }
 
     // The wallets Modaqqeq gave this phone: add new ones, update moved ones, drop removed ones.
     // Hand-made links to the same wallet are replaced; «على الموبايل ده» and hand edits are kept.
