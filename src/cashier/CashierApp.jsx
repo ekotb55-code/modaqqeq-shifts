@@ -19,6 +19,7 @@ import { logAct, logout as doLogout } from '../activity.js';
 import { rememberPin } from '../sessions.js';
 import { captureDocument } from '../DocCamera.jsx';
 import { PhoneShotListener } from '../phoneShot.jsx';
+import { PhoneJardListener } from '../phoneJard.jsx';
 import { NotifyBell, feed } from '../notify.jsx';
 
 export default function CashierApp({ profile }) {
@@ -169,6 +170,7 @@ export default function CashierApp({ profile }) {
       <NetStrip />
       <TourHost />
       <PhoneShotListener uid={profile.id} />
+      <PhoneJardListener uid={profile.id} />
       {photoOpen && (
         <MyPhoto profile={me} photo={me.photo} onClose={() => setPhotoOpen(false)}
           onSave={async (data) => {

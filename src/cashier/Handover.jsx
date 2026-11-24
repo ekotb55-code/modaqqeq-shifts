@@ -14,6 +14,7 @@ import { setPhoto as addPhotoDoc } from '../cloud.js';
 import { pushEvent } from '../cloud.js';
 import { shiftJardOn } from '../shiftJard.js';
 import ShiftJard, { jardDraftKey } from './ShiftJard.jsx';
+import { clearJardOnPhone } from '../phoneJard.jsx';
 
 const WHERE = { stay: 'يفضل في الدرج', shop: 'يتسلّم للمحل', main: 'يتسلّم للأساسي' };
 function Split({ title, mark, color, amount, value, set, options = ['stay', 'shop'] }) {
@@ -48,7 +49,8 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
   // جرد الوردية: من مهام التقفيل في المحلات المفعّل فيها (الدرج الأساسي بس)
   const needJard = !isSub && shiftJardOn(shop);
   const [jard, setJard] = useDraft(dkey, 'jard', null);
-  const [jardOpen, setJardOpen] = useState(false);
+  // أول ما يدخل على التسليم ولسه ماجردش: رسالة الجرد بتفتح لوحدها
+  const [jardOpen, setJardOpen] = useState(() => needJard && !jard);
   const [busy, setBusy] = useState(false);
   const [sideFix, setSideFix] = useState(null);
 
@@ -178,6 +180,7 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
       if (offline) p.catch(() => {}); else await p;
       clearDraft(dkey);
       clearDraft(jardDraftKey(shift.id));
+      clearJardOnPhone(profile.id);
       clearRemoteDraft(profile.id, dkey);
       onDone({
         offline,
