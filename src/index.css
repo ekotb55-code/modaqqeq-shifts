@@ -823,3 +823,14 @@ body.net-bad .topbar { background: #FFF4E0; }
   .calc-fab { display: flex; position: fixed; left: 16px; bottom: calc(18px + env(safe-area-inset-bottom)); width: 60px; height: 60px; border: 0; border-radius: 22px; background: var(--sky); color: var(--ink); align-items: center; justify-content: center; box-shadow: 0 10px 24px rgba(76, 195, 255, .5); z-index: 40; }
 }
 @media print { .calc-fab, .calc-tile { display: none !important; } }
+
+/* «المناديب»: تسليم ورديات مناديب التوزيع */
+.reps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.rep-card { border-top: 8px solid var(--lime); }
+.rep-nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.rep-nums > div { background: var(--bg); border-radius: 16px; padding: 8px 10px; display: flex; flex-direction: column; }
+.rep-nums strong { font-size: 18px; font-variant-numeric: tabular-nums; }
+.rep-tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+.rep-tbl th, .rep-tbl td { padding: 9px 10px; border-bottom: 1px solid var(--line, rgba(0,0,0,.08)); text-align: start; white-space: nowrap; }
+.rep-tbl th { color: var(--muted); font-size: 12px; font-weight: 600; }
+.rep-tbl tr:last-child td { border-bottom: 0; }

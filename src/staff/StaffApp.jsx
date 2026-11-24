@@ -20,6 +20,7 @@ import { NotifyBell, feed } from '../notify.jsx';
 import { UpdateButton } from '../update.jsx';
 import { MoreMenu, shareApp } from '../cashier/parts.jsx';
 import WalletTransfers from './WalletTransfers.jsx';
+import Reps from './Reps.jsx';
 import { wants } from '../notifyPrefs.js';
 import { useShopShifts } from './Review.jsx';
 
@@ -32,6 +33,7 @@ export default function StaffApp({ profile }) {
   const tabs = [
     canReview && { id: 'review', label: 'الورديات' },
     canReview && { id: 'safes', label: 'الخزن' },
+    canReview && { id: 'reps', label: 'المناديب' },
     { id: 'reports', label: 'التقارير' },
     { id: 'ledger', label: 'العجز والزيادة' },
     shops.some((sh) => (sh.wallets || []).some((w) => walletModeOf(sh, w) === 'owner' && walletVisible(sh, { wallet: w }, profile))) && { id: 'wallet', label: 'التحويلات' },
@@ -203,6 +205,7 @@ export default function StaffApp({ profile }) {
         <>
           {tab === 'review' && <Review key={effSel} profile={profile} shops={viewShops} />}
           {tab === 'safes' && <Safes key={effSel} shops={viewShops} />}
+          {tab === 'reps' && canReview && <Reps />}
           {tab === 'reports' && <Reports key={effSel} profile={profile} shops={viewShops} />}
           {tab === 'ledger' && <Ledger key={effSel} profile={profile} shops={viewShops} canReview={canReview} />}
           {tab === 'wallet' && <WalletTransfers key={effSel} profile={profile} shops={viewShops} />}
