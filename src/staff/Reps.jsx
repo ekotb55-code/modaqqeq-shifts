@@ -7,7 +7,7 @@ import { logAct } from '../activity.js';
 // «المناديب»: تسليم ورديات مناديب التوزيع (تطبيق التحميل والتفريغ).
 // المندوب بيسلّم من تطبيقه، والتسليم بيظهر هنا للمحاسب: يكتب مبيعات العربية من السيستم ويأكّد، وأي عجز بيتسجل باسمه.
 // البيانات على سكريبت جوجل لوحده (شيت «مدقق • التحميل والتفريغ»)؛ السكريبت بيتأكد إنك محاسب من حسابك هنا.
-const LU_API = 'https://script.google.com/macros/s/AKfycbxos7wLBj0tdaRbh46AsRkp0JQoRHHTJemiT6yPVyJ3FgFxMRHLspjq_Oi6gIzo5wo/exec';
+const LU_API = 'https://script.google.com/macros/s/AKfycbzAiM8070GNCmLGOMYDeCHdf-cCMMFFJ3GIjpzznb5znOyWwAHlYZF1eRpqpju9-RoY/exec';
 
 async function luApi(action, data) {
   const idToken = await auth.currentUser?.getIdToken();
