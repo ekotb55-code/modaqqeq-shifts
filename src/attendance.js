@@ -30,7 +30,6 @@ export function snapPhoto(video, width = 240, quality = 0.6) {
   const c = document.createElement('canvas');
   c.width = width; c.height = h;
   const g = c.getContext('2d');
-  g.translate(width, 0); g.scale(-1, 1); // زي المراية، زي ما الشخص شايف نفسه
   g.drawImage(video, 0, 0, width, h);
   return c.toDataURL('image/jpeg', quality);
 }

@@ -25,25 +25,45 @@ export function peopleOf(device) {
     .sort((a, b) => String(a.name).localeCompare(String(b.name), 'ar'));
 }
 
+// كاميرات وهمية (برامج زي EOS Webcam Utility أو OBS) بتطلع صورة ثابتة مش الشخص: نتجنبها.
+const FAKE_CAM = /virtual|eos webcam|obs|snap camera|droidcam|manycam|xsplit|splitcam|nvidia broadcast|iriun|camo/i;
+const CAM_KEY = 'mdq-att-cam';
+
 function useCamera(on) {
   const video = useRef(null);
   const [state, setState] = useState('wait'); // wait | ok | none
+  const [cams, setCams] = useState([]);
+  const [camId, setCamIdRaw] = useState(() => { try { return localStorage.getItem(CAM_KEY) || ''; } catch { return ''; } });
+  const setCamId = (id) => { setCamIdRaw(id); try { localStorage.setItem(CAM_KEY, id); } catch { /* ignore */ } };
   useEffect(() => {
     if (!on) return undefined;
     let stream = null;
     let dead = false;
+    const open = (id) => navigator.mediaDevices.getUserMedia({ video: id ? { deviceId: { exact: id }, width: { ideal: 640 }, height: { ideal: 480 } } : { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
     (async () => {
       try {
         if (!navigator.mediaDevices?.getUserMedia) throw new Error('no camera');
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+        try { stream = await open(camId); } catch { stream = await open(''); }
+        // أسامي الكاميرات بتبان بعد أول إذن. لو اللي اشتغلت وهمية وفيه كاميرا حقيقية، نبدّل عليها.
+        const list = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
         if (dead) { stream.getTracks().forEach((t) => t.stop()); return; }
+        setCams(list);
+        const curId = stream.getVideoTracks()[0]?.getSettings?.().deviceId || '';
+        const cur = list.find((d) => d.deviceId === curId);
+        const real = list.find((d) => !FAKE_CAM.test(d.label));
+        if (!camId && cur && FAKE_CAM.test(cur.label) && real) {
+          stream.getTracks().forEach((t) => t.stop());
+          stream = await open(real.deviceId);
+          if (dead) { stream.getTracks().forEach((t) => t.stop()); return; }
+          setCamIdRaw(real.deviceId);
+        } else if (!camId && curId) setCamIdRaw(curId);
         if (video.current) { video.current.srcObject = stream; await video.current.play().catch(() => {}); }
         setState('ok');
       } catch (e) { console.warn('camera', e?.name); if (!dead) setState('none'); }
     })();
     return () => { dead = true; stream?.getTracks().forEach((t) => t.stop()); };
-  }, [on]);
-  return [video, state];
+  }, [on, camId]); // eslint-disable-line react-hooks/exhaustive-deps
+  return [video, state, cams, camId, setCamId];
 }
 
 export default function AttendanceModal({ device, onClose }) {
@@ -55,7 +75,7 @@ export default function AttendanceModal({ device, onClose }) {
   const [msg, setMsg] = useState('');
   const [shake, setShake] = useState(false);
   const [done, setDone] = useState(null);
-  const [video, cam] = useCamera(!!(who && kind) && !done);
+  const [video, cam, cams, camId, setCamId] = useCamera(!!(who && kind) && !done);
 
   const pick = (p) => { setWho(p); setMsg(''); setPin(''); const l = lastPunch(p.uid); setKind(null); setDone(null); setSuggest(l?.kind === 'in' ? 'out' : 'in'); };
   const [suggest, setSuggest] = useState('in');
@@ -100,7 +120,7 @@ export default function AttendanceModal({ device, onClose }) {
     return () => window.removeEventListener('keydown', onKey);
   }); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const t = (ms) => new Date(ms).toLocaleTimeString('ar-EG', { hour: 'numeric', minute: '2-digit' });
+  const t = (ms) => new Date(ms).toLocaleTimeString('ar-EG', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Cairo' });
 
   let body;
   if (done) {
@@ -108,7 +128,7 @@ export default function AttendanceModal({ device, onClose }) {
       <div className="stack" style={{ alignItems: 'center', gap: 12, textAlign: 'center', padding: '10px 0' }}>
         {done.photo ? <img src={done.photo} alt="" style={{ width: 160, borderRadius: 20 }} /> : <Avatar name={done.name} color={who?.color} size={110} />}
         <span style={{ fontSize: 46 }}>✅</span>
-        <h2 className="h2">اتسجّل {KIND_LABEL[done.kind]} {done.name.split(' ')[0]} الساعة {t(done.atMs)}</h2>
+        <h2 className="h2">اتسجّل {KIND_LABEL[done.kind]} {done.name.split(' ')[0]} الساعة <bdi>{t(done.atMs)}</bdi></h2>
         {!done.sent && <span className="badge warn" style={{ whiteSpace: 'normal' }}>مفيش نت دلوقتي: التسجيل محفوظ على الجهاز وهيتبعت لوحده لما النت يرجع، وهيتعلّم ⚠️ للمراجعة.</span>}
         {!done.photo && <span className="badge warn" style={{ whiteSpace: 'normal' }}>الكاميرا مش شغالة، فالتسجيل اتعمل من غير صورة ⚠️</span>}
         <button type="button" className="btn" onClick={() => { setDone(null); setWho(null); setKind(null); setPin(''); }}>تمام</button>
@@ -152,6 +172,11 @@ export default function AttendanceModal({ device, onClose }) {
             <video ref={video} muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)', display: cam === 'ok' ? 'block' : 'none' }} />
             {cam !== 'ok' && <span style={{ color: '#fff', padding: 16, textAlign: 'center' }}>{cam === 'wait' ? 'بنفتح الكاميرا…' : 'الكاميرا مش شغالة ⚠️'}</span>}
           </div>
+          {cams.length > 1 && (
+            <select className="input" style={{ width: 260, height: 38 }} value={camId} onChange={(e) => setCamId(e.target.value)} aria-label="الكاميرا">
+              {cams.map((c, i) => <option key={c.deviceId || i} value={c.deviceId}>{c.label || `كاميرا ${i + 1}`}</option>)}
+            </select>
+          )}
           <span className="tiny muted" style={{ maxWidth: 260, textAlign: 'center' }}>بص للكاميرا. بتسجيلك بتوافق إن الجهاز ياخد صورتك وقت الحضور والانصراف.</span>
         </div>
         <div className="stack wl-pin" style={{ gap: 10 }}>
