@@ -250,6 +250,23 @@ service cloud.firestore {
       allow update, delete: if isTopAdmin();
     }
 
+    // بصمة الوش (أرقام مش صورة) + صورة صغيرة للمراجعة + موافقة الشخص على التصوير.
+    // الشخص بيسجّل لنفسه بس، وبيبقى approved=false لحد ما صاحب المحل أو المدير يوافق.
+    // جهاز الفرع (الكاشير) بيقراها علشان يتعرّف على الوش وقت الحضور.
+    match /faces/{uid} {
+      allow create, update: if hasProfile() && request.auth.uid == uid
+        && request.resource.data.uid == uid
+        && request.resource.data.shopId in me().shopIds
+        && request.resource.data.approved == false
+        && request.resource.data.desc is list && request.resource.data.desc.size() <= 1280
+        && (request.resource.data.photo == null || (request.resource.data.photo is string && request.resource.data.photo.size() < 150000))
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'shopId', 'desc', 'n', 'photo', 'consentV', 'consentAt', 'at', 'deviceId', 'approved']);
+      allow update: if staffOf(resource.data.shopId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approved', 'approvedBy', 'approvedAt']);
+      allow delete: if staffOf(resource.data.shopId) || (signedIn() && request.auth.uid == uid);
+      allow read: if (signedIn() && request.auth.uid == uid) || inShop(resource.data.shopId) || staffOf(resource.data.shopId);
+    }
+
     // Login & activity log. Everyone writes only lines about himself; nobody edits or deletes.
     // Only Modaqqeq's owner and support can read it.
     match /activity/{id} {

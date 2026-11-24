@@ -1,5 +1,5 @@
 import { getAuth } from 'firebase/auth';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { addDoc, collection, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { dbOf, sessionApp } from './firebase';
 import { todayKey } from './lib';
 import { markPending, verifyCashierPin } from './sessions.js';
@@ -57,3 +57,25 @@ export async function punch({ person, pin, kind, shop, photo, deviceId }) {
   saveLast(person.uid, kind);
   return { sent, atMs: rec.atLocalMs };
 }
+
+// ───── تسجيل الوش (خطوة 2) ─────
+// faces/{uid}: بصمة وش الشخص (أرقام مش صورة) + صورة صغيرة واحدة للمدير يراجع بيها + موافقته على التصوير.
+// الشخص بيسجّل لنفسه بس برقمه السري. بيبقى «مستني موافقة» لحد ما صاحب المحل أو المدير يوافق من تاب «الحضور».
+export const CONSENT_V = 1;
+export const CONSENT_TEXT = 'أنا موافق إن جهاز الفرع يصوّرني وقت الحضور والانصراف وأثناء التفقّد في الشيفت، ويحفظ «بصمة وشّي» (أرقام مش صورة) علشان يتعرّف عليّا، وإن موقعي يتشاف أثناء الجرد من الموبايل. البيانات دي بيشوفها صاحب الشغل والإدارة بس، وأقدر أطلب مسحها في أي وقت.';
+
+export async function saveFace({ person, shop, desc, photo }) {
+  const a = sessionApp(person.uid);
+  const au = getAuth(a);
+  if (au.authStateReady) await au.authStateReady();
+  if (au.currentUser?.uid !== person.uid) { const e = new Error('no session'); e.code = 'offline-first'; throw e; }
+  const p = setDoc(doc(dbOf(a), 'faces', person.uid), {
+    uid: person.uid, name: person.name || '', shopId: shop.shopId, desc, n: desc.length / 128, photo: photo || null,
+    consentV: CONSENT_V, consentAt: serverTimestamp(), at: serverTimestamp(), deviceId: devIdOf(), approved: false,
+  });
+  const res = await Promise.race([p.then(() => 'ok', (e) => e), new Promise((r) => setTimeout(() => r('wait'), 4000))]);
+  if (res !== 'ok' && res !== 'wait') { const e = new Error('save'); e.code = res?.code || 'save-failed'; throw e; }
+  if (res === 'wait') markPending(person.uid);
+  return res === 'ok';
+}
+const devIdOf = () => { try { return localStorage.getItem('mdq-dev') || ''; } catch { return ''; } };
