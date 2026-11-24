@@ -21,6 +21,7 @@ import { captureDocument } from '../DocCamera.jsx';
 import { PhoneShotListener } from '../phoneShot.jsx';
 import { PhoneJardListener } from '../phoneJard.jsx';
 import { NotifyBell, feed } from '../notify.jsx';
+import AttendanceModal from '../Attendance.jsx';
 
 export default function CashierApp({ profile }) {
   const toast = useToast();
@@ -34,6 +35,7 @@ export default function CashierApp({ profile }) {
   const [done, setDone] = useState(null);
   const [askLogout, setAskLogout] = useState(false);
   const [pinOpen, setPinOpen] = useState(false);
+  const [attOpen, setAttOpen] = useState(false);
   const [pickReg, setPickReg] = useState(null);
   const pending = usePendingTransfers(shopId);
   const attention = useAttention(profile.id);
@@ -43,7 +45,9 @@ export default function CashierApp({ profile }) {
     try {
       const cashiers = (pub.cashiers || []).filter((c) => !c.disabled && c.username)
         .map((c) => ({ uid: c.uid, name: c.name, username: c.username, color: c.color || null, photo: pub.photos?.[c.uid] || c.photo || null }));
-      localStorage.setItem('mdq-device-shop', JSON.stringify({ shopId: shop.id, name: pub.name || shop.name || '', logo: shop.logo || null, cashiers, savedAt: Date.now() }));
+      const workers = (pub.workers || []).filter((w) => !w.disabled && w.username)
+        .map((w) => ({ uid: w.uid, name: w.name, username: w.username, color: w.color || null, photo: pub.photos?.[w.uid] || null }));
+      localStorage.setItem('mdq-device-shop', JSON.stringify({ shopId: shop.id, name: pub.name || shop.name || '', logo: shop.logo || null, cashiers, workers, attendance: !!pub.attendance, savedAt: Date.now() }));
     } catch { /* storage full: the normal login still works */ }
   }, [shop?.id, shop?.logo, pub]); // eslint-disable-line react-hooks/exhaustive-deps
   // Notifications for the cashier: shift closed by the accountant, reopened for editing, a message.
@@ -150,7 +154,7 @@ export default function CashierApp({ profile }) {
   const me = { ...profile, photo: pub?.photos?.[profile.id] || profile.photo };
   const active = entries.filter((e) => !e.deleted);
   const deleted = entries.filter((e) => e.deleted);
-  const top = <Topbar bell={<NotifyBell uid={profile.id} onOpen={openNote} />} shopPub={pub} profile={me} regLabel={reg && reg !== MAIN_REG ? regName(shop, reg) : (regs.length && reg ? regName(shop, reg) : null)} onPhoto={() => setPhotoOpen(true)} onTheme={() => setThemeOpen(true)} steps={showFollow || histOpen || (open && !mine && !done) || !reg ? null : steps} onLogout={logout} posUrl={shop.posUrl} onPin={() => setPinOpen(true)} />;
+  const top = <Topbar bell={<NotifyBell uid={profile.id} onOpen={openNote} />} shopPub={pub} profile={me} regLabel={reg && reg !== MAIN_REG ? regName(shop, reg) : (regs.length && reg ? regName(shop, reg) : null)} onPhoto={() => setPhotoOpen(true)} onTheme={() => setThemeOpen(true)} steps={showFollow || histOpen || (open && !mine && !done) || !reg ? null : steps} onLogout={logout} posUrl={shop.posUrl} onPin={() => setPinOpen(true)} onAttend={pub?.attendance ? () => setAttOpen(true) : null} />;
 
   let body;
   if (done) body = <Done info={done} profile={me} onFollow={() => setDone(null)} />;
@@ -196,6 +200,7 @@ export default function CashierApp({ profile }) {
       {body}
       {attn && <AttentionModal shift={attn} shop={shop} profile={me} onClose={() => setAttn(null)} />}
       {pinOpen && <PinModal onClose={() => setPinOpen(false)} />}
+      {attOpen && <AttendanceModal device={(() => { try { return JSON.parse(localStorage.getItem('mdq-device-shop') || 'null'); } catch { return null; } })()} onClose={() => setAttOpen(false)} />}
       {askLogout && (
         <div className="overlay">
           <div role="dialog" aria-label="لسه ما سلّمتش" className="modal center" style={{ maxWidth: 460, textAlign: 'center' }}>

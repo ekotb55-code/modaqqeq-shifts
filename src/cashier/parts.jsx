@@ -4,7 +4,7 @@ import { HelpButton } from '../Tour.jsx';
 import { UpdateButton } from '../update.jsx';
 import { BILL_BG, FACES, fmt, machineGroupsOf, num } from '../lib';
 
-export function Topbar({ shopPub, profile, steps, onLogout, posUrl, onPin, onPhoto, regLabel, onTheme, bell }) {
+export function Topbar({ shopPub, profile, steps, onLogout, posUrl, onPin, onPhoto, regLabel, onTheme, bell, onAttend }) {
   return (
     <header className="topbar">
       <div className="topbar-in">
@@ -41,6 +41,7 @@ export function Topbar({ shopPub, profile, steps, onLogout, posUrl, onPin, onPho
             {onTheme && <button type="button" className="icon-btn" aria-label="غيّر شكل التطبيق" title="غيّر شكل التطبيق" onClick={onTheme}><Icon d="palette" /></button>}
             {onPin && <button type="button" className="icon-btn" aria-label="غيّر الرقم السري" title="غيّر الرقم السري" onClick={onPin}><Icon d="lock" /></button>}
           </span>
+          {onAttend && <button type="button" className="icon-btn" aria-label="حضور / انصراف" title="حضور / انصراف" onClick={onAttend}><Icon d="clock" /></button>}
           {bell}
           <span className="tb-upd"><UpdateButton /></span>
           <HelpButton />
