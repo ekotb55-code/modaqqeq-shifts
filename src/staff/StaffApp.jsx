@@ -199,7 +199,7 @@ export default function StaffApp({ profile }) {
           </div>
         </div>
       </header>
-      {shops.length > 1 && !effSel ? (
+      {shops.length > 1 && !effSel && tab !== 'reps' ? (
         <BranchChooser shops={shops} onPick={setShopSel} onNew={isAdmin ? newShop : null} />
       ) : (
         <>
