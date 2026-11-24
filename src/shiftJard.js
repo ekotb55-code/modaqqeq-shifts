@@ -39,4 +39,5 @@ export const jardStart = (cfg, { shiftId, user }) => call(cfg, 'rndStart', { kin
 export const jardFinish = (cfg, { id, counts, user }) => call(cfg, 'rndFinish', { id, counts, user, countedAt: new Date().toISOString() });
 export const jardReport = (cfg, id) => call(cfg, 'rndReport', { id });
 // للإعدادات: الأصناف الثابتة اللي في شيت الفرع
-export const jardFixed = (cfg) => call(cfg, 'rndCfg', {}, 60000);
+// check: بيتأكد كمان إن كل صنف موجود في برنامج البيع (بالاسم أو الباركود)
+export const jardFixed = (cfg) => call(cfg, 'rndCfg', { check: true }, 120000);

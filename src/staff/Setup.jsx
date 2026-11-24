@@ -520,12 +520,15 @@ function ShiftJardSetup({ v, onChange }) {
             <button type="button" className={'chip sm' + (!v.test ? ' on' : '')} aria-pressed={!v.test} onClick={() => up({ test: false })}>الأساسي (شيت الفرع الحقيقي)</button>
             <button type="button" className={'chip sm' + (v.test ? ' on' : '')} aria-pressed={v.test} onClick={() => up({ test: true })}>تجربة الربط (بيانات تجربة)</button>
           </div>
-          <span className="tiny muted" style={{ lineHeight: 1.7 }}>الأصناف بتتضاف وتتشال من تاب «أصناف الجرد الثابتة» في شيت جرد الفرع، أو من إعدادات الجرد العشوائي في التطبيق المجمع.</span>
-          <button type="button" className="btn sm soft" style={{ alignSelf: 'flex-start' }} disabled={busy || !String(v.store || '').trim()} onClick={test}>{busy ? 'لحظة…' : 'جرّب الربط واعرض الأصناف'}</button>
+          <span className="tiny muted" style={{ lineHeight: 1.7 }}>الأصناف بتتضاف وتتشال من تاب «أصناف الجرد الثابتة» في شيت جرد الفرع: اكتب اسم الصنف زي ما هو في برنامج البيع في عمود «اسم الصنف» (من غير باركود)، كل صنف في سطر.</span>
+          <button type="button" className="btn sm soft" style={{ alignSelf: 'flex-start' }} disabled={busy || !String(v.store || '').trim()} onClick={test}>{busy ? 'بنراجع الأصناف في برنامج البيع…' : 'جرّب الربط واعرض الأصناف'}</button>
           {info && (info.ok ? (
             <div className={'alert small ' + (info.fixed.length ? 'ok' : 'warn')}>
               <strong>{info.fixed.length ? `الربط شغال · ${info.fixed.length} صنف ثابت` : 'الربط شغال بس مفيش أصناف ثابتة لسه'}</strong>
-              {info.fixed.length > 0 && <span>{info.fixed.map((x) => x.name || x.code).join(' • ')}</span>}
+              {info.fixed.length > 0 && <span>{info.fixed.filter((x) => x.found !== false).map((x) => x.posName || x.name || x.code).join(' • ')}</span>}
+              {info.fixed.some((x) => x.found === false) && (
+                <span style={{ color: '#9B1C1C', fontWeight: 700 }}>⚠️ مش موجودين في برنامج البيع (راجع الاسم زي ما هو مكتوب في البرنامج): {info.fixed.filter((x) => x.found === false).map((x) => x.name || x.code).join(' • ')}</span>
+              )}
             </div>
           ) : <div className="alert bad small" role="alert">{info.msg}</div>)}
         </>
