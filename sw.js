@@ -26,6 +26,15 @@ self.addEventListener('notificationclick', (e) => {
   e.notification.close();
   const note = e.notification.data?.note;
   // «شخصي» من الإشعار نفسه: التحويل يختفي من عند الكاشيرية من غير ما التطبيق يفتح.
+  // «موافق» على طلب قفل الوردية بدري: بيتسجل من غير ما التطبيق يفتح
+  if (e.action === 'allow' && e.notification.data?.actUrl) {
+    const say = (title, body) => self.registration.showNotification(title, { body, icon: './icon-192.png', badge: './badge-96.png', dir: 'rtl', lang: 'ar', tag: 'act-' + Date.now(), data: { note } });
+    e.waitUntil(fetch(e.notification.data.actUrl).then((r) => r.json()).then((j) => {
+      if (j.ok) return say('اتسمح بالقفل ✓', j.already ? `${j.by || 'حد'} كان سمح قبل كده` : `${j.cashier || 'الكاشير'} يقدر يقفل الوردية دلوقتي`);
+      return say('مقدرناش نسمح', j.error || 'افتح التطبيق وجرّب من هناك');
+    }).catch(() => say('مفيش نت', 'افتح التطبيق ووافق من هناك')));
+    return;
+  }
   if (e.action === 'personal' && e.notification.data?.actUrl) {
     const say = (title, body) => self.registration.showNotification(title, { body, icon: './icon-192.png', badge: './badge-96.png', dir: 'rtl', lang: 'ar', tag: 'act-' + Date.now(), data: { note } });
     e.waitUntil(fetch(e.notification.data.actUrl).then((r) => r.json()).then((j) => {
@@ -52,7 +61,7 @@ self.addEventListener('push', (e) => {
   e.waitUntil(self.registration.showNotification(title, {
     body: d.body || '', icon: './icon-192.png', badge: './badge-96.png', tag: d.tag || undefined, dir: 'rtl', lang: 'ar',
     requireInteraction: d.alarm === '1', renotify: !!d.tag, silent: false, vibrate: d.alarm === '1' ? [400, 150, 400, 150, 400, 150, 800] : [200, 80, 200],
-    ...(d.actUrl ? { actions: [{ action: 'personal', title: 'شخصي' }, { action: 'open', title: 'افتح' }] } : {}),
+    ...(d.actUrl ? { actions: d.type === 'early_close' ? [{ action: 'allow', title: 'موافق ✓' }, { action: 'open', title: 'افتح' }] : [{ action: 'personal', title: 'شخصي' }, { action: 'open', title: 'افتح' }] } : {}),
     data: { actUrl: d.actUrl || '', note: { id: d.tag || String(Date.now()), key: d.tag || '', title, body: d.body || '', shiftId: d.shiftId || null, shopId: d.shopId || null, go: d.go || null } },
   }));
 });
