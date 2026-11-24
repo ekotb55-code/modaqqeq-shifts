@@ -114,6 +114,7 @@ object Account {
         val arr = j.optJSONArray("keys")
         Store.applyManaged(c, (0 until (arr?.length() ?: 0)).map { arr!!.getJSONObject(it) })
         schedule(c)
+        InvoiceWatch.schedule(c)
         return null
     }
 
@@ -122,6 +123,7 @@ object Account {
         Lock.clear(c); Photo.save(c, null)
         Store.saveConns(c, Store.conns(c).filter { !it.managed })
         WorkManager.getInstance(c).cancelUniqueWork("sync")
+        InvoiceWatch.cancel(c)
     }
 
     // every 6 hours: a wallet added or moved in Setup shows up by itself

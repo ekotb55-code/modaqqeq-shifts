@@ -45,8 +45,15 @@ object Popup {
             Store.addLog(app, "الشباك العايم", title, "✗ مظهرش: إذن «الشباك العايم فوق التطبيقات» مقفول · طلع إشعار بداله")
             notify(app, title, "$line · $hint", actUrl); return
         }
+        val buttons = ArrayList<Btn>()
+        if (actUrl.isNotBlank()) buttons += Btn("شخصي", "#C6FF1A", "#1E1B3A") { Personal.mark(app, actUrl) }
+        buttons += Btn("تمام", "#33FFFFFF", "#FFFFFF") {}
+        val look = Look("Owners · تحويل جديد",
+            if (big) intArrayOf(Color.parseColor("#FF8A00"), Color.parseColor("#FF4D6D"), Color.parseColor("#E0218A"))
+            else intArrayOf(Color.parseColor("#1E6BFF"), Color.parseColor("#7B3FF2"), Color.parseColor("#E040A0")),
+            if (big) "#FFE08A" else "#D9F99D")
         main.post {
-            try { overlay(app, title, line, hint, actUrl) }
+            try { overlay(app, title, line, hint, look, buttons) }
             catch (e: Throwable) {
                 // ميضيعش التحويل من غير ما صاحب المحل يعرف: إشعار بداله + السبب في السجل
                 Store.addLog(app, "الشباك العايم", title, "✗ مظهرش (" + (e.javaClass.simpleName + " " + (e.message ?: "")).trim().take(120) + ") · طلع إشعار بداله")
@@ -57,22 +64,57 @@ object Popup {
 
     private fun dp(c: Context, v: Int) = (v * c.resources.displayMetrics.density).toInt()
 
-    private fun overlay(app: Context, title: String, line: String, hint: String, actUrl: String) {
+    class Btn(val label: String, val bg: String, val fg: String, val onClick: () -> Unit)
+    class Look(val sub: String, val colors: IntArray, val hintBg: String)
+
+    // فاتورة مشتريات جديدة أو أسعار اتغيرت: نفس الشباك بألوان تانية، و«افتح الفاتورة» بيفتحها في التطبيق
+    fun invoice(c: Context, title: String, line: String, hint: String, invoiceId: String, up: Boolean) {
+        val app = c.applicationContext
+        val open = { openApp(app, invoiceId) }
+        if (!Settings.canDrawOverlays(app)) { notifyInvoice(app, title, listOf(line, hint).filter { it.isNotBlank() }.joinToString("\n"), invoiceId); return }
+        val look = Look("Owners · فاتورة مشتريات",
+            if (up) intArrayOf(Color.parseColor("#FF8A00"), Color.parseColor("#F4511E"), Color.parseColor("#C2185B"))
+            else intArrayOf(Color.parseColor("#0F9D7A"), Color.parseColor("#0E7FA8"), Color.parseColor("#2F5BEA")),
+            if (up) "#FFE08A" else "#D9F99D")
+        val buttons = listOf(
+            Btn(if (invoiceId.isBlank()) "افتح المشتريات" else "افتح الفاتورة", "#C6FF1A", "#1E1B3A") { open() },
+            Btn("بعدين", "#33FFFFFF", "#FFFFFF") {},
+        )
+        main.post {
+            try { overlay(app, title, line, hint, look, buttons) }
+            catch (e: Throwable) { notifyInvoice(app, title, listOf(line, hint).filter { it.isNotBlank() }.joinToString("\n"), invoiceId) }
+        }
+    }
+
+    private fun openIntent(c: Context, invoiceId: String) = Intent(c, MainActivity::class.java)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        .putExtra("openPurchase", invoiceId.ifBlank { "*" })
+    private fun openApp(c: Context, invoiceId: String) { runCatching { c.startActivity(openIntent(c, invoiceId)) } }
+
+    private const val CH_PUR = "purchases"
+    private fun notifyInvoice(c: Context, title: String, body: String, invoiceId: String) {
+        val nm = c.getSystemService(NotificationManager::class.java)
+        if (nm.getNotificationChannel(CH_PUR) == null) nm.createNotificationChannel(NotificationChannel(CH_PUR, "فواتير المشتريات", NotificationManager.IMPORTANCE_HIGH))
+        val id = (System.currentTimeMillis() % 100000).toInt()
+        val pi = PendingIntent.getActivity(c, id, openIntent(c, invoiceId), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val b = NotificationCompat.Builder(c, CH_PUR).setSmallIcon(R.drawable.ic_stat).setContentTitle(title).setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body)).setPriority(NotificationCompat.PRIORITY_HIGH).setAutoCancel(true).setContentIntent(pi)
+        runCatching { NotificationManagerCompat.from(c).notify(id, b.build()) }
+    }
+
+    private fun overlay(app: Context, title: String, line: String, hint: String, look: Look, buttons: List<Btn>) {
         // أندرويد 11+: الشباك لازم يتعمل من "سياق شباك" مش من التطبيق نفسه، وإلا ممكن ميظهرش
         val c: Context = if (Build.VERSION.SDK_INT >= 30) {
             val screen = app.getSystemService(DisplayManager::class.java).getDisplay(Display.DEFAULT_DISPLAY)
             app.createDisplayContext(screen).createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null)
         } else app
         val wm = c.getSystemService(WindowManager::class.java)
-        val big = title.startsWith("⚠️")
-        // ألوان فرحانة: أزرق ← بنفسجي ← وردي، والتحويل الكبير برتقالي ← أحمر
+        // ألوان فرحانة: أزرق ← بنفسجي ← وردي، والتحويل الكبير برتقالي ← أحمر (بتيجي في look)
         val card = LinearLayout(c).apply {
             orientation = LinearLayout.VERTICAL
             layoutDirection = View.LAYOUT_DIRECTION_RTL
             setPadding(dp(c, 18), dp(c, 14), dp(c, 18), dp(c, 14))
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                if (big) intArrayOf(Color.parseColor("#FF8A00"), Color.parseColor("#FF4D6D"), Color.parseColor("#E0218A"))
-                else intArrayOf(Color.parseColor("#1E6BFF"), Color.parseColor("#7B3FF2"), Color.parseColor("#E040A0"))).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, look.colors).apply {
                 cornerRadius = dp(c, 26).toFloat(); setStroke(dp(c, 2), Color.parseColor("#55FFFFFF"))
             }
             elevation = dp(c, 10).toFloat()
@@ -92,13 +134,13 @@ object Popup {
         head.addView(LinearLayout(c).apply {
             orientation = LinearLayout.VERTICAL
             addView(text("مدقق", 17f, "#FFFFFF", true))
-            addView(text("Owners · تحويل جديد", 12f, "#E8E4FF"))
+            addView(text(look.sub, 12f, "#E8E4FF"))
         })
         card.addView(head)
         card.addView(text(title, 28f, "#FFFFFF", true).apply { setPadding(0, dp(c, 10), 0, 0) })
         if (line.isNotBlank()) card.addView(text(line, 15f, "#FFFFFF"))
-        card.addView(text(hint, 12f, "#1E1B3A", true).apply {
-            background = GradientDrawable().apply { cornerRadius = dp(c, 99).toFloat(); setColor(Color.parseColor(if (big) "#FFE08A" else "#D9F99D")) }
+        if (hint.isNotBlank()) card.addView(text(hint, 12f, "#1E1B3A", true).apply {
+            background = GradientDrawable().apply { cornerRadius = dp(c, 99).toFloat(); setColor(Color.parseColor(look.hintBg)) }
             setPadding(dp(c, 10), dp(c, 3), dp(c, 10), dp(c, 3))
             layoutParams = LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(c, 6) }
         })
@@ -112,8 +154,7 @@ object Popup {
             setOnClickListener { onClick() }
             layoutParams = LinearLayout.LayoutParams(0, dp(c, 48), 1f).apply { marginStart = dp(c, 4); marginEnd = dp(c, 4) }
         }
-        if (actUrl.isNotBlank()) row.addView(btn("شخصي", "#C6FF1A", "#1E1B3A") { remove(); Personal.mark(c, actUrl) })
-        row.addView(btn("تمام", "#33FFFFFF", "#FFFFFF") { remove() })
+        buttons.forEach { b -> row.addView(btn(b.label, b.bg, b.fg) { remove(); b.onClick() }) }
         card.addView(row)
         // نفس خط التطبيق
         runCatching {

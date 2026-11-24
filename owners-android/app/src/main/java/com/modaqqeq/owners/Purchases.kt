@@ -40,6 +40,8 @@ object Purchases {
         prefs(c).edit().putString("last", j.put("at", System.currentTimeMillis()).toString()).apply()
         return null
     }
+    // من غير ما يغيّر اللي محفوظ لصفحة المشتريات (لإشعار الفواتير)
+    fun list(c: Context, days: Int): Pair<JSONObject?, String?> = call(c, JSONObject().put("action", "purchases").put("days", days))
     fun detail(c: Context, id: String): Pair<JSONObject?, String?> = call(c, JSONObject().put("action", "purchase").put("id", id))
 
     // الصور بتتحفظ على الموبايل علشان متتجابش كل مرة

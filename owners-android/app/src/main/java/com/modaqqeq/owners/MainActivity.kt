@@ -70,6 +70,16 @@ class MainActivity : Activity() {
         }
         frame = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; addView(bar, LinearLayout.LayoutParams(-1, -2)); addView(swipe, LinearLayout.LayoutParams(-1, 0, 1f)) }
         setContentView(frame)
+        openFrom(intent)
+    }
+    // الشباك العايم أو إشعار فاتورة المشتريات: يفتح الفاتورة (أو صفحة المشتريات)، بعد القفل لو التطبيق مقفول
+    override fun onNewIntent(i: Intent) { super.onNewIntent(i); openFrom(i); render() }
+    private fun openFrom(i: Intent?) {
+        val id = i?.getStringExtra("openPurchase") ?: return
+        i.removeExtra("openPurchase")
+        if (Account.mode(this) != "user") return
+        if (id == "*") { page = "purchases"; refreshPurchases(false) }
+        else { purId = id; purDetail = null; purDetailErr = null; page = "purchase" }
     }
     private lateinit var bar: LinearLayout
     private lateinit var frame: LinearLayout
@@ -489,6 +499,22 @@ class MainActivity : Activity() {
         val chosen = Home.cards(this).toMutableSet()
         Home.CARDS.forEach { (k, l) -> cards.addView(check(l, k in chosen) { v -> if (v) chosen.add(k) else chosen.remove(k); Home.setCards(this, chosen.toSet()) }) }
         root.addView(cards)
+
+        section("🧾 إشعار فواتير المشتريات")
+        val inv = card()
+        inv.addView(text("التطبيق بيشوف فواتير فروعك كل ربع ساعة تقريباً، ولو فيه جديد يطلعلك شباك عايم زي بتاع التحويلات، ولما تدوس «افتح الفاتورة» تفتح على طول.", 12.5f, MUTED))
+        inv.addView(check("🆕 فاتورة جديدة اتسجلت", InvoiceWatch.newOn(this)) { v -> InvoiceWatch.setNew(this, v) })
+        inv.addView(check("🏷️ أسعار اتغيرت في فاتورة (زيادة أو نقص)", InvoiceWatch.priceOn(this)) { v -> InvoiceWatch.setPrice(this, v) })
+        val invShops = objs(j(Home.cached(this), "shops"))
+        if (invShops.size > 1) {
+            inv.addView(text("الفروع", 13.5f, INK, true).apply { setPadding(dp(4), dp(12), 0, dp(2)) })
+            val offS = InvoiceWatch.offShops(this)
+            invShops.forEach { s -> val id = s.optString("id"); inv.addView(check("📍 " + s.optString("name"), id !in offS) { v -> InvoiceWatch.setShop(this, id, v) }) }
+        }
+        if (!Settings.canDrawOverlays(this)) inv.addView(text("⚠️ إذن «الشباك العايم» مقفول على الموبايل ده، فهينزلك إشعار عادي بداله. فعّله من 🔗 الربط.", 12f, "#B3261E", true).apply { setPadding(dp(4), dp(10), dp(4), 0) })
+        val at = InvoiceWatch.lastCheck(this)
+        inv.addView(text(if (at == 0L) "لسه مشيّكش · أول مرة بيحفظ الفواتير اللي موجودة من غير ما ينبّه" else "آخر مرة شيّك من " + ago(at.toDouble()), 11.5f, FAINT).apply { setPadding(dp(4), dp(10), dp(4), 0) })
+        root.addView(inv)
 
         section("🔔 التنبيهات")
         val al = card()
