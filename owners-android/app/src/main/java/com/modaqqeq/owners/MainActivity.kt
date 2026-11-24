@@ -1204,17 +1204,36 @@ class MainActivity : Activity() {
         v.optString("report").takeIf { it.isNotBlank() }?.let { rep ->
             root.addView(card().apply { addView(text("📋 تقرير الفاتورة", 15f, INK, true)); addView(text(rep, 13f, "#3A3950").apply { setPadding(0, dp(6), 0, 0); setTextIsSelectable(true) }) })
         }
-        // الأسعار اللي اتغيّرت
-        val changed = lines.filter { (!it.isNull("oldPrice") && it.optDouble("oldPrice") > 0 && Math.abs(it.optDouble("oldPrice") - it.optDouble("piecePrice")) > 0.009) || (!it.isNull("newSale") && !it.isNull("oldSale") && it.optDouble("newSale") != it.optDouble("oldSale")) }
+        // الأسعار اللي اتغيّرت: مترتبة من الفرق الكبير للصغير (فرق سعر الشراء للقطعة، ولو مفيش يبقى فرق البيع)
+        fun buyDiff(l: JSONObject): Double? = if (!l.isNull("oldPrice") && l.optDouble("oldPrice") > 0 && Math.abs(l.optDouble("oldPrice") - l.optDouble("piecePrice")) > 0.009) l.optDouble("piecePrice") - l.optDouble("oldPrice") else null
+        fun saleDiff(l: JSONObject): Double? = if (!l.isNull("newSale") && !l.isNull("oldSale") && l.optDouble("newSale") != l.optDouble("oldSale")) l.optDouble("newSale") - l.optDouble("oldSale") else null
+        val changed = lines.filter { buyDiff(it) != null || saleDiff(it) != null }
+            .sortedByDescending { Math.abs(buyDiff(it) ?: saleDiff(it) ?: 0.0) }
         if (changed.isNotEmpty()) root.addView(card().apply {
             addView(text("💲 أسعار اتغيّرت (${changed.size})", 15f, INK, true))
+            addView(text("مترتبة من الفرق الأكبر للأصغر", 11.5f, MUTED))
             changed.forEach { l ->
-                val up = !l.isNull("oldPrice") && l.optDouble("piecePrice") > l.optDouble("oldPrice")
+                val bd = buyDiff(l); val sd = saleDiff(l)
+                val diff = bd ?: sd ?: 0.0
+                val base = if (bd != null) l.optDouble("oldPrice") else l.optDouble("oldSale")
+                val up = diff > 0
+                val clr = if (up) "#B3261E" else "#1B7F3B"
                 val parts = mutableListOf<String>()
-                if (!l.isNull("oldPrice") && l.optDouble("oldPrice") > 0 && Math.abs(l.optDouble("oldPrice") - l.optDouble("piecePrice")) > 0.009) parts += "شراء ${Transfers.money(l.optDouble("oldPrice"))} ← ${Transfers.money(l.optDouble("piecePrice"))}"
-                if (!l.isNull("newSale") && !l.isNull("oldSale") && l.optDouble("newSale") != l.optDouble("oldSale")) parts += "بيع ${Transfers.money(l.optDouble("oldSale"))} ← ${Transfers.money(l.optDouble("newSale"))}"
-                addView(text((if (up) "⬆ " else "⬇ ") + l.optString("name"), 13.5f, if (up) "#B3261E" else "#1B7F3B", true).apply { setPadding(0, dp(8), 0, 0) })
-                addView(text(parts.joinToString(" · ") + (l.optString("saleAction").takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""), 12f, MUTED))
+                if (bd != null) parts += "شراء ${Transfers.money(l.optDouble("oldPrice"))} ← ${Transfers.money(l.optDouble("piecePrice"))}"
+                if (sd != null) parts += "بيع ${Transfers.money(l.optDouble("oldSale"))} ← ${Transfers.money(l.optDouble("newSale"))}"
+                val r = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(8), 0, 0) }
+                val c = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, -2, 1f) }
+                c.addView(text((if (up) "⬆ " else "⬇ ") + l.optString("name"), 13.5f, clr, true))
+                c.addView(text(parts.joinToString(" · ") + (l.optString("saleAction").takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""), 12f, MUTED))
+                r.addView(c)
+                val sign = if (up) "+" else "−"
+                val pct = if (base > 0) " (${sign}${java.text.DecimalFormat("0.#", java.text.DecimalFormatSymbols(java.util.Locale.US)).format(Math.abs(diff) / base * 100)}%)" else ""
+                r.addView(LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(dp(8), 0, 0, 0)
+                    addView(pill("$sign${java.text.DecimalFormat("#,##0.00", java.text.DecimalFormatSymbols(java.util.Locale.US)).format(Math.abs(diff))} ج", if (up) "#26B3261E" else "#261B7F3B", clr, 13.5f).apply { (layoutParams as LinearLayout.LayoutParams).marginEnd = 0 })
+                    if (pct.isNotEmpty()) addView(text(pct.trim(), 10.5f, clr))
+                    if (bd == null) addView(text("فرق البيع", 10f, MUTED))
+                })
+                addView(r)
             }
         })
         // الأصناف
