@@ -8,7 +8,7 @@ import { KIND_LABEL, LATE_SYNC_MIN } from '../attendance.js';
 // الحضور والانصراف: مين حضر ومين انصرف في يوم معيّن، بالصورة ووقت السيرفر.
 // ⚠️ = محتاج مراجعة: من غير صورة، أو اتسجل من غير نت / ساعة الجهاز غلط، أو حضر ومنصرفش.
 
-const hm = (d) => (d ? d.toLocaleTimeString('ar-EG', { hour: 'numeric', minute: '2-digit' }) : '—');
+const hm = (d) => (d ? d.toLocaleTimeString('ar-EG', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Cairo' }) : '—');
 const flagsOf = (r) => {
   const f = [];
   if (!r.photo) f.push('من غير صورة');
@@ -57,7 +57,7 @@ function ShopDay({ shop, day }) {
                     <div key={r.id} className="stack" style={{ gap: 4, alignItems: 'center', width: 130, textAlign: 'center' }}>
                       {r.photo ? <button type="button" onClick={() => setBig(r)} style={{ border: 0, padding: 0, background: 'none' }}><img src={r.photo} alt="" style={{ width: 120, borderRadius: 14 }} /></button>
                         : <span style={{ width: 120, height: 90, borderRadius: 14, background: 'var(--warn-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>📷✗</span>}
-                      <strong>{KIND_LABEL[r.kind]} {hm(toDate(r.at))}</strong>
+                      <strong>{KIND_LABEL[r.kind]} <bdi>{hm(toDate(r.at))}</bdi></strong>
                       {fl.map((x) => <span key={x} className="badge warn tiny" style={{ whiteSpace: 'normal' }}>⚠️ {x}</span>)}
                     </div>
                   );
