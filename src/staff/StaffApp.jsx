@@ -23,6 +23,7 @@ import WalletTransfers from './WalletTransfers.jsx';
 import Reps from './Reps.jsx';
 import { wants } from '../notifyPrefs.js';
 import { useShopShifts } from './Review.jsx';
+import EarlyAsks from './EarlyAsks.jsx';
 
 export default function StaffApp({ profile }) {
   const isAdmin = isAdminRole(profile.role);
@@ -153,6 +154,7 @@ export default function StaffApp({ profile }) {
     <div>
       <NetStrip />
       <TourHost />
+      <EarlyAsks profile={profile} isAdmin={isAdmin} shops={shops} />
       {photoOpen && (
         <MyPhoto profile={profile} photo={myPhoto} onClose={() => setPhotoOpen(false)}
           onSave={async (data) => {

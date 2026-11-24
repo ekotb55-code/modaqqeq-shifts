@@ -5,6 +5,7 @@ import { auth, db } from '../firebase';
 import { Avatar, Icon, Modal, useToast } from '../ui.jsx';
 import { AVATAR_BG, BUILTIN_EXPENSE_TYPES, DEFAULT_SHOP, MACHINE_PRESETS, REG_KIND, allOpen, isAdminRole, newRegister, newExpenseType, RATE_FROM, RATE_ON, repTopupOf, WALLETS, WALLET_MODE, walletModesOf, ROLE_LABEL, SETTLE, settleOf, WEEKDAYS, USERNAME_RE, cashierEmail, cashierPassword, changeAccountPassword, createAccount, uidByLogin, matches, normUsername, normShopName, DEFAULT_FEE_TIERS, tierFee, dateStr, flattenMachines, fmt, minutesBetween, todayKey, machineListOf, newMachine, newVault, num, pickImage } from '../lib';
 import { jardFixed, shiftJardOf } from '../shiftJard.js';
+import { closeRulesOf, shopOrders } from '../closeRules.js';
 import { logAct } from '../activity.js';
 import { CLOUD } from '../cloud.js';
 import Workers from './Workers.jsx';
@@ -301,6 +302,7 @@ function ShopEditor({ shop, shops = [] }) {
     shopExpenses: shop.shopExpenses || [], customExpenseTypes: shop.customExpenseTypes || [], hiddenExpenseTypes: shop.hiddenExpenseTypes || [], incomeReasons: shop.incomeReasons || [], advanceDays: shop.advanceDays || [],
     registers: shop.registers || [], vaults: shop.vaults || [], calcOn: !!shop.calcOn,
     shiftJard: { ...shiftJardOf(shop), store: shiftJardOf(shop).store || shop.name || '' },
+    closeRules: { ...closeRulesOf(shop), store: closeRulesOf(shop).store || shop.name || '' },
   }));
   const [dirty, setDirty] = useState(false);
   const [vaultEdits, setVaultEdits] = useState({}); // رصيد الخزنة اللي المحاسب عدّله بإيده (id -> رقم)
@@ -450,6 +452,8 @@ function ShopEditor({ shop, shops = [] }) {
 
       <ShiftJardSetup v={f.shiftJard} onChange={(v) => set('shiftJard', v)} />
 
+      <CloseRulesSetup v={f.closeRules} onChange={(v) => set('closeRules', v)} />
+
       <VaultsEditor list={f.vaults} onChange={(v) => set('vaults', v)} balances={shop.vaultBalances || {}} edits={vaultEdits} onEdit={(id, v) => { setVaultEdits((x) => ({ ...x, [id]: v })); setDirty(true); }} />
 
       <RegistersEditor list={f.registers} machines={f.machineList} wallets={f.wallets} openShifts={shop.openShifts || {}} onChange={(v) => set('registers', v)} />
@@ -492,6 +496,59 @@ function ShopEditor({ shop, shops = [] }) {
 }
 
 // جرد الوردية: الكاشير اللي بيسلّم واللي بيستلم بيجردوا الأصناف الثابتة قبل التقفيل (الجرد العشوائي بتاع التطبيق المجمع)
+// شروط تقفيل الوردية: الأوردرات المفتوحة + معاد قفل الوردية الليلية (والإذن بالقفل بدري)
+function CloseRulesSetup({ v, onChange }) {
+  const [busy, setBusy] = useState(false);
+  const [info, setInfo] = useState(null);
+  const up = (patch) => { onChange({ ...v, ...patch }); setInfo(null); };
+  const test = async () => {
+    setBusy(true); setInfo(null);
+    try { const j = await shopOrders(v); setInfo({ ok: true, n: (j.orders || []).length }); } catch (e) { setInfo({ ok: false, msg: e.message }); }
+    setBusy(false);
+  };
+  const Toggle = ({ on, set, yes, no }) => (
+    <div className="chips">
+      <button type="button" className={'chip' + (on ? ' on' : '')} aria-pressed={on} onClick={() => set(true)}>{yes}</button>
+      <button type="button" className={'chip' + (!on ? ' on' : '')} aria-pressed={!on} onClick={() => set(false)}>{no}</button>
+    </div>
+  );
+  return (
+    <section className="card" style={{ gap: 12 }}>
+      <h2 className="h2">🔒 شروط تقفيل الوردية</h2>
+      <div className="spread" style={{ gap: 12, flexWrap: 'wrap' }}>
+        <span className="stack" style={{ gap: 2, flex: '1 1 240px' }}>
+          <strong>🛵 أوردرات التوصيل المفتوحة</strong>
+          <span className="tiny muted" style={{ lineHeight: 1.7 }}>وقت التقفيل بتظهر للكاشير الأوردرات اللي لسه مااتوصلتش في برنامج البيع. مابتمنعش القفل، بس بيأكد على كل أوردر إنه هيتسلم بكرة أو الوردية الجاية هتستلمه.</span>
+        </span>
+        <Toggle on={v.orders} set={(x) => up({ orders: x })} yes="شغال" no="مقفول" />
+      </div>
+      {v.orders && (
+        <>
+          <label className="field">اسم الفرع في التطبيق المجمع (دليل الموظفين)<input className="input" value={v.store} onChange={(e) => up({ store: e.target.value })} /></label>
+          <button type="button" className="btn sm soft" style={{ alignSelf: 'flex-start' }} disabled={busy || !String(v.store || '').trim()} onClick={test}>{busy ? 'لحظة…' : 'جرّب واعرض الأوردرات المفتوحة'}</button>
+          {info && (info.ok
+            ? <div className="alert ok small"><strong>الربط شغال · {info.n ? `${info.n} أوردر مفتوح دلوقتي` : 'مفيش أوردرات مفتوحة دلوقتي'}</strong></div>
+            : <div className="alert bad small" role="alert">{info.msg}</div>)}
+        </>
+      )}
+      <div className="spread" style={{ gap: 12, flexWrap: 'wrap' }}>
+        <span className="stack" style={{ gap: 2, flex: '1 1 240px' }}>
+          <strong>🌙 معاد قفل الوردية الليلية</strong>
+          <span className="tiny muted" style={{ lineHeight: 1.7 }}>الكاشير مايقدرش يقفل الوردية الليلية قبل المعاد إلا بإذن المدير أو الأونر (زرار «موافق» في الإشعار) أو الدعم. الكاشير اللي هو المدير بيقفل لنفسه ويتسجل.</span>
+        </span>
+        <Toggle on={v.nightOn} set={(x) => up({ nightOn: x })} yes="شغال" no="مقفول" />
+      </div>
+      {v.nightOn && (
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <label className="field" style={{ flex: '1 1 140px' }}>معاد القفل<input className="input" type="time" dir="ltr" value={v.nightClose} onChange={(e) => up({ nightClose: e.target.value })} /></label>
+          <label className="field" style={{ flex: '1 1 140px' }}>الوردية الليلية بتفتح الساعة<input className="input" type="time" dir="ltr" value={v.nightFrom} onChange={(e) => up({ nightFrom: e.target.value })} /></label>
+          <label className="field" style={{ flex: '1 1 140px' }}>يقدر يقفل قبل المعاد بـ (دقيقة)<input className="input" inputMode="numeric" dir="ltr" value={v.grace} onChange={(e) => up({ grace: Number(e.target.value.replace(/\D/g, '')) || 0 })} /></label>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function ShiftJardSetup({ v, onChange }) {
   const [busy, setBusy] = useState(false);
   const [info, setInfo] = useState(null);
@@ -773,6 +830,14 @@ function CashierRow({ c, shop, all, writeList, open, onToggle, onPhoto }) {
               <button type="button" className="btn sm" onClick={save}>حفظ</button>
             </div>
           )}
+          {/* الكاشير ده هو مدير المحل: بيقفل الوردية الليلية بدري لنفسه من غير ما يستنى إذن (وبيتسجل) */}
+          <label className="tiny" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, cursor: 'pointer' }}>
+            <input type="checkbox" checked={!!c.isManager} onChange={async (e) => {
+              const v = e.target.checked;
+              try { await writeList(all.map((x) => (x.uid === c.uid ? { ...x, isManager: v } : x))); logAct('cashier_edit', `${v ? 'علّم' : 'شال'} ${c.name} ${v ? 'كمدير المحل' : 'من مدير المحل'}`); toast('اتحفظ'); } catch { toast('مش قادرين نحفظ', 'err'); }
+            }} />
+            <span>ده <b>مدير المحل</b> · يقدر يقفل الوردية الليلية بدري لنفسه (وبيتسجل للمحاسب)</span>
+          </label>
           {c.username && (
             <div className="spread" style={{ background: 'var(--bg)', borderRadius: 16, padding: '10px 12px' }}>
               <span className="small"><b>الرقم السري</b> · <span className="muted">يدخل بـ {c.username}</span></span>

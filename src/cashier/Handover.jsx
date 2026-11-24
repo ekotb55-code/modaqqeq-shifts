@@ -15,6 +15,8 @@ import { pushEvent } from '../cloud.js';
 import { shiftJardOn } from '../shiftJard.js';
 import ShiftJard, { jardDraftKey } from './ShiftJard.jsx';
 import { clearJardOnPhone } from '../phoneJard.jsx';
+import CloseRules from './CloseRules.jsx';
+import { closeRulesOf } from '../closeRules.js';
 
 const WHERE = { stay: 'يفضل في الدرج', shop: 'يتسلّم للمحل', main: 'يتسلّم للأساسي' };
 function Split({ title, mark, color, amount, value, set, options = ['stay', 'shop'] }) {
@@ -51,6 +53,10 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
   const [jard, setJard] = useDraft(dkey, 'jard', null);
   // أول ما يدخل على التسليم ولسه ماجردش: رسالة الجرد بتفتح لوحدها
   const [jardOpen, setJardOpen] = useState(() => needJard && !jard);
+  // شروط القفل: الأوردرات المفتوحة ومعاد قفل الوردية الليلية (الدرج الأساسي بس)
+  const rulesCfg = closeRulesOf(shop);
+  const needRules = !isSub && (rulesCfg.orders || rulesCfg.nightOn);
+  const [rules, setRules] = useState({ missing: [], data: {}, review: false });
   const [busy, setBusy] = useState(false);
   const [sideFix, setSideFix] = useState(null);
 
@@ -109,6 +115,7 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
   // --- تجميع النواقص ---
   const missingItems = [];
   if (needJard && !jard) missingItems.push('جرد الوردية');
+  if (needRules) missingItems.push(...rules.missing);
   if (side === '') missingItems.push('اكتب مبلغ الجانبي');
   else if (!sideOk) missingItems.push('ظبط الجانبي');
 
@@ -154,6 +161,7 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
       walletsTyped: Object.fromEntries(shopWallets.map((w) => [w.key, num(wtyped[w.key])])),
       walletModes: walletModesOf(shop),
       ...(needJard && jard ? { jard } : {}),
+      ...(needRules ? { closeRules: { ...rules.data, review: !!rules.review } } : {}),
       walletsOpenFix: Object.fromEntries(shopWallets.filter((w) => needsOpen(w.key)).map((w) => [w.key, num(wopen[w.key])])),
     };
     
@@ -208,6 +216,7 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
         <button type="button" className="btn soft sm" onClick={onBack}>رجوع للعمليات</button>
       </div>
       {jardOpen && <ShiftJard shop={shop} shift={shift} profile={profile} cashiers={cashiers} onClose={() => setJardOpen(false)} onDone={(s) => { setJard(s); setJardOpen(false); toast('جرد الوردية اتسجل · كمّل التسليم'); }} />}
+      {needRules && <CloseRules shop={shop} shift={shift} profile={profile} cashiers={cashiers} dkey={dkey} onState={setRules} />}
       {needJard && (
         <section className="card" style={{ gap: 10, background: jard ? '#E2FAB0' : '#FFE3A3' }}>
           <div className="spread" style={{ gap: 12, flexWrap: 'wrap' }}>

@@ -540,6 +540,31 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
       <WalletSmsReview shift={shift} shop={shop} data={wsms} canEdit={canReview && shift.status !== 'closed'} />
       <RepDebtsCard shop={fullShop} profile={profile} canEdit={!!canReview} />
       <BillsCompare rcv={rcv} hnd={shift.handover} />
+      {shift.handover?.closeRules && (() => {
+        const r = shift.handover.closeRules;
+        const o = r.orders;
+        const n = r.night;
+        return (
+          <section className="card" style={{ gap: 8, background: r.review ? '#FFF3D6' : '#F4F2FF' }}>
+            <h2 className="h2">🔒 شروط القفل{r.review ? ' · ⚠️ محتاجة مراجعة' : ''}</h2>
+            {n && (
+              <span className="small" style={{ lineHeight: 1.7 }}>
+                🌙 معاد القفل {n.close} · {!n.early ? 'قفل في المعاد' : n.ok ? `قفل قبل المعاد بـ ${n.minsLeft} دقيقة بإذن ${n.ok}` : n.offline ? `⚠️ قفل قبل المعاد بـ ${n.minsLeft} دقيقة من غير إذن (النت كان قاطع) · راجع` : `قفل قبل المعاد بـ ${n.minsLeft} دقيقة`}
+              </span>
+            )}
+            {o && (o.failed
+              ? <span className="small" style={{ color: '#8A5A00', fontWeight: 700 }}>⚠️ ماتأكدناش من أوردرات التوصيل ({o.msg}) · راجعها في برنامج البيع</span>
+              : !o.count
+                ? <span className="small">🛵 مكانش فيه أوردرات توصيل مفتوحة</span>
+                : (
+                  <div className="stack" style={{ gap: 4 }}>
+                    <strong className="small">🛵 {o.count} أوردر توصيل مفتوح وقت القفل</strong>
+                    {(o.list || []).map((x) => <span key={x.no} className="tiny">فاتورة {x.no} · {fmt(x.total)} ج{x.client ? ` · ${x.client}` : ''} · {x.note || 'من غير تأكيد'}</span>)}
+                  </div>
+                ))}
+          </section>
+        );
+      })()}
       {shift.handover?.jard && (() => {
         const j = shift.handover.jard;
         return (

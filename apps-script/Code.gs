@@ -15,12 +15,12 @@ const PROJECT = 'modaqqeq-shifts';
 const FS = 'https://firestore.googleapis.com/v1/projects/' + PROJECT + '/databases/(default)/documents';
 const KEEP_DAYS = 60; // الصور بتتمسح بعد كده
 // مين يوصله إيه — كل واحد يقدر يغيّر اختياره من الجرس جوّه التطبيق (نفس الجدول في src/notifyPrefs.js)
-const PREF_OF = { handover: 'handover', reopen_done: 'handover', dispute: 'request', ack: 'request', msg: 'msg', close_report: 'close', sms_claim: 'wallet', sms_big: 'wallet', sms_refused: 'wallet', sms_owner: 'wallet' };
+const PREF_OF = { handover: 'handover', reopen_done: 'handover', dispute: 'request', ack: 'request', msg: 'msg', close_report: 'close', sms_claim: 'wallet', sms_big: 'wallet', sms_refused: 'wallet', sms_owner: 'wallet', early_close: 'early' };
 const DEFAULTS = {
   accountant: { handover: true, request: true, msg: true, close: false },
   reviewer: { handover: true, request: true, msg: true, close: false },
-  owner: { close: true, wallet: true },
-  manager: { close: true, wallet: true },
+  owner: { close: true, wallet: true, early: true },
+  manager: { close: true, wallet: true, early: true },
   admin: {},
   support: {},
 };
@@ -91,11 +91,16 @@ function sendNotifications_() {
     uids = uids.filter(function (u) { return u && u !== ev.byUid; });
     console.log('event ' + ev.type + ' → ' + ev.to + ' · ' + uids.length + ' people');
     const go = ev.type === 'close' ? 'view' : ev.type === 'reopen' || (ev.type === 'msg' && ev.to === 'cashier') ? 'attn' : '';
+    // طلب قفل بدري: كل واحد بيوصله زرار «موافق» برابط خاص بيه (علشان يتسجل مين اللي سمح)
+    const allowUrl = function (uid) {
+      return ev.type === 'early_close' && ev.shiftId ? ScriptApp.getService().getUrl() + '?a=allow&s=' + encodeURIComponent(ev.shiftId) + '&u=' + encodeURIComponent(uid) + '&t=' + actToken_('allow:' + ev.shiftId + ':' + uid) : '';
+    };
     tokensOf_(uids).forEach(function (t) {
+      const actUrl = ev.type === 'early_close' ? allowUrl(t.uid) : String(ev.actUrl || '');
       messages.push({
         message: {
           token: t.token,
-          data: { title: String(ev.title || 'مدقق'), body: String(ev.body || ''), tag: (ev.shiftId || '') + ':' + (ev.type || '') + ':' + (ev.atMs || ''), shiftId: String(ev.shiftId || ''), shopId: String(ev.shopId || ''), type: String(ev.type || ''), go: go || String(ev.go || ''), actUrl: String(ev.actUrl || ''), alarm: ['handover', 'reopen_done', 'dispute'].indexOf(ev.type) >= 0 ? '1' : '0' },
+          data: { title: String(ev.title || 'مدقق'), body: String(ev.body || ''), tag: (ev.shiftId || '') + ':' + (ev.type || '') + ':' + (ev.atMs || ''), shiftId: String(ev.shiftId || ''), shopId: String(ev.shopId || ''), type: String(ev.type || ''), go: go || String(ev.go || ''), actUrl: actUrl, alarm: ['handover', 'reopen_done', 'dispute', 'early_close'].indexOf(ev.type) >= 0 ? '1' : '0' },
           webpush: { headers: { Urgency: 'high', TTL: '86400' } },
         },
       });
@@ -150,7 +155,7 @@ function tokensOf_(uids) {
       from: [{ collectionId: 'pushTokens' }],
       where: { fieldFilter: { field: { fieldPath: 'uid' }, op: 'IN', value: { arrayValue: { values: part.map(function (u) { return { stringValue: u }; }) } } } },
     } });
-    (r.json || []).forEach(function (x) { if (x.document) { const t = fields_(x.document); if (t.token) out.push({ token: t.token, name: x.document.name }); } });
+    (r.json || []).forEach(function (x) { if (x.document) { const t = fields_(x.document); if (t.token) out.push({ token: t.token, name: x.document.name, uid: t.uid || '' }); } });
   }
   return out;
 }
@@ -234,6 +239,7 @@ function doPost(e) {
     if (e.parameter && e.parameter.a === 'personal') return json_(personalFromNote_(e.parameter.g, e.parameter.t));
     const body = JSON.parse(e.postData.contents);
     if (body.action === 'img') return json_(getImg_(body));
+    if (body.action === 'allowEarly') return json_(allowEarly_(body.shiftId, uidOf_(body.idToken)));
     if (body.action === 'mykeys') return json_(myKeys_(body.idToken));
     if (body.action === 'pair') return json_(pair_(body.code));
     if (body.action === 'shopkeys') return json_(shopKeys_(body.shopId, body.token));
@@ -246,6 +252,7 @@ function doPost(e) {
 }
 function doGet(e) {
   if (e && e.parameter && e.parameter.a === 'personal') return json_(personalFromNote_(e.parameter.g, e.parameter.t));
+  if (e && e.parameter && e.parameter.a === 'allow') return json_(e.parameter.t === actToken_('allow:' + e.parameter.s + ':' + e.parameter.u) ? allowEarly_(e.parameter.s, e.parameter.u) : { ok: false, error: 'bad token' });
   if (e && e.parameter && e.parameter.k && e.parameter.t) return json_(sms_(e.parameter.k, e.parameter.t));
   return json_({ ok: true, app: 'modaqqeq-shifts' });
 }
@@ -688,6 +695,27 @@ function personalFromNote_(group, token) {
       { fields: toFields_({ status: 'personal', decidedByName: 'صاحب المحل (من الإشعار)', decidedAtMs: now }) });
   });
   return { ok: true, amount: docs[0].amount };
+}
+// ───────── إذن القفل بدري (الوردية الليلية) ─────────
+// الكاشير بيكتب على الوردية earlyAskStatus = pending، والمدير/الأونر بيوافق من زرار الإشعار أو من التطبيق،
+// والدعم/الإدارة من التطبيق في الحالات القهرية. الموافقة بتتكتب هنا بس (مع اسم اللي سمح).
+function allowEarly_(shiftId, uid) {
+  if (!shiftId || !uid) return { ok: false, error: 'login' };
+  const ur = req_('get', FS + '/users/' + uid);
+  const u = ur.code === 200 ? fields_(ur.json) : {};
+  const sr = req_('get', FS + '/shifts/' + encodeURIComponent(shiftId));
+  if (sr.code !== 200) return { ok: false, error: 'الوردية مش موجودة' };
+  const sh = fields_(sr.json);
+  const shops = (ur.json && ur.json.fields && ur.json.fields.shopIds && ur.json.fields.shopIds.arrayValue && ur.json.fields.shopIds.arrayValue.values || []).map(function (v) { return v.stringValue; });
+  const can = !u.disabled && (['admin', 'support'].indexOf(u.role) >= 0 || (['owner', 'manager'].indexOf(u.role) >= 0 && shops.indexOf(sh.shopId) >= 0));
+  if (!can) return { ok: false, error: 'مالكش صلاحية تسمح بالقفل في المحل ده' };
+  if (sh.earlyAskStatus === 'ok') return { ok: true, already: true, by: sh.earlyAskBy || '', cashier: sh.cashierName || '' };
+  if (sh.earlyAskStatus !== 'pending') return { ok: false, error: 'مفيش طلب قفل بدري مستني على الوردية دي' };
+  const patch = { earlyAskStatus: 'ok', earlyAskBy: u.name || '', earlyAskByUid: uid, earlyAskByRole: u.role || '', earlyAskDecidedMs: Date.now() };
+  const mask = Object.keys(patch).map(function (f) { return 'updateMask.fieldPaths=' + f; }).join('&');
+  const r = req_('patch', FS + '/shifts/' + encodeURIComponent(shiftId) + '?' + mask, { fields: toFields_(patch) });
+  if (r.code !== 200) return { ok: false, error: 'حصلت مشكلة · جرّب تاني' };
+  return { ok: true, by: u.name || '', cashier: sh.cashierName || '' };
 }
 function toFields_(o) {
   const out = {};
