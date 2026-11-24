@@ -237,6 +237,19 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // الحضور والانصراف: كل واحد بيسجّل لنفسه بس (uid = هو) في فرعه، والوقت لازم يبقى وقت السيرفر.
+    // مفيش تعديل ولا مسح غير من إدارة مدقق (التعديل بإذن صاحب الشغل وسجل التعديلات في خطوة جاية).
+    match /attendance/{id} {
+      allow create: if hasProfile() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.shopId in me().shopIds
+        && request.resource.data.kind in ['in', 'out']
+        && request.resource.data.at == request.time
+        && (request.resource.data.photo == null || (request.resource.data.photo is string && request.resource.data.photo.size() < 150000))
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'shopId', 'shopName', 'kind', 'at', 'atLocalMs', 'day', 'method', 'photo', 'deviceId']);
+      allow read: if (signedIn() && resource.data.uid == request.auth.uid) || staffOf(resource.data.shopId);
+      allow update, delete: if isTopAdmin();
+    }
+
     // Login & activity log. Everyone writes only lines about himself; nobody edits or deletes.
     // Only Modaqqeq's owner and support can read it.
     match /activity/{id} {

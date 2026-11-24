@@ -80,6 +80,13 @@ export default function Workers({ shop, pub }) {
   return (
     <section className="card tint-orange">
       <h2 className="h2">العمال</h2>
+      <label className="chips" style={{ gap: 8, alignItems: 'center', background: 'rgba(255,255,255,.85)', borderRadius: 18, padding: '10px 14px' }}>
+        <input type="checkbox" style={chk} checked={!!pub?.attendance} onChange={(e) => setDoc(doc(db, 'shopsPublic', shop.id), { attendance: e.target.checked }, { merge: true })
+          .then(() => logAct('staff_edit', `${e.target.checked ? 'شغّل' : 'وقّف'} الحضور والانصراف في ${shop.name}`, { shopId: shop.id }))
+          .catch(() => toast('مش قادرين نحفظ، اتأكد من النت', 'err'))} />
+        <span className="stack" style={{ gap: 0 }}><strong>الحضور والانصراف على جهاز الفرع</strong>
+          <span className="tiny muted">زرار «حضور / انصراف» بيظهر على كمبيوتر الكاشير (بعد ما الكاشير يفتح البرنامج مرة). الكاشيرية والعمال بيسجلوا بالرقم السري وصورة من الكاميرا.</span></span>
+      </label>
       <div className="stack">
         {active.map(row)}
         {active.length === 0 && <span className="muted small">لسه مفيش عمال</span>}

@@ -5,6 +5,7 @@ import { Avatar, InstallButton, useToast } from '../ui.jsx';
 import { cashierEmail, cashierPassword } from '../lib';
 import { markLogin } from '../activity.js';
 import { cashierLogin } from '../sessions.js';
+import { AttendanceButton } from '../Attendance.jsx';
 
 const MSG = {
   'auth/invalid-credential': 'اسم الدخول أو الباسورد غلط',
@@ -135,6 +136,7 @@ export default function Login({ error }) {
                     <span className="muted">اختار اسمك علشان تبدأ</span>
                   </div>
                   {(msg || error) && <span className="badge bad" style={{ whiteSpace: 'normal' }}>{msg || error}</span>}
+                  <AttendanceButton device={device} style={{ alignSelf: 'center' }} />
                   <div className="wl-grid">
                     {cards.map((c) => (
                       <button key={c.uid || c.username} type="button" className="wl-card" onClick={() => { setWho(c); setPass(''); setMsg(''); }}>

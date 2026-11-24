@@ -27,6 +27,8 @@ export async function rememberPin(uid, pin) {
   write(all);
 }
 export const isRemembered = (uid) => !!read()[uid]?.hash;
+// حاجة اتسجلت باسمه وهو مش فاتح التطبيق (زي الحضور) ولسه مستنية النت: flushPending يبعتها بعدين.
+export function markPending(uid) { const all = read(); if (all[uid]) { all[uid].pending = true; write(all); } }
 export function forget(uid) { const all = read(); delete all[uid]; write(all); }
 
 const online = () => typeof navigator === 'undefined' || navigator.onLine !== false;

@@ -24,6 +24,7 @@ import Reps from './Reps.jsx';
 import { wants } from '../notifyPrefs.js';
 import { useShopShifts } from './Review.jsx';
 import EarlyAsks from './EarlyAsks.jsx';
+import AttendanceView from './AttendanceView.jsx';
 
 export default function StaffApp({ profile }) {
   const isAdmin = isAdminRole(profile.role);
@@ -38,6 +39,7 @@ export default function StaffApp({ profile }) {
     { id: 'reports', label: 'التقارير' },
     { id: 'ledger', label: 'العجز والزيادة' },
     shops.some((sh) => (sh.wallets || []).some((w) => walletModeOf(sh, w) === 'owner' && walletVisible(sh, { wallet: w }, profile))) && { id: 'wallet', label: 'التحويلات' },
+    { id: 'attendance', label: 'الحضور' },
     isAdmin && { id: 'setup', label: 'الإعداد' },
     canSeeLog && { id: 'activity', label: 'سجل الدخول' },
   ].filter(Boolean);
@@ -212,6 +214,7 @@ export default function StaffApp({ profile }) {
           {tab === 'ledger' && <Ledger key={effSel} profile={profile} shops={viewShops} canReview={canReview} />}
           {tab === 'wallet' && <WalletTransfers key={effSel} profile={profile} shops={viewShops} />}
           {tab === 'activity' && canSeeLog && <Activity shops={shops} branch={effSel} />}
+          {tab === 'attendance' && <AttendanceView key={effSel} shops={viewShops} />}
           {tab === 'setup' && <Setup profile={profile} shops={shops} sel={setupShop} setSel={setShopSel} />}
         </>
       )}
