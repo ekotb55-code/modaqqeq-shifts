@@ -129,18 +129,32 @@ export default function ShiftJard({ shop, shift, profile, cashiers = [], onClose
   });
   const countHere = () => { setViaPhone(false); clearJardOnPhone(profile.id); };
 
-  const start = async () => {
+  // «ابدأ الجرد من الأول»: بنبعت رقم الوردية بعلامة #ن، فالسكريبت بيلغي الجرد القديم ويبدأ جديد بقايمة التاب الحالية
+  const [again, setAgain] = useDraft(dkey, 'again', 0);
+  const start = async (n = again) => {
     setBusy(true); setErr('');
     try {
-      const j = await jardStart(cfg, { shiftId: shift.id, user: profile.name });
+      const j = await jardStart(cfg, { shiftId: n ? `${shift.id}#${n}` : shift.id, user: profile.name });
       setSess({ id: j.open.id, items: j.items || [] });
       // لو نفس الجرد اتبدأ قبل كده (النت قطع) بنسيب الأرقام اللي اتكتبت
       if (!j.resumed) setCounts({});
+      setRecount(null);
       setStep('count');
-      logAct('shift_jard', `بدأ جرد الوردية · ${(j.items || []).length} صنف`, { shopId: shop.id, shiftId: shift.id });
+      logAct('shift_jard', `${n ? 'بدأ جرد الوردية من الأول' : 'بدأ جرد الوردية'} · ${(j.items || []).length} صنف`, { shopId: shop.id, shiftId: shift.id });
     } catch (e) { setErr(e.message); }
     setBusy(false);
   };
+  const restart = async () => {
+    if (!window.confirm('الجرد ده هيتلغي والأرقام اللي اتكتبت هتتمسح، ويبدأ جرد جديد بالأصناف الحالية وكميات البرنامج دلوقتي. متأكد؟')) return;
+    const n = (again || 0) + 1;
+    clearJardOnPhone(profile.id);
+    setAgain(n);
+    setCounts({});
+    setOkOut(false); setOkIn(false);
+    setViaPhone(isDesktop());
+    await start(n);
+  };
+  const restartBtn = <button type="button" className="link" style={{ color: '#9B1C1C' }} disabled={busy} onClick={restart}>↺ ابدأ الجرد من الأول (لو الأصناف اتغيرت)</button>;
 
   const check = async (who, pin, setOk, setPin) => {
     setBusy(true); setErr('');
@@ -206,7 +220,7 @@ export default function ShiftJard({ shop, shift, profile, cashiers = [], onClose
           <span className="small">انتوا الاتنين تعدّوا وانتوا واقفين، وكل واحد يأكد بالرقم السري بتاعه. لو اللي هيستلم لسه ماوصلش، كمّل شغلك لحد ما ييجي.</span>
         </div>
         <span className="small muted">الكميات بتتسحب من برنامج البيع لحظة ما تدوس «ابدأ». محتاج نت.</span>
-        <button type="button" className="btn full" style={{ height: 60, fontSize: 18 }} disabled={busy} onClick={start}>{busy ? 'بنسحب الأصناف من البرنامج… (ممكن ياخد دقيقة)' : '📋 ابدأ جرد الوردية'}</button>
+        <button type="button" className="btn full" style={{ height: 60, fontSize: 18 }} disabled={busy} onClick={() => start()}>{busy ? 'بنسحب الأصناف من البرنامج… (ممكن ياخد دقيقة)' : '📋 ابدأ جرد الوردية'}</button>
       </>
     );
   } else if (step === 'count' && viaPhone) {
@@ -229,6 +243,7 @@ export default function ShiftJard({ shop, shift, profile, cashiers = [], onClose
           <span className="pshot-wait"><i /><i /><i /> {busy ? 'بنراجع كميات البرنامج…' : 'مستنيين الموبايل'}</span>
         </div>
         <button type="button" className="btn soft full" onClick={countHere}>هعدّ من هنا على الكمبيوتر</button>
+        {restartBtn}
       </>
     );
   } else if (step === 'count') {
@@ -256,6 +271,7 @@ export default function ShiftJard({ shop, shift, profile, cashiers = [], onClose
           {busy ? 'بنراجع كميات البرنامج…' : left > 0 ? `فاضل ${left} صنف` : 'خلّصنا العد · نأكد'}
         </button>
         {isDesktop() && <button type="button" className="link" onClick={() => setViaPhone(true)}>📲 كمّل العد من الموبايل</button>}
+        {restartBtn}
       </>
     );
   } else if (step === 'confirm') {
@@ -280,6 +296,7 @@ export default function ShiftJard({ shop, shift, profile, cashiers = [], onClose
           <button type="button" className="btn soft" onClick={() => { setViaPhone(false); setStep('count'); }} disabled={busy}>رجوع للعد</button>
           <button type="button" className="btn" style={{ height: 56, flex: 1 }} disabled={busy || !okOut || !okIn} onClick={finish}>{busy ? 'لحظة…' : 'ابعت الجرد وطلّع الفروقات'}</button>
         </div>
+        {restartBtn}
       </>
     );
   } else {
