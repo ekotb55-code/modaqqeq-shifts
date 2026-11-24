@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Avatar, Icon, Modal, useDraft, useToast } from '../ui.jsx';
 import { fmt, num } from '../lib';
-import { jardFinish, jardRecheck, jardStart, shiftJardOf } from '../shiftJard.js';
+import { jardBillsCheck, jardFinish, jardRecheck, jardStart, shiftJardOf } from '../shiftJard.js';
 import { verifyCashierPin } from '../sessions.js';
 import { logAct } from '../activity.js';
 import { isDesktop } from '../remoteDraft';
@@ -34,6 +34,22 @@ export function jardSummary(res, extra = {}) {
   };
 }
 
+// نتيجة التأكد من فاتورة في برنامج البيع
+function BillState({ b, okText }) {
+  if (!b) return null;
+  if (b.ok === true) return <span className="small" style={{ color: '#0E7A4F', fontWeight: 700 }}>{okText}</span>;
+  if (b.ok === null) return <span className="small" style={{ color: '#8A5A00', fontWeight: 700 }}>⚠️ مقدرناش نتأكد من برنامج البيع · هيتكتب للمحاسب «الفاتورة ماتأكدتش»</span>;
+  if (b.ok === 'skip') return <span className="small" style={{ color: '#8A5A00', fontWeight: 700 }}>⚠️ كمّلت من غير تطابق · المحاسب هيراجع الفاتورة</span>;
+  return (
+    <div className="stack" style={{ gap: 4, background: '#fff', borderRadius: 12, padding: '8px 10px' }} role="alert">
+      <strong className="small" style={{ color: '#9B1C1C' }}>✗ {b.msg || `فاتورة ${b.no || ''} مش مطابقة`}</strong>
+      {(b.bad || []).map((x) => (
+        <span key={x.name} className="tiny">{x.name}: المطلوب {fmt(x.need)} · في الفاتورة {fmt(x.got)}</span>
+      ))}
+    </div>
+  );
+}
+
 function PinRow({ title, who, pin, setPin, ok, busy, onCheck, children }) {
   return (
     <div className="stack" style={{ background: ok ? '#E3F9EC' : '#fff', borderRadius: 20, padding: '12px 14px', gap: 8 }}>
@@ -63,7 +79,10 @@ export default function ShiftJard({ shop, shift, profile, cashiers = [], onClose
   const [okOut, setOkOut] = useDraft(dkey, 'okOut', false);
   const [okIn, setOkIn] = useDraft(dkey, 'okIn', false);
   const [res, setRes] = useDraft(dkey, 'res', null);
-  const [invoice, setInvoice] = useDraft(dkey, 'invoice', false);
+  // التأكد من الفواتير في برنامج البيع: bills = { sale, ret } كل واحدة { ok: true | false | null(ماتأكدتش), no, bad, msg }
+  const [billNo, setBillNo] = useDraft(dkey, 'billNo', '');
+  const [bills, setBills] = useDraft(dkey, 'bills', null);
+  const [tries, setTries] = useDraft(dkey, 'tries', 0);
   // على الكمبيوتر: العد بيتحوّل على موبايل الكاشير لوحده (زي التصوير) - ويقدر يعدّ من هنا لو عايز
   const [viaPhone, setViaPhone] = useDraft(dkey, 'viaPhone', () => isDesktop());
   // أصناف اتباع منها أثناء العد: بتتعد تاني هي بس (أرقام «م»)
@@ -146,7 +165,36 @@ export default function ShiftJard({ shop, shift, profile, cashiers = [], onClose
     setBusy(false);
   };
 
-  const summary = res ? jardSummary(res, { outName: profile.name, outUid: profile.id, inName: incoming?.name || '', inUid: incoming?.uid || '', invoice: !!invoice, test: !!cfg.test }) : null;
+  const base = res ? jardSummary(res) : null;
+  const needSale = !!base && base.shortCount > 0;
+  const needRet = !!base && base.overCount > 0;
+  const stat = (need, b) => (!need ? '' : !b ? 'none' : b.ok === true ? 'ok' : b.ok === null ? 'unverified' : 'bad');
+  const saleSt = stat(needSale, bills?.sale), retSt = stat(needRet, bills?.ret);
+  const passed = (st) => st === '' || st === 'ok' || st === 'unverified' || st === 'skipped';
+  const checkBills = async () => {
+    setBusy(true); setErr('');
+    let b;
+    try {
+      b = await jardBillsCheck(cfg, { id: sess.id, billNo: String(billNo).trim() });
+    } catch (e) {
+      // البرنامج مش بيرد أو مفيش نت: مانوقفش التسليم - بيتكتب للمحاسب «ماتأكدتش»
+      const u = { ok: null, msg: e.message };
+      b = { sale: needSale ? { ...u, no: String(billNo).trim() } : null, ret: needRet ? u : null };
+    }
+    setBills(b);
+    setTries(tries + 1);
+    setBusy(false);
+  };
+  const skipBills = () => setBills({
+    sale: needSale ? (saleSt === 'ok' ? bills.sale : { ...(bills?.sale || {}), ok: 'skip', no: String(billNo).trim() }) : null,
+    ret: needRet ? (retSt === 'ok' ? bills.ret : { ...(bills?.ret || {}), ok: 'skip' }) : null,
+  });
+  const st2 = (need, b) => (!need ? '' : b?.ok === 'skip' ? 'skipped' : stat(need, b));
+  const saleFin = st2(needSale, bills?.sale), retFin = st2(needRet, bills?.ret);
+  const summary = res ? jardSummary(res, {
+    outName: profile.name, outUid: profile.id, inName: incoming?.name || '', inUid: incoming?.uid || '', test: !!cfg.test,
+    invoice: saleFin === 'ok', saleNo: bills?.sale?.no || String(billNo).trim(), saleCheck: saleFin, retNo: bills?.ret?.no || '', retCheck: retFin,
+  }) : null;
   const done = () => { onDone(summary); };
 
   let body;
@@ -247,10 +295,10 @@ export default function ShiftJard({ shop, shift, profile, cashiers = [], onClose
                 <span>{l.name}</span><span dir="ltr"><b>{fmt(l.diff)}</b> × {fmt(l.sale)} = {fmt(l.value)} ج</span>
               </div>
             ))}
-            <span className="small" style={{ lineHeight: 1.8 }}>اضرب <b>فاتورة مبيعات</b> بالنواقص دي على برنامج البيع دلوقتي على حسابك. قيمتها هتطلع <b>عجز وردية</b> عليك عند التقفيل.</span>
-            <button type="button" className={'btn full' + (invoice ? ' soft' : '')} style={{ height: 54 }} onClick={() => setInvoice(!invoice)}>
-              {invoice ? '✓ ضربت الفاتورة على حسابي (عجز وردية)' : 'ضربت الفاتورة دي على حسابي'}
-            </button>
+            <span className="small" style={{ lineHeight: 1.8 }}>اضرب <b>فاتورة مبيعات</b> بالنواقص دي على برنامج البيع دلوقتي على حسابك، واكتب رقمها هنا. قيمتها هتطلع <b>عجز وردية</b> عليك عند التقفيل.</span>
+            <input className="input" inputMode="numeric" dir="ltr" placeholder="رقم فاتورة المبيعات" aria-label="رقم فاتورة المبيعات" style={{ height: 54, fontSize: 20, textAlign: 'center' }}
+              value={billNo} onChange={(e) => { setBillNo(e.target.value.replace(/\D/g, '')); if (bills) setBills({ ...bills, sale: null }); }} />
+            <BillState b={bills?.sale} okText={`✓ فاتورة ${bills?.sale?.no || ''} مطابقة للنواقص`} />
           </section>
         )}
         {s.overCount > 0 && (
@@ -261,13 +309,22 @@ export default function ShiftJard({ shop, shift, profile, cashiers = [], onClose
                 <span>{l.name}</span><span dir="ltr">+{fmt(l.diff)}</span>
               </div>
             ))}
-            <span className="small">الأصناف الزيادة هيتعملها تسوية وتتعدل كميتها (من الدعم أو المحل).</span>
+            <span className="small" style={{ lineHeight: 1.8 }}>اضرب <b>فاتورة مرتجع واحدة</b> بكل الأصناف دي بنفس الكميات على برنامج البيع. مش محتاج تكتب رقمها · هنلاقيها لوحدنا.</span>
+            <BillState b={bills?.ret} okText={`✓ فاتورة المرتجع ${bills?.ret?.no || ''} مطابقة للزيادة`} />
           </section>
         )}
         <span className="tiny muted">اتجرد مع {s.inName} · التقرير اتسجل في الجرد العشوائي بتاع الفرع.</span>
-        <button type="button" className="btn full" style={{ height: 58 }} disabled={s.shortCount > 0 && !invoice} onClick={done}>
-          {s.shortCount > 0 && !invoice ? 'اضرب فاتورة النواقص الأول' : 'تمام · كمّل التسليم'}
-        </button>
+        {(needSale || needRet) && !(passed(saleFin) && passed(retFin)) && (
+          <>
+            <button type="button" className="btn full" style={{ height: 58 }} disabled={busy || (needSale && String(billNo).trim() === '')} onClick={checkBills}>
+              {busy ? 'بنراجع الفواتير في برنامج البيع…' : needSale && String(billNo).trim() === '' ? 'اكتب رقم فاتورة المبيعات الأول' : 'اتأكد من الفواتير'}
+            </button>
+            {tries >= 2 && <button type="button" className="link" onClick={skipBills} disabled={busy}>الفواتير مضروبة ومش بتتطابق · كمّل والمحاسب يراجع</button>}
+          </>
+        )}
+        {passed(saleFin) && passed(retFin) && (
+          <button type="button" className="btn full" style={{ height: 58 }} onClick={done}>تمام · كمّل التسليم</button>
+        )}
       </>
     );
   }

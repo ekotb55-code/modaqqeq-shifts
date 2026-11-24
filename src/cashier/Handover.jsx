@@ -215,7 +215,7 @@ export default function Handover({ shop, shift, entries, incoming = [], profile,
               <h2 className="h2">📋 جرد الوردية</h2>
               <span className="small" style={{ lineHeight: 1.7 }}>
                 {jard
-                  ? `✓ اتجرد ${jard.count} صنف مع ${jard.inName}${jard.shortCount ? ` · نواقص ${fmt(jard.shortValue)} ج اتضربت فاتورة (عجز وردية)` : ''}${jard.overCount ? ` · ${jard.overCount} صنف زيادة هيتعملهم تسوية` : ''}${!jard.shortCount && !jard.overCount ? ' · مفيش فروقات' : ''}`
+                  ? `✓ اتجرد ${jard.count} صنف مع ${jard.inName}${jard.shortCount ? ` · نواقص ${fmt(jard.shortValue)} ج فاتورة ${jard.saleNo || ''} (عجز وردية)` : ''}${jard.overCount ? ` · ${jard.overCount} صنف زيادة مرتجع` : ''}${!jard.shortCount && !jard.overCount ? ' · مفيش فروقات' : ''}`
                   : 'لازم تجرد الأصناف الثابتة مع الكاشير اللي هيستلم منك قبل ما تسلّم.'}
               </span>
             </span>

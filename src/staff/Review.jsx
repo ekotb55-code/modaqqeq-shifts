@@ -548,14 +548,14 @@ export function ShiftDetail({ shift, shop: fullShop, profile, canReview }) {
             <span className="small">{j.count} صنف · {j.outName} سلّم و{j.inName} استلم{!j.shortCount && !j.overCount ? ' · مفيش فروقات ✅' : ''}</span>
             {j.shortCount > 0 && (
               <div className="stack" style={{ gap: 4 }}>
-                <strong className="small" style={{ color: '#9B1C1C' }}>نواقص {j.shortCount} صنف · {fmt(j.shortValue)} ج · {j.invoice ? 'الكاشير أكّد إنه ضربها فاتورة على حسابه (عجز وردية)' : 'الكاشير ماأكدش الفاتورة'}</strong>
+                <strong className="small" style={{ color: '#9B1C1C' }}>نواقص {j.shortCount} صنف · {fmt(j.shortValue)} ج · فاتورة مبيعات {j.saleNo || '—'} · {({ ok: 'اتأكدنا منها في البرنامج ✓', unverified: '⚠️ الفاتورة ماتأكدتش (البرنامج مارديش)', skipped: '⚠️ الكاشير كمّل من غير تطابق · راجعها', bad: '✗ مش مطابقة', none: 'ماتراجعتش' })[j.saleCheck] || (j.invoice ? 'الكاشير أكّد إنه ضربها' : 'ماتأكدتش')}</strong>
                 {(j.short || []).map((l) => <span key={l.code} className="tiny">{l.name} · {fmt(l.diff)} × {fmt(l.sale)} = {fmt(l.value)} ج</span>)}
-                <span className="tiny muted">راجع إن فاتورة النواقص موجودة في مبيعات الوردية على البرنامج.</span>
+                <span className="tiny muted">قيمة الفاتورة دي بتدخل في مبيعات الوردية، فبتطلع عجز وردية على الكاشير.</span>
               </div>
             )}
             {j.overCount > 0 && (
               <div className="stack" style={{ gap: 4 }}>
-                <strong className="small">زيادة {j.overCount} صنف · محتاجة تسوية (تعديل كمية) من الدعم أو المحل</strong>
+                <strong className="small">زيادة {j.overCount} صنف · {fmt(j.overValue)} ج · فاتورة مرتجع {j.retNo || '—'} · {({ ok: 'اتأكدنا منها في البرنامج ✓', unverified: '⚠️ الفاتورة ماتأكدتش (البرنامج مارديش)', skipped: '⚠️ الكاشير كمّل من غير تطابق · راجعها', bad: '✗ مش مطابقة', none: 'ماتراجعتش' })[j.retCheck] || 'ماتراجعتش'}</strong>
                 {(j.over || []).map((l) => <span key={l.code} className="tiny">{l.name} · +{fmt(l.diff)}</span>)}
               </div>
             )}

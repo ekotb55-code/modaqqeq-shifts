@@ -506,7 +506,7 @@ function ShiftJardSetup({ v, onChange }) {
       <div className="spread" style={{ gap: 12, flexWrap: 'wrap' }}>
         <span className="stack" style={{ gap: 2, flex: '1 1 240px' }}>
           <h2 className="h2">📋 جرد الوردية</h2>
-          <span className="tiny muted" style={{ lineHeight: 1.7 }}>الكاشير مايقدرش يسلّم غير لما يجرد الأصناف الثابتة مع اللي هيستلم منه. النواقص بتتضرب فاتورة على حسابه (عجز وردية) والزيادة بيتعملها تسوية.</span>
+          <span className="tiny muted" style={{ lineHeight: 1.7 }}>الكاشير مايقدرش يسلّم غير لما يجرد الأصناف الثابتة مع اللي هيستلم منه. النواقص بتتضرب فاتورة مبيعات على حسابه (عجز وردية) والزيادة فاتورة مرتجع، والتطبيق بيتأكد من الفاتورتين في برنامج البيع.</span>
         </span>
         <div className="chips">
           <button type="button" className={'chip' + (v.on ? ' on' : '')} aria-pressed={v.on} onClick={() => up({ on: true })}>مطلوب للتقفيل</button>
