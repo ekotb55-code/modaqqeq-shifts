@@ -215,7 +215,7 @@ export default function StaffApp({ profile }) {
           {tab === 'ledger' && <Ledger key={effSel} profile={profile} shops={viewShops} canReview={canReview} />}
           {tab === 'wallet' && <WalletTransfers key={effSel} profile={profile} shops={viewShops} />}
           {tab === 'activity' && canSeeLog && <Activity shops={shops} branch={effSel} />}
-          {tab === 'attendance' && <StaffTab key={effSel} shops={viewShops} profile={profile} />}
+          {tab === 'attendance' && <StaffTab key={effSel} shops={viewShops} allShops={shops} profile={profile} />}
           {tab === 'setup' && <Setup profile={profile} shops={shops} sel={setupShop} setSel={setShopSel} />}
         </>
       )}

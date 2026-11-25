@@ -3,7 +3,7 @@ import { collection, doc, getDoc, onSnapshot, query, setDoc, where } from 'fireb
 import { db } from '../firebase';
 import { Modal, useToast } from '../ui.jsx';
 import { WEEKDAYS, isAdminRole, todayKey } from '../lib';
-import { computeDay, dayAt, effMs, flexHours, isVoid, nextDay, schedFor, weekday } from '../attDay.js';
+import { computeDay, dayAt, effMs, flexHours, freeLabel, isVoid, nextDay, schedFor, weekday } from '../attDay.js';
 import { logPlan, saveShifts, setOneDay } from '../attAdmin.js';
 
 // جدول مواعيد الأسبوع لكل فرع (صاحب المحل والمدير): صف لكل واحد وعمود لكل يوم.
@@ -185,7 +185,7 @@ export function DayEditor({ day, people, shifts, sched, dayDoc, records, colorOf
               style={{ position: 'relative', flex: 1, height: 44, background: 'rgba(0,0,0,.03)', borderRadius: 10, cursor: !s || s.off ? 'pointer' : 'default' }}>
               {ticks.map((h) => <span key={h} style={{ position: 'absolute', right: pos(h) + '%', top: 0, bottom: 0, borderRight: '1px solid rgba(0,0,0,.06)' }} />)}
               {shifts.map((x, i) => { const [u, v] = shiftSpan(x); return <span key={x.id} style={{ position: 'absolute', right: pos(u) + '%', width: (pos(v) - pos(u)) + '%', top: 0, bottom: 0, background: i % 2 ? 'rgba(108,75,216,.04)' : 'rgba(20,121,211,.04)' }} />; })}
-              {!s && <span className="tiny muted" style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{flexH != null ? `⏳ مرن · ${flexH} ${flexH === 1 ? 'ساعة' : 'ساعات'} في اليوم${c?.workedMin ? ` · اشتغل ${Math.floor(c.workedMin / 60)}:${String(c.workedMin % 60).padStart(2, '0')}` : ''}` : '＋ دوس عشان تحط ميعاد'}</span>}
+              {!s && <span className="tiny muted" style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{flexH != null ? `${freeLabel(p.uid, sched)}${c?.joker ? ' · دوس تحطه في الجدول' : ''}${c?.workedMin ? ` · اشتغل ${Math.floor(c.workedMin / 60)}:${String(c.workedMin % 60).padStart(2, '0')}` : ''}` : '＋ دوس عشان تحط ميعاد'}</span>}
               {s?.off && <span className="tiny" style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>🌴 إجازة · دوس تغيّر</span>}
               {a != null && (
                 <span onPointerDown={(e) => startDrag(e, row, 'move')}

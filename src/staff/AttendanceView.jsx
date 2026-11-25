@@ -5,7 +5,7 @@ import { logAct } from '../activity.js';
 import { Avatar, Modal, useToast } from '../ui.jsx';
 import { WEEKDAYS, isAdminRole, todayKey, toDate } from '../lib';
 import { FALLBACK, KIND_LABEL, LATE_SYNC_MIN } from '../attendance.js';
-import { EXTRA_LABEL, computeDay, dayAt, deductStr, effMs, isVoid, lateDeduct, minStr, nextDay, otHours, rulesOf } from '../attDay.js';
+import { EXTRA_LABEL, computeDay, dayAt, deductStr, effMs, freeLabel, isVoid, lateDeduct, minStr, nextDay, otHours, rulesOf } from '../attDay.js';
 import { addManual, decideClaim, fixRecord, setExtra, setOneDay, voidRecord, deletePhoto, deleteRecord, deleteFace } from '../attAdmin.js';
 
 // الحضور والانصراف: مين حضر ومين انصرف في يوم معيّن، بالصورة ووقت السيرفر، والحساب على حسب الميعاد.
@@ -179,7 +179,7 @@ export function DayTimeline({ items, day }) {
               {s && c.late > 0 && bar(s.start, c.firstIn, { top: 3, height: 20, background: 'repeating-linear-gradient(45deg, rgba(229,57,53,.55) 0 4px, transparent 4px 8px)' })}
               {s && !c.firstIn && (c.absent || c.forgotIn) && bar(s.start, Math.min(now, s.end), { top: 3, height: 20, background: 'repeating-linear-gradient(45deg, rgba(229,57,53,.55) 0 4px, transparent 4px 8px)' })}
               {c.flex != null && !s && (c.pairs || []).map(([x, y, open], i) => <span key={'p' + i} style={{ display: 'contents' }}>{bar(x, y, { top: 8, height: 10, background: '#2e9e5b', opacity: open ? 0.6 : 1 })}</span>)}
-              {c.flex != null && !s && !c.firstIn && <span className="tiny muted" style={{ position: 'absolute', insetInlineStart: 6, top: 5 }}>مرن</span>}
+              {c.flex != null && !s && !c.firstIn && <span className="tiny muted" style={{ position: 'absolute', insetInlineStart: 6, top: 5 }}>{c.joker ? '🃏 جوكر' : 'مرن'}</span>}
               {!(c.flex != null && !s) && c.firstIn && bar(c.firstIn, end, { top: 8, height: 10, background: '#2e9e5b', opacity: c.openNow ? 0.6 : 1 })}
               {c.firstIn && s && c.firstIn < s.start && bar(c.firstIn, Math.min(s.start, end), { top: 8, height: 10, background: '#f59e0b' })}
               {c.firstIn && s && end > s.end && bar(Math.max(s.end, c.firstIn), end, { top: 8, height: 10, background: '#f59e0b' })}
@@ -248,7 +248,7 @@ function ShopDay({ shop, day, profile }) {
               <div className="spread" style={{ flexWrap: 'wrap', gap: 8 }}>
                 <span className="chips" style={{ gap: 10, alignItems: 'center' }}>
                   <Avatar name={p.name} photo={pub.photos?.[p.uid]} color={p.color} size={40} /><strong>{p.name}</strong>
-                  <span className="badge" style={{ background: 'rgba(0,0,0,.06)' }}>{!s ? (c.flex != null ? `⏳ مرن · ${c.flex} ${c.flex === 1 ? 'ساعة' : 'ساعات'} في اليوم · اشتغل النهارده ${minStr(c.workedMin)}` : 'مالوش ميعاد') : s.off ? 'إجازة' : <>الميعاد <bdi>{hm(s.start)} – {hm(s.end)}</bdi></>}{s?.oneDay ? ' (ليوم واحد)' : ''}</span>
+                  <span className="badge" style={{ background: 'rgba(0,0,0,.06)' }}>{!s ? (c.flex != null ? `${freeLabel(p.uid, sched)} · اشتغل النهارده ${minStr(c.workedMin)}` : 'مالوش ميعاد') : s.off ? 'إجازة' : <>الميعاد <bdi>{hm(s.start)} – {hm(s.end)}</bdi></>}{s?.oneDay ? ' (ليوم واحد)' : ''}</span>
                 </span>
                 <span className="chips" style={{ gap: 6 }}>
                   {canBoss && <button type="button" className="link small" onClick={() => setModal({ t: 'oneday', p, cur: dayDoc.sched?.[p.uid] ? { ...dayDoc.sched[p.uid], oneDay: true } : s })}>تغيير الميعاد لليوم ده</button>}
