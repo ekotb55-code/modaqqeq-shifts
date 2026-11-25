@@ -6,7 +6,7 @@ import { Avatar, Modal, useToast } from '../ui.jsx';
 import { WEEKDAYS, isAdminRole, todayKey, toDate } from '../lib';
 import { FALLBACK, KIND_LABEL, LATE_SYNC_MIN } from '../attendance.js';
 import { EXTRA_LABEL, computeDay, dayAt, effMs, isVoid, minStr, nextDay } from '../attDay.js';
-import { addManual, decideClaim, fixRecord, saveSched, setExtra, setOneDay, voidRecord } from '../attAdmin.js';
+import { addManual, decideClaim, fixRecord, saveSched, setExtra, setOneDay, voidRecord, deletePhoto, deleteRecord } from '../attAdmin.js';
 
 // الحضور والانصراف: مين حضر ومين انصرف في يوم معيّن، بالصورة ووقت السيرفر، والحساب على حسب الميعاد.
 // ⚠️ = محتاج مراجعة. ⏳ = محتاج قرار (الساعات الزيادة، أو «جيت الساعة كام»).
@@ -45,6 +45,32 @@ function FixModal({ title, atMs, needTime = true, extra, onSave, onClose }) {
         {needTime && <label className="field">الوقت<input type="datetime-local" className="input" dir="ltr" value={v} onChange={(e) => setV(e.target.value)} /></label>}
         <label className="field">السبب (بيتسجل في سجل التعديلات)<input className="input" value={why} onChange={(e) => setWhy(e.target.value)} placeholder="مثلاً: نسي يسجّل وأنا شايفه جه" /></label>
         <button type="button" className="btn" disabled={busy} onClick={save}>{busy ? 'لحظة…' : 'حفظ'}</button>
+      </div>
+    </Modal>
+  );
+}
+
+// مسح نهائي: الصورة بس أو التسجيل كله (صاحب الشغل بس، ومالوش رجوع)
+function DelModal({ r, onClose, profile }) {
+  const [what, setWhat] = useState(r.photo ? 'photo' : 'rec');
+  const [why, setWhy] = useState('');
+  const [sure, setSure] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  const go = async () => {
+    if (!why.trim()) { toast('اكتب السبب', 'err'); return; }
+    setBusy(true);
+    try { await (what === 'photo' ? deletePhoto : deleteRecord)(profile, r, why.trim()); toast('اتمسح نهائي'); onClose(); } catch (e) { console.error(e); toast('مش قادرين نمسح، اتأكد من النت', 'err'); }
+    setBusy(false);
+  };
+  return (
+    <Modal title={`مسح نهائي · ${KIND_LABEL[r.kind]} ${r.name}`} onClose={onClose} width={460}>
+      <div className="stack" style={{ gap: 12 }}>
+        {r.photo && <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}><input type="radio" checked={what === 'photo'} onChange={() => setWhat('photo')} /> امسح الصورة بس (الوقت يفضل متسجل)</label>}
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}><input type="radio" checked={what === 'rec'} onChange={() => setWhat('rec')} /> امسح التسجيل كله (الوقت والصورة)</label>
+        <label className="field">السبب (بيتسجل في سجل التعديلات)<input className="input" value={why} onChange={(e) => setWhy(e.target.value)} placeholder="مثلاً: تسجيل تجربة" /></label>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}><input type="checkbox" checked={sure} onChange={(e) => setSure(e.target.checked)} /> فاهم إن المسح ده مالوش رجوع</label>
+        <button type="button" className="btn red" disabled={busy || !sure} onClick={go}>{busy ? 'لحظة…' : '🗑 امسح نهائي'}</button>
       </div>
     </Modal>
   );
@@ -185,6 +211,7 @@ function ShopDay({ shop, day, profile }) {
                           <button type="button" className="link small" onClick={() => setModal({ t: 'void', r })}>إلغاء</button>
                         </span>
                       )}
+                      {canOwn && <button type="button" className="link small" style={{ color: 'var(--red)' }} onClick={() => setModal({ t: 'del', r })}>🗑 مسح نهائي</button>}
                     </div>
                   );
                 })}
@@ -202,6 +229,7 @@ function ShopDay({ shop, day, profile }) {
         </Modal>
       )}
       {modal?.t === 'fix' && <FixModal title={`تعديل ${KIND_LABEL[modal.r.kind]} ${modal.r.name}`} atMs={effMs(modal.r)} onClose={() => setModal(null)} onSave={(ms, why) => fixRecord(profile, modal.r, ms, why)} />}
+      {modal?.t === 'del' && <DelModal r={modal.r} profile={profile} onClose={() => setModal(null)} />}
       {modal?.t === 'void' && <FixModal title={`إلغاء ${KIND_LABEL[modal.r.kind]} ${modal.r.name}`} needTime={false} onClose={() => setModal(null)} onSave={(_, why) => voidRecord(profile, modal.r, why)} />}
       {modal?.t === 'add' && <AddModal p={modal.p} day={day} sched={sched} dayDoc={dayDoc} onClose={() => setModal(null)}
         onSave={(kind, ms, why) => addManual(profile, { shopId: shop.id, shopName: pub.name || shop.name, person: modal.p, kind, day, atMs: ms, reason: why })} />}

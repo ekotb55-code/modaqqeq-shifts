@@ -1,4 +1,4 @@
-import { addDoc, collection, doc, serverTimestamp, setDoc, updateDoc, deleteField } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, serverTimestamp, setDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { todayKey } from './lib';
 
@@ -17,6 +17,15 @@ export async function fixRecord(profile, r, atMs, reason) {
 export async function voidRecord(profile, r, reason) {
   await updateDoc(doc(db, 'attendance', r.id), { fixState: 'void', fixReason: reason, fixBy: me(profile).by, fixByName: me(profile).byName, fixedAt: serverTimestamp() });
   await log(profile, r.shopId, 'void', `لغى ${r.kind === 'in' ? 'حضور' : 'انصراف'} ${r.name}`, { recId: r.id, uid: r.uid, day: r.day, reason });
+}
+// مسح نهائي (صاحب الشغل بس): الصورة بس، أو التسجيل كله. مالوش رجوع، بس بيتسجل في السجل مين مسح وليه.
+export async function deletePhoto(profile, r, reason) {
+  await updateDoc(doc(db, 'attendance', r.id), { photo: deleteField() });
+  await log(profile, r.shopId, 'del-photo', `مسح صورة ${r.kind === 'in' ? 'حضور' : 'انصراف'} ${r.name} نهائي`, { recId: r.id, uid: r.uid, day: r.day, reason });
+}
+export async function deleteRecord(profile, r, reason) {
+  await deleteDoc(doc(db, 'attendance', r.id));
+  await log(profile, r.shopId, 'del', `مسح ${r.kind === 'in' ? 'حضور' : 'انصراف'} ${r.name} نهائي`, { recId: r.id, uid: r.uid, day: r.day, fromMs: r.fixAtMs || r.at?.toMillis?.() || r.atLocalMs, reason });
 }
 // «جيت الساعة كام؟»: صاحب الشغل يوافق (الوقت يتعدّل للي قاله) أو يرفض (يفضل وقت التسجيل الحقيقي)
 export async function decideClaim(profile, r, ok) {
