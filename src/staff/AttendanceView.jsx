@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { collection, deleteDoc, doc, getDoc, onSnapshot, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { logAct } from '../activity.js';
 import { Avatar, Modal, useToast } from '../ui.jsx';
 import { WEEKDAYS, isAdminRole, todayKey, toDate } from '../lib';
 import { FALLBACK, KIND_LABEL, LATE_SYNC_MIN } from '../attendance.js';
 import { EXTRA_LABEL, computeDay, dayAt, effMs, isVoid, minStr, nextDay } from '../attDay.js';
-import { addManual, decideClaim, fixRecord, saveSched, setExtra, setOneDay, voidRecord } from '../attAdmin.js';
+import { addManual, decideClaim, fixRecord, saveSched, setExtra, setOneDay, voidRecord, deletePhoto, deleteRecord, deleteFace } from '../attAdmin.js';
 
 // الحضور والانصراف: مين حضر ومين انصرف في يوم معيّن، بالصورة ووقت السيرفر، والحساب على حسب الميعاد.
 // ⚠️ = محتاج مراجعة. ⏳ = محتاج قرار (الساعات الزيادة، أو «جيت الساعة كام»).
@@ -50,6 +50,57 @@ function FixModal({ title, atMs, needTime = true, extra, onSave, onClose }) {
   );
 }
 
+// مسح نهائي: الصورة بس أو التسجيل كله (صاحب الشغل بس، ومالوش رجوع)
+function DelModal({ r, onClose, profile }) {
+  const [what, setWhat] = useState(r.photo ? 'photo' : 'rec');
+  const [why, setWhy] = useState('');
+  const [sure, setSure] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  const go = async () => {
+    if (!why.trim()) { toast('اكتب السبب', 'err'); return; }
+    setBusy(true);
+    try { await (what === 'photo' ? deletePhoto : deleteRecord)(profile, r, why.trim()); toast('اتمسح نهائي'); onClose(); } catch (e) { console.error(e); toast('مش قادرين نمسح، اتأكد من النت', 'err'); }
+    setBusy(false);
+  };
+  return (
+    <Modal title={`مسح نهائي · ${KIND_LABEL[r.kind]} ${r.name}`} onClose={onClose} width={460}>
+      <div className="stack" style={{ gap: 12 }}>
+        {r.photo && <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}><input type="radio" checked={what === 'photo'} onChange={() => setWhat('photo')} /> امسح الصورة بس (الوقت يفضل متسجل)</label>}
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}><input type="radio" checked={what === 'rec'} onChange={() => setWhat('rec')} /> امسح التسجيل كله (الوقت والصورة)</label>
+        <label className="field">السبب (بيتسجل في سجل التعديلات)<input className="input" value={why} onChange={(e) => setWhy(e.target.value)} placeholder="مثلاً: تسجيل تجربة" /></label>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}><input type="checkbox" checked={sure} onChange={(e) => setSure(e.target.checked)} /> فاهم إن المسح ده مالوش رجوع</label>
+        <button type="button" className="btn red" disabled={busy || !sure} onClick={go}>{busy ? 'لحظة…' : '🗑 امسح نهائي'}</button>
+      </div>
+    </Modal>
+  );
+}
+
+// مسح بصمة الوش: لازم صاحب الشغل يكتب الباسورد بتاعه
+function FaceDelModal({ r, profile, onClose }) {
+  const [pw, setPw] = useState('');
+  const [why, setWhy] = useState('');
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  const go = async () => {
+    if (!pw) { toast('اكتب الباسورد بتاعك', 'err'); return; }
+    if (!why.trim()) { toast('اكتب السبب', 'err'); return; }
+    setBusy(true);
+    try { await deleteFace(profile, r, pw, why.trim()); toast('البصمة اتمسحت'); onClose(); }
+    catch (e) { console.error(e); toast(['auth/invalid-credential', 'auth/wrong-password'].includes(e.code) ? 'الباسورد غلط' : e.code === 'auth/too-many-requests' ? 'محاولات كتير، استنى شوية' : 'مش قادرين نمسح، اتأكد من النت', 'err'); setBusy(false); }
+  };
+  return (
+    <Modal title={`مسح بصمة وش ${r.name}`} onClose={onClose} width={460}>
+      <div className="stack" style={{ gap: 12 }}>
+        <span className="small">البصمة هتتمسح نهائي. {r.name} هيسجّل وشّه من جديد، ولحد ما يعمل كده هيسجّل حضوره بالرقم السري.</span>
+        <label className="field">السبب (بيتسجل في سجل التعديلات)<input className="input" value={why} onChange={(e) => setWhy(e.target.value)} placeholder="مثلاً: البصمة مش بتتعرف عليه" /></label>
+        <label className="field">الباسورد بتاعك (للتأكيد)<input type="password" className="input" dir="ltr" autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} /></label>
+        <button type="button" className="btn red" disabled={busy} onClick={go}>{busy ? 'لحظة…' : '🗑 امسح البصمة'}</button>
+      </div>
+    </Modal>
+  );
+}
+
 // تغيير الميعاد (العادي أو ليوم واحد)
 function SchedModal({ title, person, cur, oneDay, onSave, onClose }) {
   const [f, setF] = useState({ start: cur?.start || cur?.startHM || '', end: cur?.end || cur?.endHM || '', dayOff: cur?.dayOff ?? null, off: !!cur?.off });
@@ -86,6 +137,67 @@ function SchedModal({ title, person, cur, oneDay, onSave, onClose }) {
   );
 }
 
+// تايم لاين اليوم: لكل واحد خط. الرمادي = ميعاده، الأخضر = كان موجود فعلًا (من الحضور للانصراف)،
+// البرتقالي = وقت زيادة عن الميعاد، والأحمر المقطّع = تأخير. الضغط على أي خط بيوديك لتفاصيله تحت.
+export function DayTimeline({ items, day }) {
+  const now = Date.now();
+  const pts = [];
+  items.forEach(({ c }) => {
+    if (c.sched && !c.sched.off) pts.push(c.sched.start, c.sched.end);
+    if (c.firstIn) pts.push(c.firstIn, c.lastOut && !c.openNow ? c.lastOut : Math.min(now, c.firstIn + 18 * 3600e3));
+  });
+  if (!pts.length) return null;
+  const H = 3600e3, base = dayAt(day, '00:00');
+  let from = Math.floor((Math.min(...pts) - base) / H), to = Math.ceil((Math.max(...pts) - base) / H);
+  if (to - from < 6) to = from + 6;
+  const span = (to - from) * H, x = (ms) => `${Math.max(0, Math.min(100, ((ms - base - from * H) / span) * 100))}%`;
+  const w = (a, b) => `calc(${x(b)} - ${x(a)})`;
+  const step = to - from > 14 ? 2 : 1;
+  const hours = []; for (let h = from; h <= to; h += step) hours.push(h);
+  const nowIn = now > base + from * H && now < base + to * H;
+  const bar = (a, b, style) => b <= a ? null : <span style={{ position: 'absolute', insetInlineStart: x(a), width: w(a, b), borderRadius: 6, ...style }} />;
+  return (
+    <div className="stack" style={{ gap: 6, background: 'rgba(255,255,255,.75)', borderRadius: 18, padding: 12 }}>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <span style={{ width: 100, flex: 'none' }} />
+        <span dir="ltr" style={{ position: 'relative', flex: 1, height: 16 }}>
+          {hours.map((h) => <span key={h} className="tiny muted" style={{ position: 'absolute', left: x(base + h * H), transform: 'translateX(-50%)' }}>{((h % 24) + 24) % 24 % 12 || 12}</span>)}
+        </span>
+      </div>
+      {items.map(({ p, c }) => {
+        const s = c.sched && !c.sched.off ? c.sched : null;
+        const end = c.firstIn ? (c.lastOut && !c.openNow ? c.lastOut : Math.min(now, c.firstIn + 18 * H)) : null;
+        return (
+          <button key={p.uid} type="button" onClick={() => document.getElementById('att-' + p.uid)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, border: 0, background: 'none', padding: 0, cursor: 'pointer', textAlign: 'start' }}>
+            <span className="small" style={{ width: 100, flex: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {p.name}{c.sched?.off ? ' · إجازة' : ''}
+            </span>
+            <span dir="ltr" style={{ position: 'relative', flex: 1, height: 26, background: 'rgba(0,0,0,.03)', borderRadius: 8 }}>
+              {hours.map((h) => <span key={h} style={{ position: 'absolute', left: x(base + h * H), top: 0, bottom: 0, borderLeft: '1px solid rgba(0,0,0,.06)' }} />)}
+              {s && bar(s.start, s.end, { top: 3, height: 20, background: 'rgba(0,0,0,.10)' })}
+              {s && c.late > 0 && bar(s.start, c.firstIn, { top: 3, height: 20, background: 'repeating-linear-gradient(45deg, rgba(229,57,53,.55) 0 4px, transparent 4px 8px)' })}
+              {s && !c.firstIn && (c.absent || c.forgotIn) && bar(s.start, Math.min(now, s.end), { top: 3, height: 20, background: 'repeating-linear-gradient(45deg, rgba(229,57,53,.55) 0 4px, transparent 4px 8px)' })}
+              {c.firstIn && bar(c.firstIn, end, { top: 8, height: 10, background: '#2e9e5b', opacity: c.openNow ? 0.6 : 1 })}
+              {c.firstIn && s && c.firstIn < s.start && bar(c.firstIn, Math.min(s.start, end), { top: 8, height: 10, background: '#f59e0b' })}
+              {c.firstIn && s && end > s.end && bar(Math.max(s.end, c.firstIn), end, { top: 8, height: 10, background: '#f59e0b' })}
+              {c.firstIn && !s && bar(c.firstIn, end, { top: 8, height: 10, background: '#f59e0b' })}
+              {nowIn && <span style={{ position: 'absolute', left: x(now), top: -2, bottom: -2, borderLeft: '2px solid var(--blue)' }} />}
+            </span>
+          </button>
+        );
+      })}
+      <span className="tiny muted" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <span>▬ <span style={{ color: 'rgba(0,0,0,.35)' }}>الميعاد</span></span>
+        <span style={{ color: '#2e9e5b' }}>▬ كان موجود</span>
+        <span style={{ color: '#f59e0b' }}>▬ وقت زيادة</span>
+        <span style={{ color: '#e53935' }}>▨ تأخير / مجاش</span>
+        <span style={{ color: 'var(--blue)' }}>│ دلوقتي</span>
+      </span>
+    </div>
+  );
+}
+
 function ShopDay({ shop, day, profile }) {
   const toast = useToast();
   const role = profile.role;
@@ -116,6 +228,11 @@ function ShopDay({ shop, day, profile }) {
   return (
     <section className="card">
       <h2 className="h2">{pub.name || shop.name}{!pub.attendance && <span className="tiny muted"> · الحضور مش شغال في الفرع ده (من الإعداد ← العمال)</span>}</h2>
+      <DayTimeline day={day} items={shown.map((p) => {
+        const c = computeDay({ uid: p.uid, day, records: [...rows, ...next].filter((r) => r.uid === p.uid), sched, dayDoc });
+        const mine = [...rows, ...next].filter((r) => r.uid === p.uid && !isVoid(r)).sort((a, b) => effMs(a) - effMs(b));
+        return { p, c: { ...c, openNow: mine.length > 0 && mine[mine.length - 1].kind === 'in' } };
+      })} />
       <div className="stack" style={{ gap: 10 }}>
         {shown.map((p) => {
           const mine = [...rows, ...next].filter((r) => r.uid === p.uid);
@@ -123,7 +240,7 @@ function ShopDay({ shop, day, profile }) {
           const c = computeDay({ uid: p.uid, day, records: mine, sched, dayDoc });
           const s = c.sched;
           return (
-            <div key={p.uid} className="stack" style={{ background: 'rgba(255,255,255,.75)', borderRadius: 18, padding: 10, gap: 8 }}>
+            <div key={p.uid} id={'att-' + p.uid} className="stack" style={{ background: 'rgba(255,255,255,.75)', borderRadius: 18, padding: 10, gap: 8 }}>
               <div className="spread" style={{ flexWrap: 'wrap', gap: 8 }}>
                 <span className="chips" style={{ gap: 10, alignItems: 'center' }}>
                   <Avatar name={p.name} photo={pub.photos?.[p.uid]} color={p.color} size={40} /><strong>{p.name}</strong>
@@ -185,6 +302,7 @@ function ShopDay({ shop, day, profile }) {
                           <button type="button" className="link small" onClick={() => setModal({ t: 'void', r })}>إلغاء</button>
                         </span>
                       )}
+                      {canOwn && <button type="button" className="link small" style={{ color: 'var(--red)' }} onClick={() => setModal({ t: 'del', r })}>🗑 مسح نهائي</button>}
                     </div>
                   );
                 })}
@@ -202,6 +320,7 @@ function ShopDay({ shop, day, profile }) {
         </Modal>
       )}
       {modal?.t === 'fix' && <FixModal title={`تعديل ${KIND_LABEL[modal.r.kind]} ${modal.r.name}`} atMs={effMs(modal.r)} onClose={() => setModal(null)} onSave={(ms, why) => fixRecord(profile, modal.r, ms, why)} />}
+      {modal?.t === 'del' && <DelModal r={modal.r} profile={profile} onClose={() => setModal(null)} />}
       {modal?.t === 'void' && <FixModal title={`إلغاء ${KIND_LABEL[modal.r.kind]} ${modal.r.name}`} needTime={false} onClose={() => setModal(null)} onSave={(_, why) => voidRecord(profile, modal.r, why)} />}
       {modal?.t === 'add' && <AddModal p={modal.p} day={day} sched={sched} dayDoc={dayDoc} onClose={() => setModal(null)}
         onSave={(kind, ms, why) => addManual(profile, { shopId: shop.id, shopName: pub.name || shop.name, person: modal.p, kind, day, atMs: ms, reason: why })} />}
@@ -279,25 +398,23 @@ export default function AttendanceView({ shops, profile }) {
     <div className="wrap stack" style={{ gap: 16 }}>
       <label className="field" style={{ width: 200 }}>اليوم<input type="date" className="input" dir="ltr" value={day} max={todayKey()} onChange={(e) => setDay(e.target.value || todayKey())} /></label>
       {shops.map((sh) => <ShopDay key={sh.id} shop={sh} day={day} profile={profile} />)}
-      {shops.map((sh) => <ShopFaces key={'f' + sh.id} shop={sh} />)}
+      {shops.map((sh) => <ShopFaces key={'f' + sh.id} shop={sh} profile={profile} />)}
       {shops.map((sh) => <ShopLog key={'l' + sh.id} shop={sh} />)}
     </div>
   );
 }
 
 // الوشوش المتسجلة: صاحب المحل أو المدير يقارن صورة التسجيل بالشخص ويوافق. لو غلط يمسحها والشخص يسجّل تاني.
-function ShopFaces({ shop }) {
+function ShopFaces({ shop, profile }) {
   const toast = useToast();
   const [rows, setRows] = useState(null);
+  const [del, setDel] = useState(null);
+  const canOwn = isAdminRole(profile.role) || profile.role === 'owner';
   useEffect(() => onSnapshot(query(collection(db, 'faces'), where('shopId', '==', shop.id)),
     (s) => setRows(s.docs.map((d) => ({ id: d.id, ...d.data() }))), (e) => { console.warn('faces', e.code); setRows([]); }), [shop.id]);
   if (!rows || rows.length === 0) return null;
   const approve = (r) => updateDoc(doc(db, 'faces', r.id), { approved: true, approvedBy: auth.currentUser?.uid || '', approvedAt: serverTimestamp() })
     .then(() => logAct('staff_edit', `وافق على تسجيل وش ${r.name}`, { shopId: shop.id })).catch(() => toast('مش قادرين نحفظ، اتأكد من النت', 'err'));
-  const remove = (r) => {
-    if (!window.confirm(`تمسح بصمة وش ${r.name}؟ هيحتاج يسجّل وشّه تاني.`)) return;
-    deleteDoc(doc(db, 'faces', r.id)).then(() => logAct('staff_edit', `مسح بصمة وش ${r.name}`, { shopId: shop.id })).catch(() => toast('مش قادرين نمسح، اتأكد من النت', 'err'));
-  };
   const pending = rows.filter((r) => !r.approved);
   return (
     <section className="card">
@@ -310,10 +427,11 @@ function ShopFaces({ shop }) {
             <strong>{r.name}</strong>
             <span className="tiny muted">وافق على التصوير <bdi>{toDate(r.consentAt)?.toLocaleDateString('ar-EG', { day: 'numeric', month: 'short', timeZone: 'Africa/Cairo' }) || '—'}</bdi></span>
             {r.approved ? <span className="badge">✓ متوافق عليه</span> : <button type="button" className="btn sm" onClick={() => approve(r)}>موافقة</button>}
-            <button type="button" className="link small" onClick={() => remove(r)}>امسح</button>
+            {canOwn && <button type="button" className="link small" style={{ color: 'var(--red)' }} onClick={() => setDel(r)}>🗑 امسح البصمة</button>}
           </div>
         ))}
       </div>
+      {del && <FaceDelModal r={{ ...del, shopId: del.shopId || shop.id }} profile={profile} onClose={() => setDel(null)} />}
     </section>
   );
 }
