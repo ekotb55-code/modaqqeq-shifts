@@ -3,7 +3,7 @@ import { collection, doc, getDoc, onSnapshot, query, setDoc, where } from 'fireb
 import { db } from '../firebase';
 import { Modal, useToast } from '../ui.jsx';
 import { WEEKDAYS, isAdminRole, todayKey } from '../lib';
-import { computeDay, dayAt, effMs, isVoid, nextDay, schedFor, weekday } from '../attDay.js';
+import { computeDay, dayAt, effMs, flexHours, isVoid, nextDay, schedFor, weekday } from '../attDay.js';
 import { logPlan, saveShifts, setOneDay } from '../attAdmin.js';
 
 // جدول مواعيد الأسبوع لكل فرع (صاحب المحل والمدير): صف لكل واحد وعمود لكل يوم.
@@ -168,6 +168,7 @@ export function DayEditor({ day, people, shifts, sched, dayDoc, records, colorOf
       </div>
       {rows.map((row) => {
         const { p, s, c, open, own } = row;
+        const flexH = flexHours(p.uid, sched);
         const col = colorOf(p.uid);
         const d = drag?.uid === p.uid ? drag : null;
         const a = s && !s.off ? (d ? d.a : hOf(day, s.start)) : null, b = s && !s.off ? (d ? d.b : hOf(day, s.end)) : null;
@@ -184,7 +185,7 @@ export function DayEditor({ day, people, shifts, sched, dayDoc, records, colorOf
               style={{ position: 'relative', flex: 1, height: 44, background: 'rgba(0,0,0,.03)', borderRadius: 10, cursor: !s || s.off ? 'pointer' : 'default' }}>
               {ticks.map((h) => <span key={h} style={{ position: 'absolute', right: pos(h) + '%', top: 0, bottom: 0, borderRight: '1px solid rgba(0,0,0,.06)' }} />)}
               {shifts.map((x, i) => { const [u, v] = shiftSpan(x); return <span key={x.id} style={{ position: 'absolute', right: pos(u) + '%', width: (pos(v) - pos(u)) + '%', top: 0, bottom: 0, background: i % 2 ? 'rgba(108,75,216,.04)' : 'rgba(20,121,211,.04)' }} />; })}
-              {!s && <span className="tiny muted" style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>＋ دوس عشان تحط ميعاد</span>}
+              {!s && <span className="tiny muted" style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{flexH != null ? `⏳ مرن · ${flexH} ${flexH === 1 ? 'ساعة' : 'ساعات'} في اليوم${c?.workedMin ? ` · اشتغل ${Math.floor(c.workedMin / 60)}:${String(c.workedMin % 60).padStart(2, '0')}` : ''}` : '＋ دوس عشان تحط ميعاد'}</span>}
               {s?.off && <span className="tiny" style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>🌴 إجازة · دوس تغيّر</span>}
               {a != null && (
                 <span onPointerDown={(e) => startDrag(e, row, 'move')}
@@ -194,10 +195,11 @@ export function DayEditor({ day, people, shifts, sched, dayDoc, records, colorOf
                   <span onPointerDown={(e) => startDrag(e, row, 'b')} style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 12, cursor: 'ew-resize', background: 'rgba(255,255,255,.25)' }} />
                 </span>
               )}
-              {inH != null && seg(inH, outH, { top: 32, height: 7, borderRadius: 4, background: '#2e9e5b', opacity: open ? 0.6 : 1 })}
+              {flexH != null && a == null && (c?.pairs || []).map(([x, y, op], i) => <span key={'p' + i} style={{ display: 'contents' }}>{seg(hOf(day, x), hOf(day, y), { top: 32, height: 7, borderRadius: 4, background: '#2e9e5b', opacity: op ? 0.6 : 1 })}</span>)}
+              {!(flexH != null && a == null) && inH != null && seg(inH, outH, { top: 32, height: 7, borderRadius: 4, background: '#2e9e5b', opacity: open ? 0.6 : 1 })}
               {inH != null && a != null && inH < a && seg(inH, Math.min(a, outH), { top: 32, height: 7, borderRadius: 4, background: '#f59e0b' })}
               {inH != null && a != null && outH > b && seg(Math.max(b, inH), outH, { top: 32, height: 7, borderRadius: 4, background: '#f59e0b' })}
-              {inH != null && a == null && seg(inH, outH, { top: 32, height: 7, borderRadius: 4, background: '#f59e0b' })}
+              {inH != null && a == null && flexH == null && seg(inH, outH, { top: 32, height: 7, borderRadius: 4, background: '#f59e0b' })}
               {a != null && c?.late > 0 && seg(a, inH, { top: 32, height: 7, borderRadius: 4, background: 'repeating-linear-gradient(45deg, rgba(229,57,53,.7) 0 3px, transparent 3px 6px)' })}
               {a != null && c && !c.firstIn && (c.absent || c.forgotIn) && seg(a, Math.min(hOf(day, now), b), { top: 32, height: 7, borderRadius: 4, background: 'repeating-linear-gradient(45deg, rgba(229,57,53,.7) 0 3px, transparent 3px 6px)' })}
               {nowH > S && nowH < E && <span style={{ position: 'absolute', right: pos(nowH) + '%', top: -2, bottom: -2, borderRight: '2px solid var(--blue)' }} />}

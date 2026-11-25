@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, onSnapshot, query, setDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Modal, useToast } from '../ui.jsx';
 import { ROLE_LABEL, WEEKDAYS, isAdminRole } from '../lib';
-import { DEFAULT_RULES, deductStr, rulesOf } from '../attDay.js';
+import { DEFAULT_RULES, deductStr, flexMonth, monthDays, nextDay, rulesOf } from '../attDay.js';
+import { todayKey } from '../lib';
 import { logPlan, saveSched } from '../attAdmin.js';
 import AttendanceView from './AttendanceView.jsx';
 import WeekPlan, { canPlan } from './WeekPlan.jsx';
@@ -44,6 +45,18 @@ function ShopPeople({ shop, profile }) {
   const [sched, setSched] = useState(null);
   const [pay, setPay] = useState(null);
   const [edit, setEdit] = useState(null);
+  const [month, setMonth] = useState(null);
+  const anyFlex = !!sched && Object.values(sched.people || {}).some((x) => x?.flex);
+  // تسجيلات الشهر ده (يوم يوم، علشان ميحتاجش index) لحساب ساعات المرنين
+  useEffect(() => {
+    if (!anyFlex) return undefined;
+    let dead = false;
+    const days = monthDays(todayKey()).filter((d) => d <= todayKey());
+    Promise.all([...days, nextDay(days[days.length - 1])].map((d) => getDocs(query(collection(db, 'attendance'), where('shopId', '==', shop.id), where('day', '==', d)))
+      .then((q) => q.docs.map((x) => ({ id: x.id, ...x.data() }))).catch(() => [])))
+      .then((all) => { if (!dead) setMonth(all.flat()); });
+    return () => { dead = true; };
+  }, [shop.id, anyFlex]);
   useEffect(() => { getDoc(doc(db, 'shopsPublic', shop.id)).then((s) => setPub(s.data() || {})).catch(() => setPub({})); }, [shop.id]);
   useEffect(() => onSnapshot(doc(db, 'attSched', shop.id), (s) => setSched(s.data() || {}), () => setSched({})), [shop.id]);
   useEffect(() => (own ? onSnapshot(doc(db, 'staffPay', shop.id), (s) => setPay(s.data() || {}), () => setPay({})) : setPay({})), [shop.id, own]);
@@ -73,11 +86,14 @@ function ShopPeople({ shop, profile }) {
                 <span className="badge tiny">{ROLE_LABEL[p.kind]}</span>
               </span>
               <span className="small muted" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                <span>🕒 {s.start ? <bdi>{h12(s.start)} – {h12(s.end)}</bdi> : 'مالوش ميعاد'}</span>
-                <span>🌴 {s.dayOff != null && s.dayOff !== '' ? WEEKDAYS[s.dayOff] : 'مفيش'}</span>
+                {s.flex ? <span>⏳ مرن · {s.hours} {Number(s.hours) === 1 ? 'ساعة' : 'ساعات'} في اليوم</span> : <>
+                  <span>🕒 {s.start ? <bdi>{h12(s.start)} – {h12(s.end)}</bdi> : 'مالوش ميعاد'}</span>
+                  <span>🌴 {s.dayOff != null && s.dayOff !== '' ? WEEKDAYS[s.dayOff] : 'مفيش'}</span>
+                </>}
                 {own && <span>💰 {payStr(pay.people?.[p.uid])}</span>}
                 <span style={{ color: 'var(--blue)' }}>تعديل</span>
               </span>
+              {s.flex && <FlexBar m={month ? flexMonth(month.filter((r) => r.uid === p.uid), todayKey(), Number(s.hours) || 0) : null} pay={own ? pay.people?.[p.uid] : null} />}
             </button>
           );
         })}
@@ -90,19 +106,55 @@ function ShopPeople({ shop, profile }) {
   );
 }
 
+// المرن: اشتغل كام من المطلوب في الشهر، والمطلوب لحد النهارده، والخصم المتوقع لو الشهر خلص كده
+const hStr = (h) => { const m = Math.round(h * 60); const a = Math.floor(m / 60), b = m % 60; return b ? `${a}:${String(b).padStart(2, '0')}` : String(a); };
+export function FlexBar({ m, pay }) {
+  if (!m) return <span className="tiny muted" style={{ width: '100%' }}>بنحسب ساعات الشهر…</span>;
+  const pct = m.target ? Math.min(100, (m.worked / m.target) * 100) : 0;
+  const behind = m.worked < m.dueSoFar - 0.01;
+  const rate = pay?.type === 'monthly' && m.target ? pay.amount / m.target : pay?.type === 'hourly' ? pay.amount : null;
+  const missing = Math.max(0, m.target - m.worked);
+  return (
+    <span className="stack" style={{ width: '100%', gap: 4 }}>
+      <span className="small" style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+        <span>اشتغل <strong>{hStr(m.worked)}</strong> من <strong>{hStr(m.target)}</strong> ساعة الشهر ده</span>
+        <span style={{ color: behind ? '#e53935' : '#2e9e5b' }}>{behind ? `متأخر ${hStr(m.dueSoFar - m.worked)} ساعة عن المطلوب لحد النهارده` : '✓ ماشي تمام'}</span>
+      </span>
+      <span style={{ height: 8, borderRadius: 4, background: 'rgba(0,0,0,.07)', overflow: 'hidden', position: 'relative' }}>
+        <span style={{ position: 'absolute', insetInlineStart: 0, top: 0, bottom: 0, width: pct + '%', background: behind ? '#f59e0b' : '#2e9e5b' }} />
+        <span style={{ position: 'absolute', insetInlineStart: `${Math.min(100, (m.dueSoFar / (m.target || 1)) * 100)}%`, top: -2, bottom: -2, borderInlineStart: '2px solid var(--blue)' }} />
+      </span>
+      {rate && missing > 0 && pay?.type === 'monthly' && <span className="tiny muted">لو الشهر خلص كده: ناقص {hStr(missing)} ساعة ≈ خصم {Math.round(missing * rate).toLocaleString('ar-EG')} ج (الساعة = المرتب ÷ {hStr(m.target)})</span>}
+    </span>
+  );
+}
+
 function PersonModal({ p, s, pay, own, onSave, onClose }) {
+  const [flex, setFlex] = useState(!!s?.flex);
+  const [hours, setHours] = useState(s?.hours ?? 4);
   const [f, setF] = useState({ start: s?.start || '', end: s?.end || '', dayOff: s?.dayOff ?? null });
   const [py, setPy] = useState({ type: pay?.type || 'monthly', amount: pay?.amount ?? '', perOrder: pay?.perOrder ?? '' });
   const [busy, setBusy] = useState(false);
   const go = () => {
     setBusy(true);
     const payOut = own ? { type: py.type, amount: Number(py.amount) || 0, perOrder: Number(py.perOrder) || 0 } : null;
-    onSave({ start: f.start, end: f.end, dayOff: f.dayOff }, payOut).finally(() => setBusy(false));
+    onSave(flex ? { flex: true, hours: Number(hours) || 0, start: '', end: '', dayOff: null } : { flex: false, start: f.start, end: f.end, dayOff: f.dayOff }, payOut).finally(() => setBusy(false));
   };
   const unit = { monthly: 'في الشهر', daily: 'في اليوم', hourly: 'في الساعة' }[py.type];
   return (
     <Modal title={`${p.name} · ${ROLE_LABEL[p.kind]}`} onClose={onClose} width={460}>
       <div className="stack" style={{ gap: 12 }}>
+        <div className="chips" style={{ gap: 6 }}>
+          <button type="button" className={'btn sm ' + (!flex ? '' : 'soft')} onClick={() => setFlex(false)}>🕒 بميعاد</button>
+          <button type="button" className={'btn sm ' + (flex ? '' : 'soft')} onClick={() => setFlex(true)}>⏳ مرن (عدد ساعات)</button>
+        </div>
+        {flex && (
+          <>
+            <label className="field" style={{ width: 200 }}>كام ساعة في اليوم<input type="number" step="0.5" min="0.5" inputMode="decimal" className="input" dir="ltr" value={hours} onChange={(e) => setHours(e.target.value)} /></label>
+            <span className="tiny muted">ييجي في أي وقت، ويقدر يحضر وينصرف أكتر من مرة في اليوم. المطلوب منه في الشهر = الساعات دي × أيام الشهر كلها ({Number(hours) || 0} × 30 = {(Number(hours) || 0) * 30} ساعة في شهر 30 يوم). لو مكمّلش يتخصم الناقص، والساعة = المرتب ÷ ساعات الشهر. مفيش عليه تأخير ولا غياب.</span>
+          </>
+        )}
+        {!flex && <>
         <strong className="small">الميعاد العادي</strong>
         <div className="chips" style={{ gap: 10 }}>
           <label className="field" style={{ width: 125 }}>من<input type="time" className="input" dir="ltr" value={f.start} onChange={(e) => setF({ ...f, start: e.target.value })} /></label>
@@ -114,6 +166,7 @@ function PersonModal({ p, s, pay, own, onSave, onClose }) {
           </label>
         </div>
         <span className="tiny muted">لو عاوز تبدّل الإجازة أو تغيّر الميعاد يوم واحد بس، اعملها من «📅 الجدول».</span>
+        </>}
         {own && (
           <>
             <strong className="small">المرتب</strong>
@@ -126,7 +179,7 @@ function PersonModal({ p, s, pay, own, onSave, onClose }) {
             </div>
           </>
         )}
-        <button type="button" className="btn" disabled={busy || (f.start && !f.end) || (!f.start && f.end)} onClick={go}>{busy ? 'لحظة…' : 'حفظ'}</button>
+        <button type="button" className="btn" disabled={busy || (flex ? !(Number(hours) > 0) : (f.start && !f.end) || (!f.start && f.end))} onClick={go}>{busy ? 'لحظة…' : 'حفظ'}</button>
       </div>
     </Modal>
   );
