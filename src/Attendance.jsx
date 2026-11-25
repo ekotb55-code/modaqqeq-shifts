@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Avatar, Icon, Modal } from './ui.jsx';
-import { CONSENT_TEXT, FALLBACK, KIND_LABEL, hasSession, lastPunch, myFace, punch, punchFace, saveFace, snapPhoto } from './attendance.js';
+import { CONSENT_TEXT, FALLBACK, KIND_LABEL, hasSession, lastPunch, myFace, nextKind, punch, punchFace, saveFace, snapPhoto } from './attendance.js';
 import { ACTIONS, MATCH, bestDist, distance, detectFaces, eyesOf, flatten, loadFace, pickActions, unflatten, yawOf } from './face.js';
 import { verifyCashierPin } from './sessions.js';
 
@@ -86,7 +86,14 @@ export default function AttendanceModal({ device, onClose }) {
   const [done, setDone] = useState(null);
   const [video, cam, cams, camId, setCamId, attachVideo] = useCamera(!!(who && kind) && !done);
 
-  const pick = (p) => { setWho(p); setMsg(''); setPin(''); const l = lastPunch(p.uid); setKind(null); setDone(null); setSuggest(l?.kind === 'in' ? 'out' : 'in'); };
+  const [other, setOther] = useState(false); // يظهر الاختيار التاني (لو الجهاز غلط)
+  const whoRef = useRef(null);
+  const pick = (p) => {
+    whoRef.current = p.uid;
+    setWho(p); setMsg(''); setPin(''); setKind(null); setDone(null); setOther(false);
+    const l = lastPunch(p.uid); setSuggest(l?.kind === 'in' ? 'out' : 'in');
+    nextKind(p).then((k) => { if (whoRef.current === p.uid) setSuggest(k); }).catch(() => {});
+  };
   const [suggest, setSuggest] = useState('in');
   const [enroll, setEnroll] = useState(null); // null | consent | capture
   const [usePin, setUsePin] = useState(null); // سبب التسجيل بالرقم السري بدل الوش
@@ -217,13 +224,14 @@ export default function AttendanceModal({ device, onClose }) {
       <div className="stack" style={{ alignItems: 'center', gap: 16 }}>
         <Avatar name={who.name} photo={who.photo} color={who.color || '#B39DFF'} size={96} />
         <h2 className="h2">أهلًا يا {who.name.split(' ')[0]}</h2>
-        <div className="chips" style={{ gap: 12, justifyContent: 'center' }}>
-          {['in', 'out'].map((k) => (
-            <button key={k} type="button" className={'btn' + (k === suggest ? '' : ' soft')} style={{ minWidth: 150, height: 64, fontSize: 22 }} onClick={() => setKind(k)}>
-              {k === 'in' ? '👋 ' : '🏠 '}{KIND_LABEL[k]}
-            </button>
-          ))}
-        </div>
+        <button type="button" className="btn" style={{ minWidth: 220, height: 72, fontSize: 26 }} onClick={() => setKind(suggest)}>
+          {suggest === 'in' ? '👋 ' : '🏠 '}{KIND_LABEL[suggest]}
+        </button>
+        {other ? (
+          <button type="button" className="btn soft" style={{ minWidth: 150, height: 52 }} onClick={() => setKind(suggest === 'in' ? 'out' : 'in')}>
+            {suggest === 'in' ? '🏠 ' : '👋 '}{KIND_LABEL[suggest === 'in' ? 'out' : 'in']}
+          </button>
+        ) : <button type="button" className="link small" onClick={() => setOther(true)}>عايز تسجّل {KIND_LABEL[suggest === 'in' ? 'out' : 'in']}؟</button>}
         <button type="button" className="btn soft sm" onClick={() => setKind('enroll')}>📸 سجّل وشّك (مرة واحدة)</button>
         <button type="button" className="link" onClick={back}>مش أنت؟ اختار اسم تاني</button>
       </div>
