@@ -290,7 +290,8 @@ service cloud.firestore {
     }
     // يوم الحضور: تغيير ميعاد ليوم واحد + قرار الساعات الزيادة (أوفر تايم / تبديل / رفض).
     match /attDays/{id} {
-      allow read: if inShop(resource.data.shopId) || staffOf(resource.data.shopId);
+      // resource == null: اليوم لسه مالوش مستند، علشان المتابعة تشتغل من الأول
+      allow read: if resource == null || inShop(resource.data.shopId) || staffOf(resource.data.shopId);
       allow write: if bossOf(request.resource.data.shopId) && id == request.resource.data.shopId + '_' + request.resource.data.day;
     }
     // سجل تعديلات الحضور: بيتكتب بس، محدش يعدّله ولا يمسحه.
