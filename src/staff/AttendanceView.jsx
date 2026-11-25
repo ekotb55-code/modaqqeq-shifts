@@ -4,7 +4,7 @@ import { auth, db } from '../firebase';
 import { logAct } from '../activity.js';
 import { Avatar, Modal, useToast } from '../ui.jsx';
 import { todayKey, toDate } from '../lib';
-import { KIND_LABEL, LATE_SYNC_MIN } from '../attendance.js';
+import { FALLBACK, KIND_LABEL, LATE_SYNC_MIN } from '../attendance.js';
 
 // الحضور والانصراف: مين حضر ومين انصرف في يوم معيّن، بالصورة ووقت السيرفر.
 // ⚠️ = محتاج مراجعة: من غير صورة، أو اتسجل من غير نت / ساعة الجهاز غلط، أو حضر ومنصرفش.
@@ -13,6 +13,7 @@ const hm = (d) => (d ? d.toLocaleTimeString('ar-EG', { hour: 'numeric', minute: 
 const flagsOf = (r) => {
   const f = [];
   if (!r.photo) f.push('من غير صورة');
+  if (r.method === 'pin' && r.fallback) f.push(`بالرقم السري: ${FALLBACK[r.fallback] || r.fallback}`);
   const at = toDate(r.at);
   if (!at) f.push('لسه مستني النت');
   else if (Math.abs(at.getTime() - (r.atLocalMs || 0)) > LATE_SYNC_MIN * 60000) f.push(`اتسجل من غير نت أو ساعة الجهاز غلط (الجهاز قال ${hm(new Date(r.atLocalMs))})`);
@@ -59,6 +60,7 @@ function ShopDay({ shop, day }) {
                       {r.photo ? <button type="button" onClick={() => setBig(r)} style={{ border: 0, padding: 0, background: 'none' }}><img src={r.photo} alt="" style={{ width: 120, borderRadius: 14 }} /></button>
                         : <span style={{ width: 120, height: 90, borderRadius: 14, background: 'var(--warn-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>📷✗</span>}
                       <strong>{KIND_LABEL[r.kind]} <bdi>{hm(toDate(r.at))}</bdi></strong>
+                      {r.method === 'face' && <span className="badge tiny">✓ بالوش</span>}
                       {fl.map((x) => <span key={x} className="badge warn tiny" style={{ whiteSpace: 'normal' }}>⚠️ {x}</span>)}
                     </div>
                   );

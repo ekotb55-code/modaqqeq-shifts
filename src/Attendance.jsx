@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Avatar, Icon, Modal } from './ui.jsx';
-import { CONSENT_TEXT, KIND_LABEL, lastPunch, punch, saveFace, snapPhoto } from './attendance.js';
-import { distance, detectFaces, flatten, loadFace } from './face.js';
+import { CONSENT_TEXT, FALLBACK, KIND_LABEL, hasSession, lastPunch, myFace, punch, punchFace, saveFace, snapPhoto } from './attendance.js';
+import { ACTIONS, MATCH, bestDist, distance, detectFaces, eyesOf, flatten, loadFace, pickActions, unflatten, yawOf } from './face.js';
 import { verifyCashierPin } from './sessions.js';
 
 // شاشة «حضور / انصراف» على جهاز الفرع (كمبيوتر الكاشير + كاميرا).
@@ -89,10 +89,11 @@ export default function AttendanceModal({ device, onClose }) {
   const pick = (p) => { setWho(p); setMsg(''); setPin(''); const l = lastPunch(p.uid); setKind(null); setDone(null); setSuggest(l?.kind === 'in' ? 'out' : 'in'); };
   const [suggest, setSuggest] = useState('in');
   const [enroll, setEnroll] = useState(null); // null | consent | capture
-  const back = () => { setEnroll(null); if (kind) { setKind(null); setPin(''); setMsg(''); } else { setWho(null); } };
-  const reset = () => { setDone(null); setWho(null); setKind(null); setPin(''); setEnroll(null); };
+  const [usePin, setUsePin] = useState(null); // سبب التسجيل بالرقم السري بدل الوش
+  const back = () => { setEnroll(null); setUsePin(null); if (kind) { setKind(null); setPin(''); setMsg(''); } else { setWho(null); } };
+  const reset = () => { setDone(null); setWho(null); setKind(null); setPin(''); setEnroll(null); setUsePin(null); };
   // تسجيل الوش: نبدأ نحمّل الموديلات من بدري علشان ميستناش
-  useEffect(() => { if (kind === 'enroll') loadFace().catch(() => {}); }, [kind]);
+  useEffect(() => { if (kind) loadFace().catch(() => {}); }, [kind]);
 
   // بعد ما يخلص يرجع لقايمة الأسامي لوحده
   useEffect(() => {
@@ -106,8 +107,8 @@ export default function AttendanceModal({ device, onClose }) {
     const photo = cam === 'ok' ? snapPhoto(video.current) : null;
     try {
       if (kind === 'enroll') { await verifyCashierPin(who, p); setPin(''); setEnroll('consent'); setBusy(false); return; }
-      const r = await punch({ person: who, pin: p, kind, shop: device, photo, deviceId: devId() });
-      setDone({ ...r, photo, kind, name: who.name });
+      const r = await punch({ person: who, pin: p, kind, shop: device, photo, deviceId: devId(), fallback: usePin });
+      setDone({ ...r, photo, kind, name: who.name, method: 'pin' });
     } catch (e) {
       setMsg(ERR[e.code] || 'حصلت مشكلة، جرّب تاني');
       setShake(true); setTimeout(() => setShake(false), 450);
@@ -125,7 +126,7 @@ export default function AttendanceModal({ device, onClose }) {
     if (n.length === 4) { setBusy(true); setTimeout(() => go(n), 120); }
   };
   useEffect(() => {
-    if (!who || !kind || done || enroll) return undefined;
+    if (!who || !kind || done || enroll || (kind !== 'enroll' && !usePin)) return undefined;
     const onKey = (e) => {
       if (/^[0-9]$/.test(e.key)) { e.stopPropagation(); press(e.key); }
       else if (e.key === 'Backspace') press('del');
@@ -189,6 +190,8 @@ export default function AttendanceModal({ device, onClose }) {
         {done.photo ? <img src={done.photo} alt="" style={{ width: 160, borderRadius: 20 }} /> : <Avatar name={done.name} color={who?.color} size={110} />}
         <span style={{ fontSize: 46 }}>✅</span>
         <h2 className="h2">اتسجّل {KIND_LABEL[done.kind]} {done.name.split(' ')[0]} الساعة <bdi>{t(done.atMs)}</bdi></h2>
+        {done.method === 'face' ? <span className="badge">✓ الجهاز اتعرّف على وشّك</span>
+          : usePin && usePin !== 'chose-pin' && <span className="badge warn" style={{ whiteSpace: 'normal' }}>اتسجّل بالرقم السري ({FALLBACK[usePin]}) ⚠️ والمدير هيراجعه</span>}
         {!done.sent && <span className="badge warn" style={{ whiteSpace: 'normal' }}>مفيش نت دلوقتي: التسجيل محفوظ على الجهاز وهيتبعت لوحده لما النت يرجع، وهيتعلّم ⚠️ للمراجعة.</span>}
         {!done.photo && <span className="badge warn" style={{ whiteSpace: 'normal' }}>الكاميرا مش شغالة، فالتسجيل اتعمل من غير صورة ⚠️</span>}
         <button type="button" className="btn" onClick={reset}>تمام</button>
@@ -225,6 +228,18 @@ export default function AttendanceModal({ device, onClose }) {
         <button type="button" className="link" onClick={back}>مش أنت؟ اختار اسم تاني</button>
       </div>
     );
+  } else if (kind !== 'enroll' && !usePin) {
+    body = (
+      <div className="chips" style={{ gap: 18, alignItems: 'flex-start', justifyContent: 'center' }}>
+        {camBox}
+        <FaceCheck key={who.uid + kind} who={who} kind={kind} video={video} cam={cam} onBack={back}
+          onFallback={(why) => { setUsePin(why); setPin(''); setMsg(''); }}
+          onMatch={async ({ dist, live, photo }) => {
+            const r = await punchFace({ person: who, kind, shop: device, photo, deviceId: devId(), faceDist: dist, live });
+            setDone({ ...r, photo, kind, name: who.name, method: 'face' });
+          }} />
+      </div>
+    );
   } else {
     body = (
       <div className="chips" style={{ gap: 18, alignItems: 'flex-start', justifyContent: 'center' }}>
@@ -234,6 +249,7 @@ export default function AttendanceModal({ device, onClose }) {
         </div>
         <div className="stack wl-pin" style={{ gap: 10 }}>
           <h2 className="h2">{kind === 'enroll' ? 'تسجيل الوش' : KIND_LABEL[kind]} · {who.name.split(' ')[0]}</h2>
+          {usePin && usePin !== 'chose-pin' && <span className="badge warn" style={{ whiteSpace: 'normal' }}>{FALLBACK[usePin]} · سجّل بالرقم السري</span>}
           <span className="muted">{busy ? 'لحظة…' : 'اكتب الرقم السري بتاعك'}</span>
           <div className={'pin-dots' + (shake ? ' shake' : '')} role="status" aria-label={`اتكتب ${pin.length} من 4`}>
             {[0, 1, 2, 3].map((i) => <span key={i} className={i < pin.length ? 'on' : ''} />)}
@@ -335,6 +351,91 @@ function EnrollCapture({ video, camOk, onDone, onCancel }) {
         </>
       )}
       <button type="button" className="link" onClick={onCancel}>إلغاء</button>
+    </div>
+  );
+}
+
+// الحضور بالوش: نتأكد إن الوش اللي قدام الكاميرا هو وش الشخص اللي اختار اسمه، وبعدين حركتين عشوائي
+// (علشان محدش يحضّر بصورة أو فيديو على الموبايل). لو مقدرناش: الرقم السري ويتعلّم ⚠️.
+function FaceCheck({ who, kind, video, cam, onMatch, onFallback, onBack }) {
+  const [note, setNote] = useState('بنجهّز…');
+  const [acts, setActs] = useState([]);
+  const [step, setStep] = useState(-1);
+  useEffect(() => {
+    if (cam === 'none') { onFallback('no-camera'); return undefined; }
+    if (cam !== 'ok') return undefined;
+    let dead = false;
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const until = Date.now() + 40000; // مهلة كاملة 40 ثانية
+    (async () => {
+      try {
+        if (!(await hasSession(who))) { onFallback('no-session'); return; }
+        const [face] = await Promise.all([myFace(who), loadFace()]);
+        if (dead) return;
+        if (!face?.desc?.length) { onFallback('no-face'); return; }
+        if (!face.approved) { onFallback('not-approved'); return; }
+        const refs = unflatten(face.desc);
+        // 1) هو ولا لأ؟
+        setNote('بص للكاميرا على طول');
+        let me = null;
+        let dist = 9;
+        while (!dead && Date.now() < until && !me) {
+          const fs = await detectFaces(video.current);
+          if (fs.length > 1) setNote('لازم تبقى لوحدك قدام الكاميرا');
+          else if (!fs.length) setNote('مش شايفين وشّك، قرّب من الكاميرا');
+          else {
+            dist = bestDist(fs[0].descriptor, refs);
+            if (dist < MATCH) me = fs[0];
+            else setNote('بص للكاميرا على طول…');
+          }
+          if (!me) await sleep(250);
+        }
+        if (dead) return;
+        if (!me) { onFallback('face-failed'); return; }
+        const photo = snapPhoto(video.current);
+        const base = { eyes: eyesOf(me.landmarks), yaw: yawOf(me.landmarks) };
+        // 2) حركتين عشوائي، والوش لازم يفضل هو نفسه طول الوقت
+        const list = pickActions();
+        setActs(list);
+        for (let i = 0; i < list.length && !dead; i++) {
+          setStep(i); setNote(ACTIONS[list[i]].say);
+          let ok = false;
+          const actUntil = Math.min(until, Date.now() + 10000);
+          while (!dead && Date.now() < actUntil && !ok) {
+            const fs = await detectFaces(video.current);
+            // الوش وهو لافف بيبعد شوية عن البصمة، فبنسمح بفرق أكبر سنة
+            const lim = MATCH + (['right', 'left'].includes(list[i]) ? 0.2 : 0.1);
+            if (fs.length === 1 && bestDist(fs[0].descriptor, refs) < lim && ACTIONS[list[i]].ok(fs[0], base)) ok = true;
+            else if (fs.length > 1) setNote('لازم تبقى لوحدك قدام الكاميرا');
+            else await sleep(120);
+          }
+          if (dead) return;
+          if (!ok) { onFallback('face-failed'); return; }
+          setNote('تمام ✓');
+          await sleep(400);
+        }
+        if (dead) return;
+        setStep(list.length); setNote('بنسجّل…');
+        await onMatch({ dist, live: list, photo });
+      } catch (e) {
+        console.error(e);
+        if (!dead) onFallback(e?.code === 'offline-first' ? 'no-session' : 'face-failed');
+      }
+    })();
+    return () => { dead = true; };
+  }, [cam]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="stack" style={{ gap: 12, alignItems: 'center', maxWidth: 320, textAlign: 'center' }}>
+      <h2 className="h2">{KIND_LABEL[kind]} · {who.name.split(' ')[0]}</h2>
+      <strong style={{ fontSize: 24 }}>{note}</strong>
+      {acts.length > 0 && (
+        <div className="chips" style={{ gap: 6 }}>
+          {acts.map((a, i) => <span key={a} className={'badge' + (i < step ? '' : ' warn')}>{i < step ? '✓ ' : ''}{ACTIONS[a].say}</span>)}
+        </div>
+      )}
+      <button type="button" className="link" onClick={() => onFallback('chose-pin')}>مش راضي يتعرّف عليّا؟ سجّل بالرقم السري</button>
+      <button type="button" className="link" onClick={onBack}>رجوع</button>
     </div>
   );
 }
