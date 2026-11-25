@@ -9,7 +9,7 @@ import { closeRulesOf, shopOrders } from '../closeRules.js';
 import { logAct } from '../activity.js';
 import { CLOUD } from '../cloud.js';
 import Workers from './Workers.jsx';
-import PurgeOld from './PurgeOld.jsx';
+import PurgeOld, { ResetShop } from './PurgeOld.jsx';
 import { applyFormat, buildFormat, firstWords, parseSms } from '../smsFormat.js';
 
 export default function Setup({ profile, shops, sel, setSel }) {
@@ -490,6 +490,7 @@ function ShopEditor({ shop, shops = [], profile }) {
       </section>
 
       <PurgeOld shop={shop} profile={profile} />
+      <ResetShop shop={shop} profile={profile} />
 
       <div style={{ position: 'sticky', bottom: 16, display: 'flex', justifyContent: 'flex-start' }}>
         <button type="button" className="btn" onClick={save} disabled={!dirty} style={{ boxShadow: 'var(--shadow-lg)' }}><Icon d="check" />{dirty ? 'حفظ التعديلات' : 'كله محفوظ'}</button>
