@@ -187,7 +187,7 @@ export function DayEditor({ day, people, shifts, sched, dayDoc, records, colorOf
                 <span onPointerDown={(e) => startDrag(e, row, 'move')}
                   style={{ position: 'absolute', right: pos(a) + '%', width: (pos(b) - pos(a)) + '%', top: 4, height: 24, background: col, borderRadius: 8, color: '#fff', cursor: 'grab', touchAction: 'none', userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', boxShadow: own ? '0 0 0 2px #fff, 0 0 0 3px ' + col : 'none' }}>
                   <span onPointerDown={(e) => startDrag(e, row, 'a')} style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 12, cursor: 'ew-resize', background: 'rgba(255,255,255,.25)' }} />
-                  <span className="tiny" style={{ fontWeight: 700, whiteSpace: 'nowrap', pointerEvents: 'none' }}>{h12(hmOf(a))} لـ {h12(hmOf(b))}</span>
+                  <span dir="ltr" style={{ fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', pointerEvents: 'none', unicodeBidi: 'isolate' }}>{h12(hmOf(a))} – {h12(hmOf(b))}</span>
                   <span onPointerDown={(e) => startDrag(e, row, 'b')} style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 12, cursor: 'ew-resize', background: 'rgba(255,255,255,.25)' }} />
                 </span>
               )}
