@@ -1,5 +1,5 @@
 import { getAuth } from 'firebase/auth';
-import { addDoc, collection, doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { addDoc, collection, doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { dbOf, sessionApp } from './firebase';
 import { todayKey } from './lib';
 import { markPending, verifyCashierPin } from './sessions.js';
@@ -34,28 +34,58 @@ export function snapPhoto(video, width = 240, quality = 0.6) {
   return c.toDataURL('image/jpeg', quality);
 }
 
-// يتأكد من الرقم السري (من غير ما يغيّر مين فاتح التطبيق) وبعدين يسجّل باسم الشخص.
-// مش بيستنى السيرفر: لو مفيش نت بيتسجل على الجهاز ويتبعت لما النت يرجع.
-export async function punch({ person, pin, kind, shop, photo, deviceId }) {
-  await verifyCashierPin(person, pin);
+// جلسة الشخص على الجهاز ده (اتعملت أول مرة دخل برقمه السري هنا). من غيرها مينفعش نسجّل باسمه.
+async function sessionOf(person) {
   const a = sessionApp(person.uid);
   const au = getAuth(a);
   if (au.authStateReady) await au.authStateReady();
-  const u = au.currentUser;
-  if (!u || u.uid !== person.uid) { const e = new Error('no session'); e.code = 'offline-first'; throw e; }
-  const rec = {
-    uid: person.uid, name: person.name || '', shopId: shop.shopId, shopName: shop.name || '',
-    kind, at: serverTimestamp(), atLocalMs: Date.now(), day: todayKey(), method: 'pin',
-    photo: photo || null, deviceId: deviceId || '',
-  };
+  return au.currentUser?.uid === person.uid ? a : null;
+}
+export async function hasSession(person) { try { return !!(await sessionOf(person)); } catch { return false; } }
+
+// بصمة وش الشخص (من جلسته هو). null = مش متسجل.
+export async function myFace(person) {
+  const a = await sessionOf(person);
+  if (!a) return null;
+  const s = await getDoc(doc(dbOf(a), 'faces', person.uid));
+  return s.exists() ? s.data() : null;
+}
+
+// أسباب التسجيل بالرقم السري بدل الوش (بتظهر ⚠️ للمدير)
+export const FALLBACK = {
+  'no-camera': 'الكاميرا مش شغالة',
+  'no-face': 'وشّه لسه مش متسجل',
+  'not-approved': 'تسجيل وشّه لسه مستني موافقة',
+  'no-session': 'أول مرة على الجهاز ده',
+  'face-failed': 'الجهاز متعرّفش على وشّه',
+  'chose-pin': 'اختار الرقم السري',
+};
+
+async function write(person, rec) {
+  const a = await sessionOf(person);
+  if (!a) { const e = new Error('no session'); e.code = 'offline-first'; throw e; }
   const p = addDoc(collection(dbOf(a), 'attendance'), rec);
   // ثانيتين ونص بس: لو السيرفر رد يبقى تمام، ولو لأ يبقى مستني النت (محفوظ على الجهاز ويتبعت بعدين).
   const res = await Promise.race([p.then(() => 'ok', (e) => e), new Promise((r) => setTimeout(() => r('wait'), 2500))]);
   if (res !== 'ok' && res !== 'wait') { const e = new Error('save'); e.code = res?.code || 'save-failed'; throw e; }
   if (res === 'wait') markPending(person.uid);
-  const sent = res === 'ok';
-  saveLast(person.uid, kind);
-  return { sent, atMs: rec.atLocalMs };
+  saveLast(person.uid, rec.kind);
+  return { sent: res === 'ok', atMs: rec.atLocalMs };
+}
+const base = (person, kind, shop, photo, deviceId) => ({
+  uid: person.uid, name: person.name || '', shopId: shop.shopId, shopName: shop.name || '',
+  kind, at: serverTimestamp(), atLocalMs: Date.now(), day: todayKey(), photo: photo || null, deviceId: deviceId || '',
+});
+
+// بالرقم السري (احتياطي): يتأكد من الرقم من غير ما يغيّر مين فاتح التطبيق، ويسجّل السبب.
+export async function punch({ person, pin, kind, shop, photo, deviceId, fallback }) {
+  await verifyCashierPin(person, pin);
+  return write(person, { ...base(person, kind, shop, photo, deviceId), method: 'pin', fallback: fallback || 'chose-pin' });
+}
+
+// بالوش: الجهاز اتعرّف عليه وعمل الحركتين.
+export async function punchFace({ person, kind, shop, photo, deviceId, faceDist, live }) {
+  return write(person, { ...base(person, kind, shop, photo, deviceId), method: 'face', faceDist: Math.round(faceDist * 1000) / 1000, live });
 }
 
 // ───── تسجيل الوش (خطوة 2) ─────

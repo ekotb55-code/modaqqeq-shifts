@@ -55,3 +55,27 @@ export function yawOf(landmarks) {
   const w = r.x - l.x || 1;
   return ((nose.x - l.x) / w - 0.5) * 2;
 }
+
+// فتحة العين (EAR): العين المفتوحة حوالي 0.3، والمقفولة أقل من 0.2.
+const d2 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const ear = (p, i) => (d2(p[i + 1], p[i + 5]) + d2(p[i + 2], p[i + 4])) / (2 * d2(p[i], p[i + 3]) || 1);
+export function eyesOf(landmarks) { const p = landmarks.positions; return (ear(p, 36) + ear(p, 42)) / 2; }
+
+// الحركات العشوائية ضد الغش بصورة أو فيديو. كل حركة ليها: الكلام اللي بيظهر، وإزاي نعرف إنها اتعملت.
+// base = قيم الوش وهو باصص عادي (العين واللفّة) علشان نقارن بيها.
+// اللفّة: yawOf سالب لما الشخص يلف ناحية يمينه (الصورة مش معكوسة: يمينه = شمال الصورة).
+export const ACTIONS = {
+  blink: { say: 'غمّض عينيك ثانية', ok: (f, b) => eyesOf(f.landmarks) < Math.min(0.2, b.eyes * 0.7) },
+  right: { say: 'لِف وشّك ناحية اليمين', ok: (f, b) => yawOf(f.landmarks) < b.yaw - 0.3 },
+  left: { say: 'لِف وشّك ناحية الشمال', ok: (f, b) => yawOf(f.landmarks) > b.yaw + 0.3 },
+  smile: { say: 'ابتسم', ok: (f) => (f.expressions?.happy || 0) > 0.7 },
+};
+// حركتين مختلفتين عشوائي (مش يمين وشمال مع بعض)
+export function pickActions() {
+  const keys = Object.keys(ACTIONS);
+  const a = keys[Math.floor(Math.random() * keys.length)];
+  const rest = keys.filter((k) => k !== a && !(['right', 'left'].includes(a) && ['right', 'left'].includes(k)));
+  return [a, rest[Math.floor(Math.random() * rest.length)]];
+}
+export const MATCH = 0.5; // أقل من كده = نفس الشخص
+export const bestDist = (desc, refs) => Math.min(...refs.map((r) => distance(desc, r)));

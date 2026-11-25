@@ -245,7 +245,7 @@ service cloud.firestore {
         && request.resource.data.kind in ['in', 'out']
         && request.resource.data.at == request.time
         && (request.resource.data.photo == null || (request.resource.data.photo is string && request.resource.data.photo.size() < 150000))
-        && request.resource.data.keys().hasOnly(['uid', 'name', 'shopId', 'shopName', 'kind', 'at', 'atLocalMs', 'day', 'method', 'photo', 'deviceId']);
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'shopId', 'shopName', 'kind', 'at', 'atLocalMs', 'day', 'method', 'photo', 'deviceId', 'fallback', 'faceDist', 'live']);
       allow read: if (signedIn() && resource.data.uid == request.auth.uid) || staffOf(resource.data.shopId);
       allow update, delete: if isTopAdmin();
     }
