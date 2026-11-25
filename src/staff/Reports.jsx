@@ -8,11 +8,13 @@ import { logAct } from '../activity.js';
 
 export function useByShops(coll, shops, field, value) {
   const [rows, setRows] = useState([]);
-  const key = coll + shops.map((s) => s.id).join(',') + field + value;
+  const key = coll + shops.map((s) => s.id).join(',') + field + (Array.isArray(value) ? value.join(',') : value);
   useEffect(() => {
-    if (!value) { setRows([]); return undefined; }
+    if (!value || (Array.isArray(value) && !value.length)) { setRows([]); return undefined; }
     const map = {};
-    const subs = shops.map((s) => onSnapshot(query(collection(db, coll), where('shopId', '==', s.id), where(field, '==', value)),
+    // قيمة واحدة (يوم/شهر) أو كذا يوم مع بعض (آخر أسبوع)
+    const cond = Array.isArray(value) ? where(field, 'in', value) : where(field, '==', value);
+    const subs = shops.map((s) => onSnapshot(query(collection(db, coll), where('shopId', '==', s.id), cond),
       (q) => { map[s.id] = q.docs.map((d) => ({ id: d.id, ...d.data() })); setRows(Object.values(map).flat()); },
       (e) => console.warn(coll, e.code)));
     return () => subs.forEach((u) => u());
@@ -23,14 +25,17 @@ export function useByShops(coll, shops, field, value) {
 
 export default function Reports({ profile, shops }) {
   const toast = useToast();
-  const [mode, setMode] = useState('day');
+  const [mode, setMode] = useState('week');
   const [day, setDay] = useState(todayKey());
   const [month, setMonth] = useState(todayKey().slice(0, 7));
   const [shopId, setShopId] = useState('all');
   const [openId, setOpenId] = useState(null);
   const chosen = shopId === 'all' ? shops : shops.filter((s) => s.id === shopId);
-  const field = mode === 'day' ? 'day' : 'month';
-  const value = mode === 'day' ? day : month;
+  // آخر أسبوع = النهارده و6 أيام قبله
+  const weekKey = Array.from({ length: 7 }, (_, i) => todayKey(new Date(Date.now() - i * 86400000))).join(',');
+  const week = useMemo(() => weekKey.split(','), [weekKey]);
+  const field = mode === 'month' ? 'month' : 'day';
+  const value = mode === 'week' ? week : mode === 'day' ? day : month;
   const shifts = useByShops('shifts', chosen, field, value);
   const reviews = useByShops('reviews', chosen, field, value);
   const ledger = useByShops('ledger', chosen, field, value);
@@ -44,6 +49,13 @@ export default function Reports({ profile, shops }) {
   }).sort((a, b) => String(b.openedAtLocal).localeCompare(String(a.openedAtLocal))), [shifts, reviews]); // الأحدث فوق // eslint-disable-line react-hooks/exhaustive-deps
 
   const tot = (k) => rows.reduce((a, r) => a + num(r[k]), 0);
+  // كل كاشير ليه لون خفيف ثابت في الجدول، علشان صفوفه تتتبع بالعين
+  const ROW_TINTS = ['#EAF2FF', '#FFF0E0', '#ECFADC', '#F3EAFF', '#FFEAF2', '#E2F7F3', '#FFF7D6', '#EDEFF3'];
+  const ROW_EDGE = ['#1565D8', '#F08A24', '#5FA80F', '#8A5CE6', '#E0569B', '#0E9384', '#D4A300', '#6B6A80'];
+  const tintOf = useMemo(() => {
+    const names = [...new Set(rows.map((r) => r.cashierName || ''))].sort((a, b) => a.localeCompare(b, 'ar'));
+    return (n) => names.indexOf(n || '') % ROW_TINTS.length;
+  }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const byCashier = useMemo(() => {
     const m = {};
@@ -101,11 +113,13 @@ export default function Reports({ profile, shops }) {
       </div>
       <section className="card spread no-print" style={{ gap: 12 }} data-tour="rep-filter">
         <div className="chips">
+          <button type="button" className={'chip' + (mode === 'week' ? ' on' : '')} onClick={() => setMode('week')}>آخر أسبوع</button>
           <button type="button" className={'chip' + (mode === 'day' ? ' on' : '')} onClick={() => setMode('day')}>تقرير يوم</button>
           <button type="button" className={'chip' + (mode === 'month' ? ' on' : '')} onClick={() => setMode('month')}>تقرير شهر</button>
         </div>
         <div className="chips">
-          {mode === 'day' ? <input className="input" type="date" value={day} onChange={(e) => setDay(e.target.value)} style={{ width: 190 }} aria-label="اليوم" />
+          {mode === 'week' ? <span className="input" style={{ width: 190, display: 'flex', alignItems: 'center' }}>{week[6]} ← {week[0]}</span>
+            : mode === 'day' ? <input className="input" type="date" value={day} onChange={(e) => setDay(e.target.value)} style={{ width: 190 }} aria-label="اليوم" />
             : <input className="input" type="month" value={month} onChange={(e) => setMonth(e.target.value)} style={{ width: 190 }} aria-label="الشهر" />}
           <select className="input" value={shopId} onChange={(e) => setShopId(e.target.value)} style={{ width: 220 }} aria-label="المحل">
             <option value="all">كل المحلات</option>
@@ -115,7 +129,7 @@ export default function Reports({ profile, shops }) {
       </section>
 
       <div className="print-area stack" style={{ gap: 16 }}>
-        <div className="print-only spread"><img src="./modaqqeq-logo.png" alt="مدقق" style={{ height: 50 }} /><strong>{mode === 'day' ? `تقرير يوم ${day}` : `تقرير شهر ${month}`} · {shopId === 'all' ? 'كل المحلات' : shopName(shopId)}</strong></div>
+        <div className="print-only spread"><img src="./modaqqeq-logo.png" alt="مدقق" style={{ height: 50 }} /><strong>{mode === 'week' ? `تقرير آخر أسبوع ${week[6]} ← ${week[0]}` : mode === 'day' ? `تقرير يوم ${day}` : `تقرير شهر ${month}`} · {shopId === 'all' ? 'كل المحلات' : shopName(shopId)}</strong></div>
         <div className="grid2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
           {[
             ['المبيعات', tot('sales')], ['المصروفات', tot('exp')], ['انستاباي', tot('insta')], ['فودافون كاش', tot('vf')],
@@ -133,8 +147,9 @@ export default function Reports({ profile, shops }) {
               <thead><tr><th>المحل</th><th>الكاشير</th><th>اليوم</th><th>الوقت</th><th>المبيعات</th><th>المصروفات</th><th>انستاباي</th><th>فودافون</th><th>النقدية</th><th>النتيجة</th><th>الحالة</th></tr></thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.id} onClick={() => setOpenId(r.id === openId ? null : r.id)} style={{ cursor: 'pointer', background: r.id === openId ? 'var(--bg)' : undefined }}>
-                    <td>{shopName(r.shopId)}</td><td><b>{r.cashierName}</b></td><td>{r.day}</td>
+                  <tr key={r.id} onClick={() => setOpenId(r.id === openId ? null : r.id)}
+                    style={{ cursor: 'pointer', background: ROW_TINTS[tintOf(r.cashierName)], outline: r.id === openId ? `2px solid ${ROW_EDGE[tintOf(r.cashierName)]}` : undefined, outlineOffset: -2 }}>
+                    <td style={{ boxShadow: `inset -4px 0 0 ${ROW_EDGE[tintOf(r.cashierName)]}` }}>{shopName(r.shopId)}</td><td><b style={{ color: ROW_EDGE[tintOf(r.cashierName)] }}>{r.cashierName}</b></td><td>{r.day}</td>
                     <td>{timeStr(r.openedAt || r.openedAtLocal)} ← {r.submittedAt ? timeStr(r.submittedAt) : '…'}</td>
                     <td>{r.sales !== undefined && r.sales !== null ? fmt(r.sales) : '—'}</td><td>{fmt(r.exp)}</td><td>{fmt(r.insta)}</td><td>{fmt(r.vf)}</td><td>{fmt(r.cash)}</td>
                     <td><span className={'badge ' + (r.diff === null ? '' : r.diff < 0 ? 'bad' : r.diff > 0 ? 'ok' : 'info')}>{diffText(r.diff)}</span></td>
