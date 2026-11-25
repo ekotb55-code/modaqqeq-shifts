@@ -26,6 +26,7 @@ export const isVoid = (r) => r.fixState === 'void';
 export function schedFor(uid, day, sched, dayDoc) {
   const o = dayDoc?.sched?.[uid];
   const s = o || sched?.people?.[uid];
+  if (!o && s?.flex) return null; // مرن: مالوش ميعاد، بس ليه عدد ساعات (flexHours)
   if (!s || s.off) return o?.off ? { off: true } : null;
   if (!o && s.dayOff != null && s.dayOff !== '' && Number(s.dayOff) === weekday(day)) return { off: true };
   if (!s.start || !s.end) return null;
@@ -33,6 +34,31 @@ export function schedFor(uid, day, sched, dayDoc) {
   let end = dayAt(day, s.end);
   if (end <= start) end += 24 * 3600e3; // وردية بتعدّي نص الليل
   return { start, end, startHM: s.start, endHM: s.end, oneDay: !!o };
+}
+
+// مرن = عدد ساعات في اليوم من غير ميعاد ثابت (null لو بميعاد)
+export const flexHours = (uid, sched) => { const p = sched?.people?.[uid]; return p?.flex ? Number(p.hours) || 0 : null; };
+// فترات الشغل: كل حضور وبعده أول انصراف. open = لسه منصرفش (بنحسبها لحد دلوقتي في الرسم بس)
+export function pairsOf(sorted, now = Date.now()) {
+  const out = []; let cur = null;
+  sorted.forEach((r) => {
+    if (r.kind === 'in') { if (cur == null) cur = r.ms; }
+    else if (cur != null && r.ms > cur) { out.push([cur, r.ms, false]); cur = null; }
+  });
+  if (cur != null) out.push([cur, Math.min(now, cur + 18 * 3600e3), true]);
+  return out;
+}
+// أيام الشهر: كل الأيام بتتحسب (30 أو 31) زي ما صاحب الشغل عاوز
+export const monthDays = (day) => { const [y, m] = day.split('-').map(Number); const n = new Date(y, m, 0).getDate(); return Array.from({ length: n }, (_, i) => `${y}-${String(m).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`); };
+// ساعات المرن في الشهر من تسجيلاته (records = كل تسجيلاته في الشهر + أول يوم في الشهر اللي بعده)
+export function flexMonth(records, day, hours, now = Date.now()) {
+  const days = monthDays(day);
+  const rs = records.filter((r) => !isVoid(r)).map((r) => ({ ...r, ms: effMs(r) })).sort((a, b) => a.ms - b.ms);
+  const pairs = pairsOf(rs, now).filter(([x]) => days.includes(todayKey(new Date(x))));
+  const worked = pairs.reduce((a, [x, y, open]) => a + (open ? 0 : (y - x) / 3600e3), 0);
+  const target = hours * days.length;
+  const elapsed = days.filter((d) => d <= todayKey()).length;
+  return { worked, target, dueSoFar: hours * elapsed, days: days.length };
 }
 
 // records = تسجيلات اليوم + انصراف اليوم اللي بعده (للوردية اللي بتعدّي نص الليل)، لشخص واحد.
@@ -47,7 +73,10 @@ export function computeDay({ uid, day, records, sched, dayDoc, now = Date.now() 
   const outs = rs.filter((r) => r.kind === 'out' && firstIn && r.ms > firstIn && (r.day === day || r.ms < nextFirstIn));
   const lastOut = outs.length ? outs[outs.length - 1].ms : null;
   const lastKind = today.length ? today[today.length - 1].kind : null;
-  const out = { sched: s, firstIn, lastOut, late: 0, earlyIn: 0, earlyLeave: 0, stayLate: 0, extra: 0, short: 0, decision: null, pending: false, absent: false, noOut: false, forgotIn: false };
+  const pairs = pairsOf(rs.filter((r) => r.day === day || (r.kind === 'out' && r.ms < nextFirstIn)), now);
+  const flexH = flexHours(uid, sched);
+  const out = { pairs, workedMin: pairs.reduce((a, [x, y, open]) => a + (open ? 0 : Math.round((y - x) / MIN)), 0), flex: flexH, sched: s, firstIn, lastOut, late: 0, earlyIn: 0, earlyLeave: 0, stayLate: 0, extra: 0, short: 0, decision: null, pending: false, absent: false, noOut: false, forgotIn: false };
+  if (flexH && !s) return out; // المرن مبيتحسبش عليه تأخير ولا غياب، بيتحسب بمجموع ساعاته في الشهر
   if (!firstIn) {
     if (s && !s.off) {
       out.forgotIn = now > s.start + FORGOT_MIN * MIN && now < s.end;
