@@ -9,6 +9,7 @@ import { closeRulesOf, shopOrders } from '../closeRules.js';
 import { logAct } from '../activity.js';
 import { CLOUD } from '../cloud.js';
 import Workers from './Workers.jsx';
+import PurgeOld from './PurgeOld.jsx';
 import { applyFormat, buildFormat, firstWords, parseSms } from '../smsFormat.js';
 
 export default function Setup({ profile, shops, sel, setSel }) {
@@ -27,7 +28,7 @@ export default function Setup({ profile, shops, sel, setSel }) {
       </div>
       {view === 'staff' ? <StaffAccounts shops={shops} profile={profile} /> : (
         <div className="stack" style={{ gap: 16 }}>
-          {shop ? <ShopEditor key={shop.id} shop={shop} shops={shops} /> : (
+          {shop ? <ShopEditor key={shop.id} shop={shop} shops={shops} profile={profile} /> : (
             <div className="card empty" style={{ minHeight: 220, justifyContent: 'center' }}>{shops.length ? 'اختار المحل من فوق جنب لوجو مدقق علشان تعدّل إعداداته' : 'ابدأ بإضافة أول محل من «اختار المحل» فوق'}</div>
           )}
         </div>
@@ -291,7 +292,7 @@ function ExpenseTypesEditor({ custom, hidden, onCustom, onHidden }) {
   );
 }
 
-function ShopEditor({ shop, shops = [] }) {
+function ShopEditor({ shop, shops = [], profile }) {
   const toast = useToast();
   const [pub, setPub] = useState(null);
   const [f, setF] = useState(() => ({
@@ -487,6 +488,8 @@ function ShopEditor({ shop, shops = [] }) {
           </div>
         </div>
       </section>
+
+      <PurgeOld shop={shop} profile={profile} />
 
       <div style={{ position: 'sticky', bottom: 16, display: 'flex', justifyContent: 'flex-start' }}>
         <button type="button" className="btn" onClick={save} disabled={!dirty} style={{ boxShadow: 'var(--shadow-lg)' }}><Icon d="check" />{dirty ? 'حفظ التعديلات' : 'كله محفوظ'}</button>
