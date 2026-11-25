@@ -1,5 +1,5 @@
 import { getAuth } from 'firebase/auth';
-import { addDoc, collection, doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { addDoc, collection, doc, getDoc, getDocs, query, setDoc, serverTimestamp, where } from 'firebase/firestore';
 import { dbOf, sessionApp } from './firebase';
 import { todayKey } from './lib';
 import { markPending, verifyCashierPin } from './sessions.js';
@@ -13,13 +13,15 @@ export const KIND_LABEL = { in: 'حضور', out: 'انصراف' };
 export const LATE_SYNC_MIN = 3; // فرق أكتر من كده بين ساعة الجهاز والسيرفر = ⚠️
 
 const LAST = 'mdq-att-last';
+// حضور من غير انصراف بيفضل «مفتوح» 18 ساعة (علشان الوردية اللي بتعدّي نص الليل)
+const OPEN_MS = 18 * 3600e3;
 const readLast = () => { try { return JSON.parse(localStorage.getItem(LAST) || '{}'); } catch { return {}; } };
 // آخر تسجيل للشخص النهارده على الجهاز ده، علشان نقترح «حضور» ولا «انصراف».
-export function lastPunch(uid) { const x = readLast()[uid]; return x && x.day === todayKey() ? x : null; }
+export function lastPunch(uid) { const x = readLast()[uid]; return x && Date.now() - (x.atMs || 0) < OPEN_MS ? x : null; }
 function saveLast(uid, kind) {
   const all = readLast();
   all[uid] = { day: todayKey(), kind, atMs: Date.now() };
-  Object.keys(all).forEach((k) => { if (all[k].day !== todayKey()) delete all[k]; });
+  Object.keys(all).forEach((k) => { if (Date.now() - (all[k].atMs || 0) > OPEN_MS) delete all[k]; });
   try { localStorage.setItem(LAST, JSON.stringify(all)); } catch { /* ignore */ }
 }
 
@@ -40,6 +42,25 @@ async function sessionOf(person) {
   const au = getAuth(a);
   if (au.authStateReady) await au.authStateReady();
   return au.currentUser?.uid === person.uid ? a : null;
+}
+// المفروض يعمل إيه دلوقتي: لو آخر تسجيل ليه (النهارده أو امبارح) «حضور» من أقل من 18 ساعة ← انصراف، غير كده ← حضور.
+// بنسأل السيرفر (من جلسته هو) ولو مفيش نت أو مفيش جلسة نرجع للي محفوظ على الجهاز.
+export async function nextKind(person) {
+  const local = lastPunch(person.uid);
+  try {
+    const a = await sessionOf(person);
+    if (!a) return local?.kind === 'in' ? 'out' : 'in';
+    const y = todayKey(new Date(Date.now() - 864e5));
+    const q = await Promise.race([
+      getDocs(query(collection(dbOf(a), 'attendance'), where('uid', '==', person.uid), where('day', 'in', [todayKey(), y]))),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('slow')), 3000)),
+    ]);
+    const ms = (r) => r.at?.toMillis?.() || r.atLocalMs || 0;
+    const last = q.docs.map((d) => d.data()).sort((x, z) => ms(z) - ms(x))[0];
+    const srv = last && Date.now() - ms(last) < OPEN_MS ? last : null;
+    const pick = !srv ? local : !local || ms(srv) >= (local.atMs || 0) ? { kind: srv.kind } : local;
+    return pick?.kind === 'in' ? 'out' : 'in';
+  } catch { return local?.kind === 'in' ? 'out' : 'in'; }
 }
 export async function hasSession(person) { try { return !!(await sessionOf(person)); } catch { return false; } }
 
