@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
-import { db } from '../firebase';
-import { Avatar, Modal } from '../ui.jsx';
+import { collection, deleteDoc, doc, getDoc, onSnapshot, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
+import { auth, db } from '../firebase';
+import { logAct } from '../activity.js';
+import { Avatar, Modal, useToast } from '../ui.jsx';
 import { todayKey, toDate } from '../lib';
 import { KIND_LABEL, LATE_SYNC_MIN } from '../attendance.js';
 
@@ -84,6 +85,40 @@ export default function AttendanceView({ shops }) {
     <div className="wrap stack" style={{ gap: 16 }}>
       <label className="field" style={{ width: 200 }}>اليوم<input type="date" className="input" dir="ltr" value={day} max={todayKey()} onChange={(e) => setDay(e.target.value || todayKey())} /></label>
       {shops.map((sh) => <ShopDay key={sh.id} shop={sh} day={day} />)}
+      {shops.map((sh) => <ShopFaces key={'f' + sh.id} shop={sh} />)}
     </div>
+  );
+}
+
+// الوشوش المتسجلة: صاحب المحل أو المدير يقارن صورة التسجيل بالشخص ويوافق. لو غلط يمسحها والشخص يسجّل تاني.
+function ShopFaces({ shop }) {
+  const toast = useToast();
+  const [rows, setRows] = useState(null);
+  useEffect(() => onSnapshot(query(collection(db, 'faces'), where('shopId', '==', shop.id)),
+    (s) => setRows(s.docs.map((d) => ({ id: d.id, ...d.data() }))), (e) => { console.warn('faces', e.code); setRows([]); }), [shop.id]);
+  if (!rows || rows.length === 0) return null;
+  const approve = (r) => updateDoc(doc(db, 'faces', r.id), { approved: true, approvedBy: auth.currentUser?.uid || '', approvedAt: serverTimestamp() })
+    .then(() => logAct('staff_edit', `وافق على تسجيل وش ${r.name}`, { shopId: shop.id })).catch(() => toast('مش قادرين نحفظ، اتأكد من النت', 'err'));
+  const remove = (r) => {
+    if (!window.confirm(`تمسح بصمة وش ${r.name}؟ هيحتاج يسجّل وشّه تاني.`)) return;
+    deleteDoc(doc(db, 'faces', r.id)).then(() => logAct('staff_edit', `مسح بصمة وش ${r.name}`, { shopId: shop.id })).catch(() => toast('مش قادرين نمسح، اتأكد من النت', 'err'));
+  };
+  const pending = rows.filter((r) => !r.approved);
+  return (
+    <section className="card">
+      <h2 className="h2">الوشوش المتسجلة · {shop.name}{pending.length > 0 && <span className="badge warn" style={{ marginInlineStart: 8 }}>{pending.length} مستني موافقتك</span>}</h2>
+      <span className="tiny muted">قارن الصورة بالشخص. لو هو، دوس «موافقة». لو مش هو (حد سجّل وش غيره)، امسحها.</span>
+      <div className="chips" style={{ gap: 12 }}>
+        {rows.sort((a, b) => Number(!!a.approved) - Number(!!b.approved)).map((r) => (
+          <div key={r.id} className="stack" style={{ gap: 6, alignItems: 'center', width: 150, textAlign: 'center', background: 'rgba(255,255,255,.75)', borderRadius: 18, padding: 10 }}>
+            {r.photo ? <img src={r.photo} alt="" style={{ width: 130, borderRadius: 14 }} /> : <Avatar name={r.name} size={80} />}
+            <strong>{r.name}</strong>
+            <span className="tiny muted">وافق على التصوير <bdi>{toDate(r.consentAt)?.toLocaleDateString('ar-EG', { day: 'numeric', month: 'short', timeZone: 'Africa/Cairo' }) || '—'}</bdi></span>
+            {r.approved ? <span className="badge">✓ متوافق عليه</span> : <button type="button" className="btn sm" onClick={() => approve(r)}>موافقة</button>}
+            <button type="button" className="link small" onClick={() => remove(r)}>امسح</button>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
