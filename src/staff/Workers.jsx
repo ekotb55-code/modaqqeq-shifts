@@ -4,6 +4,7 @@ import { db } from '../firebase';
 import { Avatar, Icon, useToast } from '../ui.jsx';
 import { AVATAR_BG, USERNAME_RE, WEEKDAYS, cashierEmail, cashierPassword, createAccount, normUsername, todayKey } from '../lib';
 import { logAct } from '../activity.js';
+import { saveSched } from '../attAdmin.js';
 
 // العمال: حساب بدور «عامل» (worker). بيدخل زي الكاشير باسم دخول ورقم سري 4 أرقام،
 // بس مالوش أي صلاحية على الفلوس أو الورديات (قواعد Firestore بتمنعه من بيانات المحل).
@@ -66,6 +67,7 @@ export default function Workers({ shop, pub }) {
       });
       setDoc(doc(db, 'cashierSecrets', uid), { pin: f.pin, updatedAt: serverTimestamp() }).catch(() => {});
       await writeList([...all, w]);
+      if (f.start && f.end) saveSched(null, shop.id, w, { start: f.start, end: f.end, dayOff: f.dayOff ?? null }).catch(() => {});
       logAct('staff_add', `ضاف العامل ${w.name} (${un}) في ${shop.name}`, { shopId: shop.id });
       toast(`${w.name} اتضاف · يدخل بـ ${un} والرقم السري ${f.pin}`);
       setF(EMPTY);
@@ -76,7 +78,7 @@ export default function Workers({ shop, pub }) {
     setBusy(false);
   };
 
-  const row = (w) => <WorkerRow key={w.uid} w={w} all={all} writeList={writeList} open={open === w.uid} onToggle={() => setOpen(open === w.uid ? null : w.uid)} />;
+  const row = (w) => <WorkerRow key={w.uid} shopId={shop.id} w={w} all={all} writeList={writeList} open={open === w.uid} onToggle={() => setOpen(open === w.uid ? null : w.uid)} />;
   return (
     <section className="card tint-orange">
       <h2 className="h2">العمال</h2>
@@ -110,7 +112,7 @@ export default function Workers({ shop, pub }) {
   );
 }
 
-function WorkerRow({ w, all, writeList, open, onToggle }) {
+function WorkerRow({ shopId, w, all, writeList, open, onToggle }) {
   const toast = useToast();
   const [form, setForm] = useState(null);
   const set = (k, v) => setForm((x) => ({ ...x, [k]: v }));
@@ -127,6 +129,8 @@ function WorkerRow({ w, all, writeList, open, onToggle }) {
   const save = async () => {
     try {
       await updateDoc(doc(db, 'users', w.uid), { ...form, quota: form.canCount ? (Number(form.quota) || 0) : 0 });
+      // نفس الميعاد في مواعيد الحضور
+      if (form.start && form.end) saveSched(null, shopId, w, { start: form.start, end: form.end, dayOff: form.dayOff ?? null }).catch(() => {});
       logAct('staff_edit', `عدّل بيانات العامل ${w.name}`);
       toast('اتحفظ');
     } catch { toast('مش قادرين نحفظ', 'err'); }
