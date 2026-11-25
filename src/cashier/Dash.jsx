@@ -89,7 +89,10 @@ export default function Dash({ shop, shift, entries, deleted = [], incoming = []
     ops && repMachines && { t: 'repPay', label: 'سداد لمندوب مكنة', icon: 'up' },
     ops && { t: 'liquidate', label: 'تسييل وتحويل بين الخزن', icon: 'swap' },
   ].filter(Boolean);
-  const sms = useWalletIn(shift.shopId, wallets, profile.id);
+  // التحويلات اللي وصلت لصاحب المحل: أي محفظة مش «تبع المحل» — حتى لو مش متعلّمة في محافظ المحل
+  // (زي «فودافون كاش شخصي» اللي بتتربط من رسايل البنك ومش لازم تتضاف لمحافظ الوردية)
+  const smsWallets = WALLETS.filter((w) => walletModeOf(shop, w.key) === 'owner').map((w) => w.key);
+  const sms = useWalletIn(shift.shopId, smsWallets, profile.id);
   const [claim, setClaim] = useState(null);
   const pendingIds = new Set(outgoing.map((t) => t.id));
   const opened = shift.openedAt || shift.openedAtLocal;
