@@ -137,6 +137,67 @@ function SchedModal({ title, person, cur, oneDay, onSave, onClose }) {
   );
 }
 
+// تايم لاين اليوم: لكل واحد خط. الرمادي = ميعاده، الأخضر = كان موجود فعلًا (من الحضور للانصراف)،
+// البرتقالي = وقت زيادة عن الميعاد، والأحمر المقطّع = تأخير. الضغط على أي خط بيوديك لتفاصيله تحت.
+export function DayTimeline({ items, day }) {
+  const now = Date.now();
+  const pts = [];
+  items.forEach(({ c }) => {
+    if (c.sched && !c.sched.off) pts.push(c.sched.start, c.sched.end);
+    if (c.firstIn) pts.push(c.firstIn, c.lastOut && !c.openNow ? c.lastOut : Math.min(now, c.firstIn + 18 * 3600e3));
+  });
+  if (!pts.length) return null;
+  const H = 3600e3, base = dayAt(day, '00:00');
+  let from = Math.floor((Math.min(...pts) - base) / H), to = Math.ceil((Math.max(...pts) - base) / H);
+  if (to - from < 6) to = from + 6;
+  const span = (to - from) * H, x = (ms) => `${Math.max(0, Math.min(100, ((ms - base - from * H) / span) * 100))}%`;
+  const w = (a, b) => `calc(${x(b)} - ${x(a)})`;
+  const step = to - from > 14 ? 2 : 1;
+  const hours = []; for (let h = from; h <= to; h += step) hours.push(h);
+  const nowIn = now > base + from * H && now < base + to * H;
+  const bar = (a, b, style) => b <= a ? null : <span style={{ position: 'absolute', insetInlineStart: x(a), width: w(a, b), borderRadius: 6, ...style }} />;
+  return (
+    <div className="stack" style={{ gap: 6, background: 'rgba(255,255,255,.75)', borderRadius: 18, padding: 12 }}>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <span style={{ width: 100, flex: 'none' }} />
+        <span dir="ltr" style={{ position: 'relative', flex: 1, height: 16 }}>
+          {hours.map((h) => <span key={h} className="tiny muted" style={{ position: 'absolute', left: x(base + h * H), transform: 'translateX(-50%)' }}>{((h % 24) + 24) % 24 % 12 || 12}</span>)}
+        </span>
+      </div>
+      {items.map(({ p, c }) => {
+        const s = c.sched && !c.sched.off ? c.sched : null;
+        const end = c.firstIn ? (c.lastOut && !c.openNow ? c.lastOut : Math.min(now, c.firstIn + 18 * H)) : null;
+        return (
+          <button key={p.uid} type="button" onClick={() => document.getElementById('att-' + p.uid)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, border: 0, background: 'none', padding: 0, cursor: 'pointer', textAlign: 'start' }}>
+            <span className="small" style={{ width: 100, flex: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {p.name}{c.sched?.off ? ' · إجازة' : ''}
+            </span>
+            <span dir="ltr" style={{ position: 'relative', flex: 1, height: 26, background: 'rgba(0,0,0,.03)', borderRadius: 8 }}>
+              {hours.map((h) => <span key={h} style={{ position: 'absolute', left: x(base + h * H), top: 0, bottom: 0, borderLeft: '1px solid rgba(0,0,0,.06)' }} />)}
+              {s && bar(s.start, s.end, { top: 3, height: 20, background: 'rgba(0,0,0,.10)' })}
+              {s && c.late > 0 && bar(s.start, c.firstIn, { top: 3, height: 20, background: 'repeating-linear-gradient(45deg, rgba(229,57,53,.55) 0 4px, transparent 4px 8px)' })}
+              {s && !c.firstIn && (c.absent || c.forgotIn) && bar(s.start, Math.min(now, s.end), { top: 3, height: 20, background: 'repeating-linear-gradient(45deg, rgba(229,57,53,.55) 0 4px, transparent 4px 8px)' })}
+              {c.firstIn && bar(c.firstIn, end, { top: 8, height: 10, background: '#2e9e5b', opacity: c.openNow ? 0.6 : 1 })}
+              {c.firstIn && s && c.firstIn < s.start && bar(c.firstIn, Math.min(s.start, end), { top: 8, height: 10, background: '#f59e0b' })}
+              {c.firstIn && s && end > s.end && bar(Math.max(s.end, c.firstIn), end, { top: 8, height: 10, background: '#f59e0b' })}
+              {c.firstIn && !s && bar(c.firstIn, end, { top: 8, height: 10, background: '#f59e0b' })}
+              {nowIn && <span style={{ position: 'absolute', left: x(now), top: -2, bottom: -2, borderLeft: '2px solid var(--blue)' }} />}
+            </span>
+          </button>
+        );
+      })}
+      <span className="tiny muted" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <span>▬ <span style={{ color: 'rgba(0,0,0,.35)' }}>الميعاد</span></span>
+        <span style={{ color: '#2e9e5b' }}>▬ كان موجود</span>
+        <span style={{ color: '#f59e0b' }}>▬ وقت زيادة</span>
+        <span style={{ color: '#e53935' }}>▨ تأخير / مجاش</span>
+        <span style={{ color: 'var(--blue)' }}>│ دلوقتي</span>
+      </span>
+    </div>
+  );
+}
+
 function ShopDay({ shop, day, profile }) {
   const toast = useToast();
   const role = profile.role;
@@ -167,6 +228,11 @@ function ShopDay({ shop, day, profile }) {
   return (
     <section className="card">
       <h2 className="h2">{pub.name || shop.name}{!pub.attendance && <span className="tiny muted"> · الحضور مش شغال في الفرع ده (من الإعداد ← العمال)</span>}</h2>
+      <DayTimeline day={day} items={shown.map((p) => {
+        const c = computeDay({ uid: p.uid, day, records: [...rows, ...next].filter((r) => r.uid === p.uid), sched, dayDoc });
+        const mine = [...rows, ...next].filter((r) => r.uid === p.uid && !isVoid(r)).sort((a, b) => effMs(a) - effMs(b));
+        return { p, c: { ...c, openNow: mine.length > 0 && mine[mine.length - 1].kind === 'in' } };
+      })} />
       <div className="stack" style={{ gap: 10 }}>
         {shown.map((p) => {
           const mine = [...rows, ...next].filter((r) => r.uid === p.uid);
@@ -174,7 +240,7 @@ function ShopDay({ shop, day, profile }) {
           const c = computeDay({ uid: p.uid, day, records: mine, sched, dayDoc });
           const s = c.sched;
           return (
-            <div key={p.uid} className="stack" style={{ background: 'rgba(255,255,255,.75)', borderRadius: 18, padding: 10, gap: 8 }}>
+            <div key={p.uid} id={'att-' + p.uid} className="stack" style={{ background: 'rgba(255,255,255,.75)', borderRadius: 18, padding: 10, gap: 8 }}>
               <div className="spread" style={{ flexWrap: 'wrap', gap: 8 }}>
                 <span className="chips" style={{ gap: 10, alignItems: 'center' }}>
                   <Avatar name={p.name} photo={pub.photos?.[p.uid]} color={p.color} size={40} /><strong>{p.name}</strong>
