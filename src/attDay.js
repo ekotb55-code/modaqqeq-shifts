@@ -79,3 +79,28 @@ export function computeDay({ uid, day, records, sched, dayDoc, now = Date.now() 
 }
 
 export const minStr = (m) => { const h = Math.floor(m / 60), r = m % 60; return h ? (r ? `${h} س ${r} د` : `${h} س`) : `${r} د`; };
+
+// ---------- بورد القواعد (لكل فرع، صاحب المحل بيغيّرها من تاب «الموظفين» ← «القواعد») ----------
+// lateTiers: لو اتأخر من «min» دقيقة أو أكتر → يتخصم «v» من «unit» (h = ساعات، day = أيام). بناخد أكبر صف ينطبق.
+// absentDays: الغياب من غير إذن المدير = كام يوم خصم. otMode: double = كل ساعة بساعتين، firstNormal = أول ساعة عادي والباقي بساعتين.
+export const DEFAULT_RULES = {
+  lateTiers: [
+    { min: 15, v: 1, unit: 'h' },
+    { min: 30, v: 0.5, unit: 'day' },
+    { min: 120, v: 1, unit: 'day' },
+  ],
+  absentDays: 2,
+  otMode: 'double',
+};
+export const rulesOf = (r) => ({ ...DEFAULT_RULES, ...(r || {}), lateTiers: (r?.lateTiers?.length ? r.lateTiers : DEFAULT_RULES.lateTiers).slice().sort((a, b) => a.min - b.min) });
+// خصم التأخير: { v, unit } أو null
+export function lateDeduct(lateMin, rules) {
+  const t = rulesOf(rules).lateTiers.filter((x) => lateMin >= Number(x.min)).pop();
+  return t ? { v: Number(t.v), unit: t.unit } : null;
+}
+export const deductStr = (d) => (!d ? '' : d.unit === 'day' ? (d.v === 0.5 ? 'نص يوم' : d.v === 1 ? 'يوم' : d.v === 2 ? 'يومين' : `${d.v} أيام`) : (d.v === 1 ? 'ساعة' : d.v === 2 ? 'ساعتين' : `${d.v} ساعات`));
+// الأوفر تايم بعد موافقة المدير: كام ساعة تتحسب
+export function otHours(minutes, rules) {
+  const h = minutes / 60;
+  return rulesOf(rules).otMode === 'firstNormal' ? Math.min(h, 1) + Math.max(0, h - 1) * 2 : h * 2;
+}
