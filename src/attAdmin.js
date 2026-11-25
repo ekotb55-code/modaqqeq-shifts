@@ -67,3 +67,11 @@ export async function saveSched(profile, shopId, person, s) {
   await setDoc(doc(db, 'attSched', shopId), { shopId, people: { [person.uid]: s } }, { merge: true });
   if (profile) await log(profile, shopId, 'sched', `غيّر ميعاد ${person.name} العادي: ${s.start || '—'}–${s.end || '—'}`, { uid: person.uid, day: todayKey() });
 }
+// الورديات بأسامي لكل فرع (صباحي، مسائي…) علشان جدول المواعيد يختار منها بضغطة
+export async function saveShifts(profile, shopId, list) {
+  await setDoc(doc(db, 'attSched', shopId), { shopId, shifts: list.map((x) => ({ id: String(x.id), name: x.name, start: x.start, end: x.end })) }, { merge: true });
+  await log(profile, shopId, 'shifts', `عدّل الورديات: ${list.map((x) => `${x.name} ${x.start}–${x.end}`).join('، ') || 'مفيش'}`, { day: todayKey() });
+}
+export async function logPlan(profile, shopId, text, day) {
+  await log(profile, shopId, 'plan', text, { day });
+}
