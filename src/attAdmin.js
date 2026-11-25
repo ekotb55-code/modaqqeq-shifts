@@ -1,6 +1,7 @@
 import { addDoc, arrayRemove, arrayUnion, collection, deleteDoc, doc, getDoc, serverTimestamp, setDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { auth, db } from './firebase';
+import { ensureDevKey, markApproved } from './attendance.js';
 import { todayKey } from './lib';
 
 // تعديلات الحضور من الإدارة. كل تعديل بيتسجل في attLog (مين، إمتى، ليه، كان إيه وبقى إيه) ومحدش يقدر يمسحه.
@@ -104,4 +105,21 @@ export async function saveJoker(profile, { person, home, shops, removed, names, 
     await setDoc(doc(db, 'staffPay', id), { shopId: id, people: { [person.uid]: pay } }, { merge: true });
     await log(profile, id, 'joker', `خلّى ${person.name} جوكر: ${ids.map((x) => `${names[x] || x} ${Number(shops[x]) ? `${shops[x]} س` : 'من غير ساعات مطلوبة'}`).join('، ')} · اليومية ${pay.amount} ج لـ ${pay.dayHours} ساعات`, { uid: person.uid, day: todayKey() });
   }
+}
+
+// ───── أجهزة الحضور (صاحب المحل) ─────
+export async function approveDevice(profile, shop, name) {
+  const key = ensureDevKey();
+  await setDoc(doc(db, 'attDevices', `${shop.id}_${key}`), { shopId: shop.id, key, name: name || 'جهاز الفرع', ua: String(navigator.userAgent || '').slice(0, 160), ...me(profile), at: serverTimestamp(), atLocalMs: Date.now() });
+  markApproved(shop.id, true);
+  await log(profile, shop.id, 'device', `اعتمد جهاز «${name || 'جهاز الفرع'}» للحضور`, { day: todayKey() });
+}
+export async function removeDevice(profile, d, thisKey) {
+  await deleteDoc(doc(db, 'attDevices', d.id));
+  if (d.key === thisKey) markApproved(d.shopId, false);
+  await log(profile, d.shopId, 'device', `شال جهاز «${d.name}» من أجهزة الحضور`, { day: todayKey() });
+}
+export async function setAttLock(profile, shop, on) {
+  await setDoc(doc(db, 'shopsPublic', shop.id), { attLock: !!on }, { merge: true });
+  await log(profile, shop.id, 'device', on ? 'قفل الحضور على الأجهزة المعتمدة بس' : 'فتح الحضور من أي جهاز', { day: todayKey() });
 }

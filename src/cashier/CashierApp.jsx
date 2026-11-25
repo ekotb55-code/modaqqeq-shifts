@@ -58,7 +58,7 @@ export default function CashierApp({ profile }) {
         .map((w) => ({ uid: w.uid, name: w.name, username: w.username, color: w.color || null, photo: pub.photos?.[w.uid] || null }));
       const prev = (() => { try { return JSON.parse(localStorage.getItem('mdq-device-shop') || 'null'); } catch { return null; } })();
       const keep = prev?.shopId === shop.id ? { sched: prev.sched, todayDoc: prev.todayDoc } : {};
-      localStorage.setItem('mdq-device-shop', JSON.stringify({ ...keep, shopId: shop.id, name: pub.name || shop.name || '', logo: shop.logo || null, cashiers, workers, attendance: !!pub.attendance, savedAt: Date.now() }));
+      localStorage.setItem('mdq-device-shop', JSON.stringify({ ...keep, shopId: shop.id, name: pub.name || shop.name || '', logo: shop.logo || null, cashiers, workers, attendance: !!pub.attendance, attLock: !!pub.attLock, savedAt: Date.now() }));
     } catch { /* storage full: the normal login still works */ }
   }, [shop?.id, shop?.logo, pub]); // eslint-disable-line react-hooks/exhaustive-deps
   // Notifications for the cashier: shift closed by the accountant, reopened for editing, a message.

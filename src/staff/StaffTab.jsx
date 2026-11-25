@@ -5,7 +5,8 @@ import { Modal, useToast } from '../ui.jsx';
 import { ROLE_LABEL, WEEKDAYS, isAdminRole } from '../lib';
 import { DEFAULT_RULES, deductStr, flexMonth, jokerMonth, jokerRate, monthDays, nextDay, rulesOf } from '../attDay.js';
 import { todayKey } from '../lib';
-import { logPlan, saveJoker, saveSched } from '../attAdmin.js';
+import { approveDevice, logPlan, removeDevice, saveJoker, saveSched, setAttLock } from '../attAdmin.js';
+import { devKey, markApproved } from '../attendance.js';
 import AttendanceView from './AttendanceView.jsx';
 import WeekPlan, { canPlan } from './WeekPlan.jsx';
 
@@ -15,7 +16,7 @@ export const isOwner = (profile) => isAdminRole(profile.role) || profile.role ==
 
 export default function StaffTab({ shops, allShops, profile }) {
   const plan = canPlan(profile), own = isOwner(profile);
-  const subs = [plan && ['plan', '📅 الجدول'], ['att', '🕒 الحضور'], plan && ['people', '👥 الموظفين'], own && ['rules', '📋 القواعد']].filter(Boolean);
+  const subs = [plan && ['plan', '📅 الجدول'], ['att', '🕒 الحضور'], plan && ['people', '👥 الموظفين'], own && ['rules', '📋 القواعد'], own && ['devices', '🖥️ الأجهزة']].filter(Boolean);
   const [sub, setSub] = useState(subs[0][0]);
   return (
     <div className="stack" style={{ gap: 0 }}>
@@ -27,6 +28,7 @@ export default function StaffTab({ shops, allShops, profile }) {
       {sub === 'plan' && <WeekPlan shops={shops} profile={profile} />}
       {sub === 'att' && <AttendanceView shops={shops} profile={profile} />}
       {sub === 'people' && <div className="wrap stack" style={{ gap: 16 }}>{shops.map((sh) => <ShopPeople key={sh.id} shop={sh} profile={profile} allShops={allShops || shops} />)}</div>}
+      {sub === 'devices' && <div className="wrap stack" style={{ gap: 16 }}>{shops.map((sh) => <DevicesBoard key={sh.id} shop={sh} profile={profile} />)}</div>}
       {sub === 'rules' && <div className="wrap stack" style={{ gap: 16 }}>{shops.map((sh) => <RulesBoard key={sh.id} shop={sh} profile={profile} />)}</div>}
     </div>
   );
@@ -350,6 +352,84 @@ function RulesBoard({ shop, profile }) {
         <button type="button" className="btn" disabled={!dirty} onClick={save}>حفظ القواعد</button>
         <button type="button" className="btn soft" onClick={() => set(rulesOf({ ...DEFAULT_RULES }))}>رجّع الافتراضي</button>
       </div>
+    </section>
+  );
+}
+
+// ---------- أجهزة الحضور: الحضور والانصراف من جهاز الفرع بس ----------
+const dateStr = (ms) => (ms ? new Date(ms).toLocaleDateString('ar-EG', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
+function DevicesBoard({ shop, profile }) {
+  const toast = useToast();
+  const [pub, setPub] = useState(null);
+  const [list, setList] = useState(null);
+  const [name, setName] = useState('جهاز الكاشير');
+  const [busy, setBusy] = useState(false);
+  const [, bump] = useState(0);
+  useEffect(() => onSnapshot(doc(db, 'shopsPublic', shop.id), (x) => setPub(x.data() || {}), () => setPub({})), [shop.id]);
+  useEffect(() => onSnapshot(query(collection(db, 'attDevices'), where('shopId', '==', shop.id)), (q) => setList(q.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (a.atLocalMs || 0) - (b.atLocalMs || 0))), () => setList([])), [shop.id]);
+  // نخلي علامة «معتمد» على الجهاز ده ماشية مع القايمة (لو اتشال من جهاز تاني)
+  useEffect(() => { if (list) { const k = devKey(); markApproved(shop.id, !!k && list.some((d) => d.key === k)); } }, [list, shop.id]);
+  if (!pub || !list) return <section className="card"><span className="muted">بنحمّل…</span></section>;
+  const key = devKey();
+  const here = list.find((d) => d.key && d.key === key);
+  const lock = !!pub.attLock;
+  const sname = pub.name || shop.name;
+  const approve = async () => {
+    setBusy(true);
+    try {
+      await approveDevice(profile, shop, name.trim());
+      if (!lock && list.length === 0) await setAttLock(profile, shop, true);
+      toast(!lock && list.length === 0 ? `الجهاز ده اتعتمد، والحضور في ${sname} بقى من الأجهزة المعتمدة بس` : 'الجهاز ده اتعتمد');
+      bump((x) => x + 1);
+    } catch (e) { console.error(e); toast('مش قادرين نعتمد الجهاز، اتأكد من النت', 'err'); }
+    setBusy(false);
+  };
+  const remove = async (d) => {
+    const last = lock && list.length === 1;
+    if (!window.confirm(last ? `ده آخر جهاز معتمد. لو شلته محدش هيقدر يسجّل حضور في ${sname} لحد ما تعتمد جهاز تاني أو تفتح الحضور من أي جهاز. تشيله؟` : `تشيل «${d.name}» من أجهزة الحضور؟`)) return;
+    try { await removeDevice(profile, d, key); bump((x) => x + 1); toast('اتشال'); } catch (e) { console.error(e); toast('مش قادرين نشيله، اتأكد من النت', 'err'); }
+  };
+  const toggle = async (on) => {
+    if (on && list.length === 0) { toast('اعتمد جهاز الأول', 'err'); return; }
+    try { await setAttLock(profile, shop, on); } catch (e) { console.error(e); toast('مش قادرين نحفظ، اتأكد من النت', 'err'); }
+  };
+  const row = { display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', background: 'rgba(255,255,255,.75)', borderRadius: 14, padding: '10px 12px' };
+  return (
+    <section className="card">
+      <h2 className="h2">🖥️ أجهزة الحضور · {sname}</h2>
+      <div className="stack" style={{ gap: 8, background: here ? 'rgba(46,158,91,.10)' : 'rgba(245,158,11,.12)', borderRadius: 14, padding: 12 }}>
+        {here ? (
+          <strong>✅ الجهاز اللي انت فاتح منه دلوقتي معتمد هنا باسم «{here.name}»</strong>
+        ) : (
+          <>
+            <strong>الجهاز اللي انت فاتح منه دلوقتي مش معتمد للحضور في {sname}</strong>
+            <span className="tiny muted">لو ده كمبيوتر الفرع (أو اللابتوب اللي بتجرب عليه)، سمّيه ودوس اعتمد. بعد كده الكاشير يفتح البرنامج عليه عادي، والحضور يشتغل منه.</span>
+            <div className="chips" style={{ gap: 8, alignItems: 'flex-end' }}>
+              <label className="field" style={{ flex: '1 1 180px' }}>اسم الجهاز<input className="input" value={name} onChange={(e) => setName(e.target.value)} /></label>
+              <button type="button" className="btn" disabled={busy || !name.trim()} onClick={approve}>{busy ? 'لحظة…' : `✅ اعتمد الجهاز ده لـ ${sname}`}</button>
+            </div>
+          </>
+        )}
+      </div>
+      <label style={{ ...row, justifyContent: 'flex-start', cursor: 'pointer' }}>
+        <input type="checkbox" style={{ width: 20, height: 20 }} checked={lock} onChange={(e) => toggle(e.target.checked)} />
+        <span className="stack" style={{ gap: 0 }}><strong>الحضور والانصراف من الأجهزة المعتمدة بس</strong>
+          <span className="tiny muted">{lock ? 'أي جهاز تاني (موبايل أو كمبيوتر في البيت) هيقول «الجهاز ده مش معتمد».' : 'دلوقتي أي جهاز الكاشير فاتح عليه البرنامج يقدر يسجّل حضور.'}</span></span>
+      </label>
+      <div className="stack" style={{ gap: 6 }}>
+        <strong className="small">الأجهزة المعتمدة ({list.length})</strong>
+        {list.map((d) => (
+          <div key={d.id} style={row}>
+            <span className="stack" style={{ gap: 0 }}>
+              <strong>{d.name}{d.key === key ? ' · الجهاز ده' : ''}</strong>
+              <span className="tiny muted">اعتمده {d.byName || '—'} {dateStr(d.atLocalMs)}</span>
+            </span>
+            <button type="button" className="link small" style={{ color: '#e53935' }} onClick={() => remove(d)}>شيل</button>
+          </div>
+        ))}
+        {list.length === 0 && <span className="muted small">لسه مفيش أجهزة معتمدة</span>}
+      </div>
+      <span className="tiny muted">الجوكر بيسجّل من أي جهاز معتمد في الفروع اللي هو فيها. لو حد مسح بيانات المتصفح (السجل والكوكيز) على جهاز الفرع، الجهاز بيبطل يبقى معتمد ولازم تعتمده تاني من هنا.</span>
     </section>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Avatar, Icon, Modal } from './ui.jsx';
-import { CONSENT_TEXT, FALLBACK, KIND_LABEL, hasSession, lastPunch, myFace, nextKind, punch, punchFace, saveFace, snapPhoto } from './attendance.js';
+import { CONSENT_TEXT, FALLBACK, KIND_LABEL, approvedHere, hasSession, lastPunch, myFace, nextKind, punch, punchFace, saveFace, snapPhoto } from './attendance.js';
 import { ACTIONS, MATCH, bestDist, distance, detectFaces, eyesOf, flatten, loadFace, pickActions, unflatten, yawOf } from './face.js';
 import { verifyCashierPin } from './sessions.js';
 import { FORGOT_MIN, schedFor } from './attDay.js';
@@ -22,6 +22,8 @@ const ERR = {
   'permission-denied': 'الحساب ده مش متسجل في الفرع ده. كلّم المدير.',
   'auth/user-disabled': 'الحساب ده موقوف. كلّم المدير.',
 };
+
+const NOT_OK = 'الجهاز ده مش معتمد للحضور في الفرع ده (أو اتشال). صاحب المحل يعتمده من «👥 الموظفين ← 🖥️ الأجهزة».';
 
 export function peopleOf(device) {
   const seen = new Set();
@@ -130,7 +132,7 @@ export default function AttendanceModal({ device, onClose }) {
       const r = await punch({ person: who, pin: p, kind, shop: device, photo, deviceId: devId(), fallback: usePin, claimAtMs: kind === 'in' ? claim : null });
       setDone({ ...r, photo, kind, name: who.name, method: 'pin' });
     } catch (e) {
-      setMsg(ERR[e.code] || 'حصلت مشكلة، جرّب تاني');
+      setMsg(e.code === 'permission-denied' && device?.attLock ? NOT_OK : ERR[e.code] || 'حصلت مشكلة، جرّب تاني');
       setShake(true); setTimeout(() => setShake(false), 450);
       setPin('');
     }
@@ -172,7 +174,17 @@ export default function AttendanceModal({ device, onClose }) {
   );
 
   let body;
-  if (done?.enrolled) {
+  if (device?.attLock && !approvedHere(device.shopId)) {
+    // الفرع قافل الحضور على أجهزته المعتمدة، والجهاز ده مش منهم
+    body = (
+      <div className="stack" style={{ alignItems: 'center', gap: 12, textAlign: 'center', padding: '20px 0', maxWidth: 460, margin: '0 auto' }}>
+        <span style={{ fontSize: 46 }}>🔒</span>
+        <h2 className="h2">الجهاز ده مش معتمد</h2>
+        <span className="muted">الحضور والانصراف في {device.name || 'الفرع ده'} بيتسجل من أجهزة الفرع المعتمدة بس. لو ده جهاز الفرع، صاحب المحل يدخل بحسابه على الجهاز ده ويدوس «اعتمد الجهاز ده» من «👥 الموظفين ← 🖥️ الأجهزة».</span>
+        <button type="button" className="btn soft" onClick={onClose}>رجوع</button>
+      </div>
+    );
+  } else if (done?.enrolled) {
     body = (
       <div className="stack" style={{ alignItems: 'center', gap: 12, textAlign: 'center', padding: '10px 0' }}>
         {done.photo && <img src={done.photo} alt="" style={{ width: 160, borderRadius: 20 }} />}
