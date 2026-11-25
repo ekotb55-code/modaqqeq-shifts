@@ -5,8 +5,8 @@ import { logAct } from '../activity.js';
 import { Avatar, Modal, useToast } from '../ui.jsx';
 import { WEEKDAYS, isAdminRole, todayKey, toDate } from '../lib';
 import { FALLBACK, KIND_LABEL, LATE_SYNC_MIN } from '../attendance.js';
-import { EXTRA_LABEL, computeDay, dayAt, effMs, isVoid, minStr, nextDay } from '../attDay.js';
-import { addManual, decideClaim, fixRecord, saveSched, setExtra, setOneDay, voidRecord, deletePhoto, deleteRecord, deleteFace } from '../attAdmin.js';
+import { EXTRA_LABEL, computeDay, dayAt, deductStr, effMs, isVoid, lateDeduct, minStr, nextDay, otHours, rulesOf } from '../attDay.js';
+import { addManual, decideClaim, fixRecord, setExtra, setOneDay, voidRecord, deletePhoto, deleteRecord, deleteFace } from '../attAdmin.js';
 
 // الحضور والانصراف: مين حضر ومين انصرف في يوم معيّن، بالصورة ووقت السيرفر، والحساب على حسب الميعاد.
 // ⚠️ = محتاج مراجعة. ⏳ = محتاج قرار (الساعات الزيادة، أو «جيت الساعة كام»).
@@ -208,18 +208,20 @@ function ShopDay({ shop, day, profile }) {
   const [pub, setPub] = useState(null);
   const [sched, setSched] = useState(null);
   const [dayDoc, setDayDoc] = useState(null);
+  const [rules, setRules] = useState(null);
   const [big, setBig] = useState(null);
   const [modal, setModal] = useState(null);
   const nd = nextDay(day);
   useEffect(() => { getDoc(doc(db, 'shopsPublic', shop.id)).then((s) => setPub(s.data() || {})).catch(() => setPub({})); }, [shop.id]);
   useEffect(() => onSnapshot(doc(db, 'attSched', shop.id), (s) => setSched(s.data() || {}), () => setSched({})), [shop.id]);
+  useEffect(() => onSnapshot(doc(db, 'attRules', shop.id), (s) => setRules(rulesOf(s.data())), () => setRules(rulesOf(null))), [shop.id]);
   useEffect(() => onSnapshot(doc(db, 'attDays', `${shop.id}_${day}`), (s) => setDayDoc(s.data() || {}), () => setDayDoc({})), [shop.id, day]);
   useEffect(() => onSnapshot(query(collection(db, 'attendance'), where('shopId', '==', shop.id), where('day', '==', day)),
     (s) => setRows(s.docs.map((d) => ({ id: d.id, ...d.data() }))), (e) => { console.warn('attendance', e.code); setRows([]); }), [shop.id, day]);
   useEffect(() => onSnapshot(query(collection(db, 'attendance'), where('shopId', '==', shop.id), where('day', '==', nd)),
     (s) => setNext(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => setNext([])), [shop.id, nd]);
 
-  if (!rows || !pub || !sched || !dayDoc) return <section className="card"><span className="muted">بنحمّل…</span></section>;
+  if (!rows || !pub || !sched || !dayDoc || !rules) return <section className="card"><span className="muted">بنحمّل…</span></section>;
   const people = [...(pub.cashiers || []), ...(pub.workers || [])].filter((p, i, a) => p.uid && !p.disabled && a.findIndex((x) => x.uid === p.uid) === i);
   const shown = people.filter((p) => rows.some((r) => r.uid === p.uid) || sched.people?.[p.uid] || dayDoc.sched?.[p.uid]);
   const silent = people.filter((p) => !shown.includes(p));
@@ -253,14 +255,14 @@ function ShopDay({ shop, day, profile }) {
               </div>
               <div className="chips" style={{ gap: 6 }}>
                 {c.forgotIn && <span className="badge warn">⏰ لسه مسجلش حضور</span>}
-                {c.absent && <span className="badge bad">غايب</span>}
-                {c.late > 0 && <span className="badge warn">اتأخر {minStr(c.late)}</span>}
+                {c.absent && <span className="badge bad">غايب · خصم {deductStr({ v: rules.absentDays, unit: 'day' })}</span>}
+                {c.late > 0 && <span className="badge warn">اتأخر {minStr(c.late)}{lateDeduct(c.late, rules) ? ` · خصم ${deductStr(lateDeduct(c.late, rules))}` : ''}</span>}
                 {c.earlyLeave > 0 && <span className="badge warn">مشي بدري {minStr(c.earlyLeave)}</span>}
                 {c.noOut && <span className="badge warn">⚠️ حضر ومنصرفش</span>}
                 {c.extra > 0 && (
                   <span className={'badge' + (c.pending ? ' warn' : '')} style={{ whiteSpace: 'normal' }}>
                     {c.pending ? '⏳ ' : '✓ '}زيادة عن الميعاد {minStr(c.extra)}{c.earlyIn ? ` (جه بدري ${minStr(c.earlyIn)})` : ''}{c.stayLate ? ` (مشي متأخر ${minStr(c.stayLate)})` : ''}
-                    {c.decision && <> · {EXTRA_LABEL[c.decision.d]}{c.decision.byName ? ` (${c.decision.byName})` : ''}{c.covered ? ` غطّى ${minStr(c.covered)}` : ''}</>}
+                    {c.decision?.d === 'ot' && <> · بتتحسب {Math.round(otHours(c.extra, rules) * 10) / 10} ساعة</>}{c.decision && <> · {EXTRA_LABEL[c.decision.d]}{c.decision.byName ? ` (${c.decision.byName})` : ''}{c.covered ? ` غطّى ${minStr(c.covered)}` : ''}</>}
                   </span>
                 )}
                 {c.extra > 0 && canBoss && (c.pending ? (
@@ -313,7 +315,6 @@ function ShopDay({ shop, day, profile }) {
         {shown.length === 0 && <span className="muted">مفيش تسجيلات في اليوم ده</span>}
         {silent.length > 0 && <span className="small muted">مالهمش ميعاد ومسجلوش: {silent.map((p) => p.name).join('، ')}</span>}
       </div>
-      {canBoss && <SchedEditor shop={shop} people={people} sched={sched} profile={profile} />}
       {big && (
         <Modal title={`${big.name} · ${KIND_LABEL[big.kind]} ${hm(effMs(big))}`} onClose={() => setBig(null)}>
           <img src={big.photo} alt="" style={{ width: '100%', borderRadius: 18 }} />
@@ -345,30 +346,6 @@ function AddModal({ p, day, sched, dayDoc, onSave, onClose }) {
 }
 
 // المواعيد العادية لكل الناس في الفرع (الكاشيرية والعمال)
-function SchedEditor({ shop, people, sched, profile }) {
-  const [open, setOpen] = useState(false);
-  const [edit, setEdit] = useState(null);
-  return (
-    <div className="stack" style={{ gap: 8, marginTop: 8 }}>
-      <button type="button" className="link" style={{ alignSelf: 'flex-start' }} onClick={() => setOpen(!open)}>{open ? 'اقفل المواعيد' : '🕒 المواعيد العادية'}</button>
-      {open && (
-        <div className="stack" style={{ gap: 6 }}>
-          {people.map((p) => {
-            const s = sched.people?.[p.uid];
-            return (
-              <div key={p.uid} className="spread" style={{ background: 'rgba(255,255,255,.7)', borderRadius: 14, padding: '6px 10px' }}>
-                <span><strong>{p.name}</strong> <span className="muted small">{s?.start ? <bdi>{hm24(s.start)} – {hm24(s.end)}</bdi> : 'مالوش ميعاد'}{s?.dayOff != null && s?.dayOff !== '' ? ` · إجازة ${WEEKDAYS[s.dayOff]}` : ''}</span></span>
-                <button type="button" className="link small" onClick={() => setEdit(p)}>تعديل</button>
-              </div>
-            );
-          })}
-        </div>
-      )}
-      {edit && <SchedModal title="الميعاد العادي" person={edit} cur={sched.people?.[edit.uid]} onClose={() => setEdit(null)} onSave={(s) => saveSched(profile, shop.id, edit, s)} />}
-    </div>
-  );
-}
-
 function ShopLog({ shop }) {
   const [rows, setRows] = useState(null);
   const [open, setOpen] = useState(false);

@@ -24,8 +24,7 @@ import Reps from './Reps.jsx';
 import { wants } from '../notifyPrefs.js';
 import { useShopShifts } from './Review.jsx';
 import EarlyAsks from './EarlyAsks.jsx';
-import AttendanceView from './AttendanceView.jsx';
-import WeekPlan, { canPlan } from './WeekPlan.jsx';
+import StaffTab from './StaffTab.jsx';
 
 export default function StaffApp({ profile }) {
   const isAdmin = isAdminRole(profile.role);
@@ -40,8 +39,7 @@ export default function StaffApp({ profile }) {
     { id: 'reports', label: 'التقارير' },
     { id: 'ledger', label: 'العجز والزيادة' },
     shops.some((sh) => (sh.wallets || []).some((w) => walletModeOf(sh, w) === 'owner' && walletVisible(sh, { wallet: w }, profile))) && { id: 'wallet', label: 'التحويلات' },
-    canPlan(profile) && { id: 'plan', label: 'جدول المواعيد' },
-    { id: 'attendance', label: 'الحضور' },
+    { id: 'attendance', label: 'الموظفين' },
     isAdmin && { id: 'setup', label: 'الإعداد' },
     canSeeLog && { id: 'activity', label: 'سجل الدخول' },
   ].filter(Boolean);
@@ -216,8 +214,7 @@ export default function StaffApp({ profile }) {
           {tab === 'ledger' && <Ledger key={effSel} profile={profile} shops={viewShops} canReview={canReview} />}
           {tab === 'wallet' && <WalletTransfers key={effSel} profile={profile} shops={viewShops} />}
           {tab === 'activity' && canSeeLog && <Activity shops={shops} branch={effSel} />}
-          {tab === 'plan' && <WeekPlan key={effSel} shops={viewShops} profile={profile} />}
-          {tab === 'attendance' && <AttendanceView key={effSel} shops={viewShops} profile={profile} />}
+          {tab === 'attendance' && <StaffTab key={effSel} shops={viewShops} profile={profile} />}
           {tab === 'setup' && <Setup profile={profile} shops={shops} sel={setupShop} setSel={setShopSel} />}
         </>
       )}

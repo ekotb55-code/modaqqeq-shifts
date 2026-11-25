@@ -294,6 +294,16 @@ service cloud.firestore {
       allow read: if inShop(shopId) || staffOf(shopId);
       allow write: if bossOf(shopId) && request.resource.data.shopId == shopId;
     }
+    // مرتبات الناس في الفرع (نوعه والمبلغ ولكل أوردر): صاحب المحل ومدقق بس، محدش تاني يشوفها.
+    match /staffPay/{shopId} {
+      allow read: if ownerOf(shopId);
+      allow write: if ownerOf(shopId) && request.resource.data.shopId == shopId;
+    }
+    // بورد القواعد (خصم التأخير، الغياب، الأوفر تايم): صاحب المحل بيغيّرها، والإدارة والفرع بيقروها.
+    match /attRules/{shopId} {
+      allow read: if inShop(shopId) || staffOf(shopId);
+      allow write: if ownerOf(shopId) && request.resource.data.shopId == shopId;
+    }
     // يوم الحضور: تغيير ميعاد ليوم واحد + قرار الساعات الزيادة (أوفر تايم / تبديل / رفض).
     match /attDays/{id} {
       // resource == null: اليوم لسه مالوش مستند، علشان المتابعة تشتغل من الأول
