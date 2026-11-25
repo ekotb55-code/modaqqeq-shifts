@@ -63,7 +63,8 @@ export default function StaffApp({ profile }) {
   const [shopSel, setShopSelRaw] = useState(() => { try { return sessionStorage.getItem('mdq-staff-shop') || null; } catch { return null; } });
   const setShopSel = (v) => { setShopSelRaw(v); try { if (v) sessionStorage.setItem('mdq-staff-shop', v); else sessionStorage.removeItem('mdq-staff-shop'); } catch { /* ignore */ } };
   const validSel = shopSel === 'all' || shops.some((x) => x.id === shopSel) ? shopSel : null;
-  const effSel = validSel || (shops.length === 1 ? shops[0].id : null);
+  // من غير اختيار: «كل الفروع» (ولو فرع واحد بس يبقى هو)
+  const effSel = validSel || (shops.length === 1 ? shops[0].id : shops.length > 1 ? 'all' : null);
   const viewShops = effSel && effSel !== 'all' ? shops.filter((x) => x.id === effSel) : shops;
 
   // Notifications for accountants: a shift handed over (or fixed after reopening), a cashier's request, a message.
@@ -255,6 +256,11 @@ export function ShopPicker({ shops, value, onChange, onNew }) {
               {q && <button type="button" aria-label="امسح البحث" onClick={() => setQ('')}>✕</button>}
             </div>
           )}
+          {shops.length > 1 && !q && (
+            <button type="button" role="option" aria-selected={value === 'all'} className={'sp-item' + (value === 'all' ? ' on' : '')} onClick={() => { onChange('all'); setOpen(false); }}>
+              <strong>كل الفروع</strong><span className="tiny">في الورديات والخزن والتقارير</span>
+            </button>
+          )}
           {q && !list.length && <span className="tiny muted" style={{ padding: '8px 12px' }}>مفيش فرع بالاسم ده</span>}
           {list.map((s) => {
             const o = allOpen(s);
@@ -265,11 +271,6 @@ export function ShopPicker({ shops, value, onChange, onNew }) {
               </button>
             );
           })}
-          {shops.length > 1 && !q && (
-            <button type="button" role="option" aria-selected={value === 'all'} className={'sp-item' + (value === 'all' ? ' on' : '')} onClick={() => { onChange('all'); setOpen(false); }}>
-              <strong>كل الفروع</strong><span className="tiny">في الورديات والخزن والتقارير</span>
-            </button>
-          )}
           {onNew && <button type="button" className="sp-item add" onClick={() => { setOpen(false); onNew(); }}><Icon d="plus" size={18} />محل جديد</button>}
         </div>
       )}
