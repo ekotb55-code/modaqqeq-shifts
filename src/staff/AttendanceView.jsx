@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { collection, deleteDoc, doc, getDoc, onSnapshot, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { logAct } from '../activity.js';
 import { Avatar, Modal, useToast } from '../ui.jsx';
 import { WEEKDAYS, isAdminRole, todayKey, toDate } from '../lib';
 import { FALLBACK, KIND_LABEL, LATE_SYNC_MIN } from '../attendance.js';
 import { EXTRA_LABEL, computeDay, dayAt, effMs, isVoid, minStr, nextDay } from '../attDay.js';
-import { addManual, decideClaim, fixRecord, saveSched, setExtra, setOneDay, voidRecord, deletePhoto, deleteRecord } from '../attAdmin.js';
+import { addManual, decideClaim, fixRecord, saveSched, setExtra, setOneDay, voidRecord, deletePhoto, deleteRecord, deleteFace } from '../attAdmin.js';
 
 // الحضور والانصراف: مين حضر ومين انصرف في يوم معيّن، بالصورة ووقت السيرفر، والحساب على حسب الميعاد.
 // ⚠️ = محتاج مراجعة. ⏳ = محتاج قرار (الساعات الزيادة، أو «جيت الساعة كام»).
@@ -71,6 +71,31 @@ function DelModal({ r, onClose, profile }) {
         <label className="field">السبب (بيتسجل في سجل التعديلات)<input className="input" value={why} onChange={(e) => setWhy(e.target.value)} placeholder="مثلاً: تسجيل تجربة" /></label>
         <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}><input type="checkbox" checked={sure} onChange={(e) => setSure(e.target.checked)} /> فاهم إن المسح ده مالوش رجوع</label>
         <button type="button" className="btn red" disabled={busy || !sure} onClick={go}>{busy ? 'لحظة…' : '🗑 امسح نهائي'}</button>
+      </div>
+    </Modal>
+  );
+}
+
+// مسح بصمة الوش: لازم صاحب الشغل يكتب الباسورد بتاعه
+function FaceDelModal({ r, profile, onClose }) {
+  const [pw, setPw] = useState('');
+  const [why, setWhy] = useState('');
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  const go = async () => {
+    if (!pw) { toast('اكتب الباسورد بتاعك', 'err'); return; }
+    if (!why.trim()) { toast('اكتب السبب', 'err'); return; }
+    setBusy(true);
+    try { await deleteFace(profile, r, pw, why.trim()); toast('البصمة اتمسحت'); onClose(); }
+    catch (e) { console.error(e); toast(['auth/invalid-credential', 'auth/wrong-password'].includes(e.code) ? 'الباسورد غلط' : e.code === 'auth/too-many-requests' ? 'محاولات كتير، استنى شوية' : 'مش قادرين نمسح، اتأكد من النت', 'err'); setBusy(false); }
+  };
+  return (
+    <Modal title={`مسح بصمة وش ${r.name}`} onClose={onClose} width={460}>
+      <div className="stack" style={{ gap: 12 }}>
+        <span className="small">البصمة هتتمسح نهائي. {r.name} هيسجّل وشّه من جديد، ولحد ما يعمل كده هيسجّل حضوره بالرقم السري.</span>
+        <label className="field">السبب (بيتسجل في سجل التعديلات)<input className="input" value={why} onChange={(e) => setWhy(e.target.value)} placeholder="مثلاً: البصمة مش بتتعرف عليه" /></label>
+        <label className="field">الباسورد بتاعك (للتأكيد)<input type="password" className="input" dir="ltr" autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} /></label>
+        <button type="button" className="btn red" disabled={busy} onClick={go}>{busy ? 'لحظة…' : '🗑 امسح البصمة'}</button>
       </div>
     </Modal>
   );
@@ -307,25 +332,23 @@ export default function AttendanceView({ shops, profile }) {
     <div className="wrap stack" style={{ gap: 16 }}>
       <label className="field" style={{ width: 200 }}>اليوم<input type="date" className="input" dir="ltr" value={day} max={todayKey()} onChange={(e) => setDay(e.target.value || todayKey())} /></label>
       {shops.map((sh) => <ShopDay key={sh.id} shop={sh} day={day} profile={profile} />)}
-      {shops.map((sh) => <ShopFaces key={'f' + sh.id} shop={sh} />)}
+      {shops.map((sh) => <ShopFaces key={'f' + sh.id} shop={sh} profile={profile} />)}
       {shops.map((sh) => <ShopLog key={'l' + sh.id} shop={sh} />)}
     </div>
   );
 }
 
 // الوشوش المتسجلة: صاحب المحل أو المدير يقارن صورة التسجيل بالشخص ويوافق. لو غلط يمسحها والشخص يسجّل تاني.
-function ShopFaces({ shop }) {
+function ShopFaces({ shop, profile }) {
   const toast = useToast();
   const [rows, setRows] = useState(null);
+  const [del, setDel] = useState(null);
+  const canOwn = isAdminRole(profile.role) || profile.role === 'owner';
   useEffect(() => onSnapshot(query(collection(db, 'faces'), where('shopId', '==', shop.id)),
     (s) => setRows(s.docs.map((d) => ({ id: d.id, ...d.data() }))), (e) => { console.warn('faces', e.code); setRows([]); }), [shop.id]);
   if (!rows || rows.length === 0) return null;
   const approve = (r) => updateDoc(doc(db, 'faces', r.id), { approved: true, approvedBy: auth.currentUser?.uid || '', approvedAt: serverTimestamp() })
     .then(() => logAct('staff_edit', `وافق على تسجيل وش ${r.name}`, { shopId: shop.id })).catch(() => toast('مش قادرين نحفظ، اتأكد من النت', 'err'));
-  const remove = (r) => {
-    if (!window.confirm(`تمسح بصمة وش ${r.name}؟ هيحتاج يسجّل وشّه تاني.`)) return;
-    deleteDoc(doc(db, 'faces', r.id)).then(() => logAct('staff_edit', `مسح بصمة وش ${r.name}`, { shopId: shop.id })).catch(() => toast('مش قادرين نمسح، اتأكد من النت', 'err'));
-  };
   const pending = rows.filter((r) => !r.approved);
   return (
     <section className="card">
@@ -338,10 +361,11 @@ function ShopFaces({ shop }) {
             <strong>{r.name}</strong>
             <span className="tiny muted">وافق على التصوير <bdi>{toDate(r.consentAt)?.toLocaleDateString('ar-EG', { day: 'numeric', month: 'short', timeZone: 'Africa/Cairo' }) || '—'}</bdi></span>
             {r.approved ? <span className="badge">✓ متوافق عليه</span> : <button type="button" className="btn sm" onClick={() => approve(r)}>موافقة</button>}
-            <button type="button" className="link small" onClick={() => remove(r)}>امسح</button>
+            {canOwn && <button type="button" className="link small" style={{ color: 'var(--red)' }} onClick={() => setDel(r)}>🗑 امسح البصمة</button>}
           </div>
         ))}
       </div>
+      {del && <FaceDelModal r={{ ...del, shopId: del.shopId || shop.id }} profile={profile} onClose={() => setDel(null)} />}
     </section>
   );
 }

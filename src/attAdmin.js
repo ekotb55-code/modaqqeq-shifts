@@ -1,4 +1,5 @@
 import { addDoc, collection, deleteDoc, doc, serverTimestamp, setDoc, updateDoc, deleteField } from 'firebase/firestore';
+import { EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { auth, db } from './firebase';
 import { todayKey } from './lib';
 
@@ -26,6 +27,13 @@ export async function deletePhoto(profile, r, reason) {
 export async function deleteRecord(profile, r, reason) {
   await deleteDoc(doc(db, 'attendance', r.id));
   await log(profile, r.shopId, 'del', `مسح ${r.kind === 'in' ? 'حضور' : 'انصراف'} ${r.name} نهائي`, { recId: r.id, uid: r.uid, day: r.day, fromMs: r.fixAtMs || r.at?.toMillis?.() || r.atLocalMs, reason });
+}
+// مسح بصمة وش حد: صاحب الشغل بس، وبعد ما يكتب الباسورد بتاعه تاني. الشخص هيسجّل وشّه من جديد، ولحد كده بيسجّل بالرقم السري.
+export async function deleteFace(profile, r, password, reason) {
+  const u = auth.currentUser;
+  await reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, password));
+  await deleteDoc(doc(db, 'faces', r.id));
+  await log(profile, r.shopId, 'del-face', `مسح بصمة وش ${r.name}`, { uid: r.uid || r.id, reason });
 }
 // «جيت الساعة كام؟»: صاحب الشغل يوافق (الوقت يتعدّل للي قاله) أو يرفض (يفضل وقت التسجيل الحقيقي)
 export async function decideClaim(profile, r, ok) {

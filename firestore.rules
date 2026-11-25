@@ -284,7 +284,8 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['uid', 'name', 'shopId', 'desc', 'n', 'photo', 'consentV', 'consentAt', 'at', 'deviceId', 'approved']);
       allow update: if staffOf(resource.data.shopId)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approved', 'approvedBy', 'approvedAt']);
-      allow delete: if staffOf(resource.data.shopId) || (signedIn() && request.auth.uid == uid);
+      // مسح البصمة: صاحب الشغل بس (والتطبيق بيطلب الباسورد بتاعه قبلها)، أو الشخص نفسه
+      allow delete: if ownerOf(resource.data.shopId) || (signedIn() && request.auth.uid == uid);
       allow read: if (signedIn() && request.auth.uid == uid) || inShop(resource.data.shopId) || staffOf(resource.data.shopId);
     }
 
