@@ -41,7 +41,7 @@ export default function Reports({ profile, shops }) {
     const r = rev(s.id);
     const t = r?.totals || {};
     return { ...s, sales: r?.sales, diff: s.status === 'closed' ? (r?.diff ?? s.diff) : null, exp: t.expenses, insta: t.insta, vf: t.vf, cash: t.cash ?? (num(s.handover?.drawerTotal) + num(s.handover?.side)), mins: minutesBetween(s.openedAt || s.openedAtLocal, s.submittedAt) };
-  }).sort((a, b) => String(a.openedAtLocal).localeCompare(String(b.openedAtLocal))), [shifts, reviews]); // eslint-disable-line react-hooks/exhaustive-deps
+  }).sort((a, b) => String(b.openedAtLocal).localeCompare(String(a.openedAtLocal))), [shifts, reviews]); // الأحدث فوق // eslint-disable-line react-hooks/exhaustive-deps
 
   const tot = (k) => rows.reduce((a, r) => a + num(r[k]), 0);
 
