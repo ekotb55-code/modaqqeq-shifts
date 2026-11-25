@@ -49,6 +49,7 @@ function ShopWeek({ shop, days, profile }) {
   const [cell, setCell] = useState(null);
   const [defs, setDefs] = useState(false);
   const [rep, setRep] = useState(false);
+  const [cp, setCp] = useState(false);
   const today = todayKey();
   const [day, setDay] = useState(days.includes(today) ? today : days[0]);
   const allDays = [...days, nextDay(days[6])];
@@ -72,6 +73,7 @@ function ShopWeek({ shop, days, profile }) {
       <div className="spread" style={{ flexWrap: 'wrap', gap: 8 }}>
         <h2 className="h2">📅 {pub.name || shop.name}</h2>
         <span className="chips" style={{ gap: 8 }}>
+          <button type="button" className="btn sm soft" onClick={() => setCp(true)}>📋 انسخ اليوم ده</button>
           <button type="button" className="btn sm" onClick={() => setRep(true)}>🔁 كرر الأسبوع ده</button>
           <button type="button" className="btn sm soft" onClick={() => setDefs(true)}>⚙️ الورديات ومواعيدها</button>
         </span>
@@ -90,6 +92,7 @@ function ShopWeek({ shop, days, profile }) {
       {cell && <CellModal cell={cell} shifts={shifts} onClose={() => setCell(null)} onSave={(s) => save(cell.p, cell.d, s).then(() => setCell(null))} />}
       {defs && <ShiftsModal shifts={shifts} onClose={() => setDefs(false)}
         onSave={(list) => saveShifts(profile, shop.id, list).then(() => { toast('اتحفظ'); setDefs(false); }).catch(() => toast('مش قادرين نحفظ، اتأكد من النت', 'err'))} />}
+      {cp && <CopyDayModal day={day} days={days} people={people} sched={sched} dayDoc={dayDocs[day]} shop={shop} profile={profile} onClose={() => setCp(false)} />}
       {rep && <RepeatModal days={days} dayDocs={dayDocs} shop={shop} profile={profile} onClose={() => setRep(false)} />}
     </section>
   );
@@ -284,6 +287,55 @@ function ShiftsModal({ shifts, onSave, onClose }) {
         <button type="button" className="btn sm soft" onClick={() => setList([...list, { id: 's' + Date.now(), name: '', start: '12:00', end: '20:00' }])}>＋ وردية زيادة</button>
         <span className="tiny muted">لو الوردية بتخلص بعد نص الليل (زي 5 لـ 12 بالليل) اكتبها عادي.</span>
         <button type="button" className="btn" disabled={!ok} onClick={() => onSave(list.map((x) => ({ ...x, name: x.name.trim() })))}>حفظ</button>
+      </div>
+    </Modal>
+  );
+}
+
+// نسخ يوم على أيام تانية: اليوم اللي بيتنسخ عليه بيبقى شبهه بالظبط (ميعاد كل واحد أو إجازته).
+// الأيام اللي اتعدلت قبل كده بتتساب، إلا لو اختار «اكتب عليها».
+function CopyDayModal({ day, days, people, sched, dayDoc, shop, profile, onClose }) {
+  const toast = useToast();
+  const targets = [...days, ...days.map((d) => addDays(d, 7))].filter((d) => d !== day && d >= todayKey());
+  const [sel, setSel] = useState(() => (targets.includes(nextDay(day)) ? [nextDay(day)] : []));
+  const [over, setOver] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const flip = (d) => setSel(sel.includes(d) ? sel.filter((x) => x !== d) : [...sel, d]);
+  const src = {};
+  people.forEach((p) => { const s = schedFor(p.uid, day, sched, dayDoc); if (s?.off) src[p.uid] = { off: true }; else if (s) src[p.uid] = { start: s.startHM, end: s.endHM }; });
+  const go = async () => {
+    if (!sel.length) { toast('اختار يوم واحد على الأقل', 'err'); return; }
+    if (over && !window.confirm('متأكد؟ هيمسح التعديلات اللي في الأيام دي ويكتب عليها.')) return;
+    setBusy(true);
+    let copied = 0, skipped = 0;
+    try {
+      for (const to of sel.sort()) {
+        const ref = doc(db, 'attDays', `${shop.id}_${to}`);
+        const cur = (await getDoc(ref)).data() || {};
+        if (!over && Object.keys(cur.sched || {}).length) { skipped++; continue; }
+        await setDoc(ref, { shopId: shop.id, day: to, sched: src }, { mergeFields: ['shopId', 'day', 'sched'] });
+        copied++;
+      }
+      await logPlan(profile, shop.id, `نسخ جدول يوم ${day} على: ${sel.join('، ')}${over ? ' (وكتب على المتعدّل)' : ''}`, day);
+      toast(`اتنسخ ✅ ${copied} يوم${skipped ? ` · وسبت ${skipped} يوم كان متعدّل` : ''}`);
+      onClose();
+    } catch (e) { console.error(e); toast('مش قادرين نحفظ، اتأكد من النت', 'err'); setBusy(false); }
+  };
+  return (
+    <Modal title={`📋 انسخ يوم ${WEEKDAYS[weekday(day)]} ${shortDay(day)}`} onClose={onClose} width={460}>
+      <div className="stack" style={{ gap: 12 }}>
+        <span className="small">اختار الأيام اللي عاوزها تبقى زي اليوم ده بالظبط:</span>
+        <div className="chips" style={{ gap: 6 }}>
+          {targets.map((d) => (
+            <button key={d} type="button" className={'btn sm ' + (sel.includes(d) ? '' : 'soft')} onClick={() => flip(d)}>
+              {sel.includes(d) ? '✓ ' : ''}{WEEKDAYS[weekday(d)]} <span className="tiny" style={{ opacity: 0.7 }}>{shortDay(d)}</span>
+            </button>
+          ))}
+        </div>
+        {targets.length === 0 && <span className="muted small">مفيش أيام جاية في الأسبوعين دول</span>}
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}><input type="checkbox" checked={over} onChange={(e) => setOver(e.target.checked)} /> اكتب على الأيام اللي اتعدلت قبل كده</label>
+        <span className="tiny muted">من غير العلامة دي: أي يوم اتعدل قبل كده بيفضل زي ما هو.</span>
+        <button type="button" className="btn" disabled={busy || !sel.length} onClick={go}>{busy ? 'لحظة…' : `انسخ على ${sel.length} ${sel.length === 1 ? 'يوم' : 'أيام'}`}</button>
       </div>
     </Modal>
   );
