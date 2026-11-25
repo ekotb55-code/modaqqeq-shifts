@@ -291,7 +291,7 @@ function parseSms_(text) {
   const by = t.match(/باسم\s+(.+?)\s*(?:[،,.;]|\s(?:رصيد|رقم|يوم|في)(?:\s|$))/);
   const nm = by || t.match(/(?:^|\s)(?:من|إلى|الى|لـ?)\s+(?!رقم)(.+?)\s*(?:\s(?:يوم|في|بتاريخ|رقم|برقم)(?:\s|$)|[،,])/);
   const ph = t.match(/(?:^|\D)(\+?2?01\d{9})(?!\d)/);
-  const dt = t.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
+  const dt = t.match(/(?:^|[^\d])(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})(?![\d])/);
   const tm = t.match(/(\d{1,2}:\d{2})/);
   const rf = t.match(/(?:رقم المعاملة|رقم العملية|الرقم المرجعي|المرجع|Ref(?:erence)?(?: No)?\.?|Transaction ID)\s*:?\s*([A-Za-z0-9]{4,})/i);
   const ipa = t.match(/([A-Za-z0-9._-]+@[A-Za-z0-9]+)/);
@@ -319,7 +319,7 @@ function applyFormat_(f, text) {
   const amount = Number(num(f.amount, /^([\d,]+(?:\.\d+)?)/).replace(/,/g, ''));
   if (!(amount > 0)) return null;
   const tm = t.match(/(\d{1,2}:\d{2})/);
-  const dt = t.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
+  const dt = t.match(/(?:^|[^\d])(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})(?![\d])/);
   const bal = num(f.balance, /^([\d,]+(?:\.\d+)?)/);
   return { dir: f.dir === 'out' ? 'out' : 'in', amount: amount, balance: bal ? Number(bal.replace(/,/g, '')) : smsBalance_(t), fromName: words(f.name), fromPhone: num(f.phone, /^(\+?\d{8,13})/), ref: num(f.ref, /^([A-Za-z0-9]{3,})/), smsDate: dt ? dt[1] : '', smsTime: tm ? tm[1] : '', text: t.slice(0, 400) };
 }
@@ -339,6 +339,20 @@ function parseAny_(text) {
 }
 
 // رسالة واحدة في المرة: لو الإشعار ورسالة البنك وصلوا في نفس اللحظة، التاني يلاقي الأول ويكمّل عليه بدل ما يتسجّل تحويل جديد.
+// تاريخ العملية المكتوب جوه الرسالة (21-11-26 أو 21/11/2026 + الساعة) → وقت بتوقيت القاهرة. 0 لو مش واضح.
+function smsWhen_(p) {
+  const d = String((p && p.smsDate) || '').match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/);
+  if (!d) return 0;
+  let y = Number(d[3]); if (y < 100) y += 2000;
+  const mo = Number(d[2]); const da = Number(d[1]);
+  if (mo < 1 || mo > 12 || da < 1 || da > 31 || y < 2020) return 0;
+  const tm = String(p.smsTime || '').match(/^(\d{1,2}):(\d{2})$/);
+  const pad = function (n) { return String(n).padStart(2, '0'); };
+  try { return Utilities.parseDate(y + '-' + pad(mo) + '-' + pad(da) + ' ' + (tm ? pad(tm[1]) + ':' + tm[2] : '23:59'), 'Africa/Cairo', 'yyyy-MM-dd HH:mm').getTime(); }
+  catch (e) { return 0; }
+}
+const OLD_SMS_MS_ = 3 * 60 * 60 * 1000; // رسالة عمليتها أقدم من 3 ساعات = «رسالة قديمة» (الموبايل بعتها متأخر)
+
 function sms_(key, text) {
   const lock = LockService.getScriptLock();
   try { lock.waitLock(25000); } catch (e) { /* busy: go on anyway */ }
@@ -360,12 +374,15 @@ function smsOne_(key, text) {
     { fields: toFields_({ lastAtMs: Date.now(), lastText: String(text || '').replace(/\s+/g, ' ').slice(0, 200), lastOk: okMsg }) });
   if (!okMsg) return { ok: true, skipped: true };
   const now = new Date();
+  // رسالة قديمة وصلت متأخر: متتحسبش على الوردية اللي شغالة دلوقتي
+  const whenMs = smsWhen_(p);
+  const old = whenMs > 0 && now.getTime() - whenMs > OLD_SMS_MS_;
   const home = shopMode ? k.shopId : ((k.shopIds && k.shopIds[0]) || k.shopId);
   // إشعار انستاباي بيوصل أسرع بس من غير رقم عملية، والرسالة النصية بتيجي بعده فيها رقم العملية.
   // الاتنين يبقوا تحويل واحد: اللي ييجي التاني يكمّل على الأول (نفس المحفظة ونفس المبلغ في آخر 45 دقيقة)، بالترتيب.
   // الإشعار فيه عنوان انستاباي (xxx@instapay) ومفيهوش رقم عملية؛ رسالة من غير رقم عملية ومن غير عنوان = رسالة بنك عادية (زي الأول)
   const isNote = !p.ref && /[a-z0-9._-]@[a-z]/i.test(p.text);
-  if (isNote) {
+  if (isNote && !old) {
     // MacroDroid ممكن يبعت نفس الإشعار مرتين ورا بعض — ده بس اللي نعتبره تكرار؛ نفس المبلغ من نفس الشخص بعد كده = تحويل جديد
     const ck = 'n:' + key + ':' + md5_(p.text);
     const cache = CacheService.getScriptCache();
@@ -376,7 +393,7 @@ function smsOne_(key, text) {
   } else {
     // نفس الرسالة وصلت مرتين؟ (برقم العملية، ولو البرنامج ماقراهوش: بنص الرسالة)
     if (req_('post', FS + '/smsRefs?documentId=' + encodeURIComponent(key + '_' + (p.ref || 't' + md5_(p.text))), { fields: toFields_({ atMs: now.getTime() }) }).code === 409) return { ok: true, dup: true };
-    const mate = mateOf_(home, wallet, p, now, 'note');
+    const mate = old ? null : mateOf_(home, wallet, p, now, 'note');
     if (mate) {
       patchGroup_(mate, { ref: p.ref || '', fromName: p.fromName || mate.fromName || '', fromIpa: mate.fromName || '', fromPhone: p.fromPhone || mate.fromPhone || '', smsDate: p.smsDate, smsTime: p.smsTime,
         balance: p.balance, charge: p.charge || 0, smsText: p.text, bankOk: true, bankAtMs: now.getTime() });
@@ -386,9 +403,10 @@ function smsOne_(key, text) {
   const refKey = p.ref || (isNote ? 'n' + now.getTime().toString(36) + md5_(p.text).slice(0, 6) : md5_(p.text));
   const base = { wallet: wallet, dir: p.dir, amount: p.amount, charge: p.charge || 0, balance: p.balance, fromName: p.fromName, fromPhone: p.fromPhone, ref: p.ref, smsDate: p.smsDate, smsTime: p.smsTime, text: p.text,
     src: isNote ? 'note' : 'sms', bankOk: !isNote, atMs: now.getTime(), day: Utilities.formatDate(now, 'Africa/Cairo', 'yyyy-MM-dd') };
+  if (old) { base.old = true; base.smsAtMs = whenMs; }
   if (shopMode) base.group = key + '_' + refKey;
   if (shopMode) {
-    const r0 = req_('post', FS + '/walletIn?documentId=' + encodeURIComponent(k.shopId + '_' + refKey), { fields: toFields_(Object.assign({ shopId: k.shopId, status: 'auto' }, base)) });
+    const r0 = req_('post', FS + '/walletIn?documentId=' + encodeURIComponent(k.shopId + '_' + refKey), { fields: toFields_(Object.assign({ shopId: k.shopId, status: old ? 'ignored' : 'auto' }, base)) });
     if (r0.code === 409) return { ok: true, dup: true };
     return r0.code === 200 ? { ok: true } : { ok: false, error: 'save ' + r0.code };
   }
@@ -397,7 +415,8 @@ function smsOne_(key, text) {
   // كل رابط ليه اختياراته (الإعداد ← رسايل البنك ← الحماية). بتتنسخ على كل تحويل علشان التطبيق يعرفها.
   const g = Object.assign({ limit: true, window: true, invoice: true, notify: true, personal: true }, k.guards || {});
   const max = Number(k.maxAmount) > 0 ? Number(k.maxAmount) : 3000;
-  const big = g.limit && p.amount > max;
+  // رسالة قديمة: متظهرش للكاشير، تستنى قرار صاحب المحل
+  const big = old || (g.limit && p.amount > max);
   base.windowMin = g.window ? (Number(k.windowMin) > 0 ? Number(k.windowMin) : 60) : 0;
   base.needInvoice = !!g.invoice;
   base.notifyClaim = !!g.notify;
@@ -416,8 +435,8 @@ function smsOne_(key, text) {
   // sms_big القديم بقى جوّه الإشعار ده.
   const actUrl = ScriptApp.getService().getUrl() + '?a=personal&g=' + encodeURIComponent(group) + '&t=' + actToken_(group);
   req_('post', FS + '/outbox', { fields: toFields_({ type: 'sms_owner', holder: k.holder || '', shopId: shopIds[0], shiftId: '', to: 'staff', toUid: '', byUid: '', atMs: now.getTime(), go: 'wallet', actUrl: g.personal ? actUrl : '',
-    title: (big ? '⚠️ تحويل كبير ' : '💰 وصل ') + p.amount + ' ج' + (p.fromName ? ' من ' + p.fromName : ''),
-    body: big ? 'أكبر من الحد · مش ظاهر للكاشير · ابعته للكاشير من «التحويلات» أو دوس «شخصي»' : (g.personal ? 'ظاهر للكاشيرية دلوقتي · لو بتاعك إنت دوس «شخصي»' : 'ظاهر للكاشيرية دلوقتي') }) });
+    title: (old ? '🕓 رسالة قديمة (' + p.smsDate + ') ' : big ? '⚠️ تحويل كبير ' : '💰 وصل ') + p.amount + ' ج' + (p.fromName ? ' من ' + p.fromName : ''),
+    body: old ? 'العملية دي من يوم ' + p.smsDate + ' والموبايل بعتها متأخر · مش ظاهرة للكاشير · قرر من «التحويلات»' : big ? 'أكبر من الحد · مش ظاهر للكاشير · ابعته للكاشير من «التحويلات» أو دوس «شخصي»' : (g.personal ? 'ظاهر للكاشيرية دلوقتي · لو بتاعك إنت دوس «شخصي»' : 'ظاهر للكاشيرية دلوقتي') }) });
   shopIds.forEach(function (sid) {
     if (big) return;
     const ev = big

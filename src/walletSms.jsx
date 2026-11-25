@@ -59,6 +59,7 @@ function Rows({ t, canIgnore }) {
           <span className={'badge ' + (x.dir === 'out' ? 'bad' : 'ok')} style={{ minWidth: 54, justifyContent: 'center' }}>{x.dir === 'out' ? 'طالع' : 'داخل'}</span>
           <span className="stack" style={{ gap: 1, flex: 1, minWidth: 0 }}>
             <strong style={{ fontSize: 14 }}>{fmt(x.amount)} ج <span className="tiny muted" style={{ fontWeight: 500 }}>· {x.dir === 'out' ? `العميل دفع ${fmt(x.base + x.fee)} كاش` : `بيع/كاش ${fmt(x.base)}`}{x.fee ? ` + خدمة ${fmt(x.fee)}` : ''}</span></strong>
+            {x.old && <span className="badge warn" style={{ alignSelf: 'flex-start', fontSize: 11 }}>🕓 رسالة قديمة · عمليتها يوم {x.smsDate} · الموبايل بعتها متأخر</span>}
             <span className="tiny muted">{timeOf(x)}{x.fromName ? ` · ${x.fromName}` : ''}{x.fromPhone ? ` · ${x.fromPhone}` : ''}{x.charge ? ` · مصاريف ${fmt(x.charge)}` : ''}{x.balance !== null && x.balance !== undefined ? ` · الرصيد بعدها ${fmt(x.balance)}` : ''}</span>
           </span>
           {canIgnore && <button type="button" className="btn sm soft" style={{ height: 36 }} onClick={() => toggle(x)} title={x.ignored ? 'رجّعها للحساب' : 'مش عملية بيع/كاش (مثلًا إيداع من صاحب المحل)'}>{x.ignored ? 'رجّعها' : 'استبعد'}</button>}
