@@ -94,7 +94,7 @@ export default function AttendanceModal({ device, onClose }) {
     whoRef.current = p.uid;
     setWho(p); setMsg(''); setPin(''); setKind(null); setDone(null); setOther(false); setAsk(null); setClaim(null);
     const l = lastPunch(p.uid); setSuggest(l?.kind === 'in' ? 'out' : 'in');
-    nextKind(p).then((k) => { if (whoRef.current === p.uid) setSuggest(k); }).catch(() => {});
+    nextKind(p, device?.shopId).then((k) => { if (whoRef.current === p.uid) setSuggest(k); }).catch(() => {});
   };
   const [suggest, setSuggest] = useState('in');
   const [enroll, setEnroll] = useState(null); // null | consent | capture

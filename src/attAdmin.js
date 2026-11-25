@@ -1,4 +1,4 @@
-import { addDoc, collection, deleteDoc, doc, serverTimestamp, setDoc, updateDoc, deleteField } from 'firebase/firestore';
+import { addDoc, arrayRemove, arrayUnion, collection, deleteDoc, doc, getDoc, serverTimestamp, setDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { auth, db } from './firebase';
 import { todayKey } from './lib';
@@ -74,4 +74,34 @@ export async function saveShifts(profile, shopId, list) {
 }
 export async function logPlan(profile, shopId, text, day) {
   await log(profile, shopId, 'plan', text, { day });
+}
+
+// الجوكر (صاحب المحل بس): شخص واحد بحساب واحد شغال في كذا فرع من فروعه.
+// home = فرعه الأصلي (بيفضل أول فرع في حسابه). shops = {shopId: الساعات المطلوبة منه هناك في اليوم}.
+// في كل فرع: بيتحط في قايمة العمال (علشان يظهر على جهاز الحضور هناك) + ميعاده «جوكر» + مرتبه (اليومية وساعات اليوم).
+// الفروع اللي اتشالت: بيتشال منها (وتسجيلاته القديمة هناك بتفضل زي ما هي).
+export async function saveJoker(profile, { person, home, shops, removed, names, daily, dayHours }) {
+  const ids = Object.keys(shops);
+  const pay = { type: 'joker', amount: Number(daily) || 0, dayHours: Number(dayHours) || 0 };
+  const others = ids.filter((id) => id !== home);
+  if (others.length) await updateDoc(doc(db, 'users', person.uid), { shopIds: arrayUnion(...others) });
+  if (removed.length) await updateDoc(doc(db, 'users', person.uid), { shopIds: arrayRemove(...removed.filter((id) => id !== home)) });
+  const entry = { uid: person.uid, name: person.name || '', username: person.username || '', color: person.color || null, joker: home };
+  for (const id of others) {
+    const pub = (await getDoc(doc(db, 'shopsPublic', id))).data() || {};
+    const list = pub.workers || [];
+    if (!list.some((w) => w.uid === person.uid) && !(pub.cashiers || []).some((c) => c.uid === person.uid)) await setDoc(doc(db, 'shopsPublic', id), { workers: [...list, entry] }, { merge: true });
+  }
+  for (const id of removed.filter((x) => x !== home)) {
+    const pub = (await getDoc(doc(db, 'shopsPublic', id))).data() || {};
+    const list = pub.workers || [];
+    if (list.some((w) => w.uid === person.uid && w.joker)) await setDoc(doc(db, 'shopsPublic', id), { workers: list.filter((w) => !(w.uid === person.uid && w.joker)) }, { merge: true });
+    await setDoc(doc(db, 'attSched', id), { shopId: id, people: { [person.uid]: deleteField() } }, { merge: true });
+    await log(profile, id, 'joker', `شال ${person.name} (جوكر) من الفرع ده`, { uid: person.uid, day: todayKey() });
+  }
+  for (const id of ids) {
+    await setDoc(doc(db, 'attSched', id), { shopId: id, people: { [person.uid]: { joker: true, hours: Number(shops[id]) || 0, shops, home, start: '', end: '', dayOff: null } } }, { merge: true });
+    await setDoc(doc(db, 'staffPay', id), { shopId: id, people: { [person.uid]: pay } }, { merge: true });
+    await log(profile, id, 'joker', `خلّى ${person.name} جوكر: ${ids.map((x) => `${names[x] || x} ${Number(shops[x]) ? `${shops[x]} س` : 'من غير ساعات مطلوبة'}`).join('، ')} · اليومية ${pay.amount} ج لـ ${pay.dayHours} ساعات`, { uid: person.uid, day: todayKey() });
+  }
 }

@@ -45,7 +45,8 @@ async function sessionOf(person) {
 }
 // المفروض يعمل إيه دلوقتي: لو آخر تسجيل ليه (النهارده أو امبارح) «حضور» من أقل من 18 ساعة ← انصراف، غير كده ← حضور.
 // بنسأل السيرفر (من جلسته هو) ولو مفيش نت أو مفيش جلسة نرجع للي محفوظ على الجهاز.
-export async function nextKind(person) {
+// shopId: الجوكر بيشتغل في كذا فرع، فبنبص على تسجيلاته في الفرع ده بس
+export async function nextKind(person, shopId) {
   const local = lastPunch(person.uid);
   try {
     const a = await sessionOf(person);
@@ -56,7 +57,7 @@ export async function nextKind(person) {
       new Promise((_, rej) => setTimeout(() => rej(new Error('slow')), 3000)),
     ]);
     const ms = (r) => r.at?.toMillis?.() || r.atLocalMs || 0;
-    const last = q.docs.map((d) => d.data()).sort((x, z) => ms(z) - ms(x))[0];
+    const last = q.docs.map((d) => d.data()).filter((r) => !shopId || !r.shopId || r.shopId === shopId).sort((x, z) => ms(z) - ms(x))[0];
     const srv = last && Date.now() - ms(last) < OPEN_MS ? last : null;
     const pick = !srv ? local : !local || ms(srv) >= (local.atMs || 0) ? { kind: srv.kind } : local;
     return pick?.kind === 'in' ? 'out' : 'in';

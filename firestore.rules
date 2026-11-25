@@ -32,6 +32,9 @@ service cloud.firestore {
       allow update: if inShop(shopId)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['photos'])
         && request.resource.data.get('photos', {}).diff(resource.data.get('photos', {})).affectedKeys().hasOnly([request.auth.uid]);
+      // الجوكر: صاحب المحل بيضيف شخص من فروعه التانية لقايمة العمال هنا (علشان يظهر على جهاز الحضور)
+      allow update: if ownerOf(shopId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['workers']);
     }
 
     match /shops/{shopId} {
@@ -73,6 +76,13 @@ service cloud.firestore {
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.chain == me().get('chain', []).concat([request.auth.uid])
         && request.resource.data.keys().hasOnly(['role', 'name', 'email', 'shopIds', 'color', 'createdAt', 'createdBy', 'createdByName', 'chain']);
+      // الجوكر: صاحب المحل بيضيف أو يشيل فروع من فروعه هو بس لكاشير أو عامل كل فروعه عنده، وفرعه الأصلي (الأول) ميتغيرش
+      allow update: if hasProfile() && me().role == 'owner' && !me().get('disabled', false)
+        && resource.data.role in ['worker', 'cashier']
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['shopIds'])
+        && request.resource.data.shopIds is list && request.resource.data.shopIds.size() > 0
+        && request.resource.data.shopIds[0] == resource.data.shopIds[0]
+        && me().shopIds.hasAll(resource.data.shopIds) && me().shopIds.hasAll(request.resource.data.shopIds);
       allow read: if signedIn() && request.auth.uid in resource.data.get('chain', []);
       allow update: if hasProfile() && resource.data.role == 'manager' && me().role in ['owner', 'manager'] && !me().get('disabled', false)
         && (request.auth.uid in resource.data.get('chain', []) || (me().role == 'owner' && me().shopIds.hasAll(resource.data.shopIds)))

@@ -3,9 +3,9 @@ import { collection, doc, getDoc, getDocs, onSnapshot, query, setDoc, where } fr
 import { db } from '../firebase';
 import { Modal, useToast } from '../ui.jsx';
 import { ROLE_LABEL, WEEKDAYS, isAdminRole } from '../lib';
-import { DEFAULT_RULES, deductStr, flexMonth, monthDays, nextDay, rulesOf } from '../attDay.js';
+import { DEFAULT_RULES, deductStr, flexMonth, jokerMonth, jokerRate, monthDays, nextDay, rulesOf } from '../attDay.js';
 import { todayKey } from '../lib';
-import { logPlan, saveSched } from '../attAdmin.js';
+import { logPlan, saveJoker, saveSched } from '../attAdmin.js';
 import AttendanceView from './AttendanceView.jsx';
 import WeekPlan, { canPlan } from './WeekPlan.jsx';
 
@@ -13,7 +13,7 @@ import WeekPlan, { canPlan } from './WeekPlan.jsx';
 // المرتبات والقواعد لصاحب المحل بس (ومدقق). المدير بيشوف الجدول والحضور ويعدّل المواعيد.
 export const isOwner = (profile) => isAdminRole(profile.role) || profile.role === 'owner';
 
-export default function StaffTab({ shops, profile }) {
+export default function StaffTab({ shops, allShops, profile }) {
   const plan = canPlan(profile), own = isOwner(profile);
   const subs = [plan && ['plan', '📅 الجدول'], ['att', '🕒 الحضور'], plan && ['people', '👥 الموظفين'], own && ['rules', '📋 القواعد']].filter(Boolean);
   const [sub, setSub] = useState(subs[0][0]);
@@ -26,7 +26,7 @@ export default function StaffTab({ shops, profile }) {
       </div>
       {sub === 'plan' && <WeekPlan shops={shops} profile={profile} />}
       {sub === 'att' && <AttendanceView shops={shops} profile={profile} />}
-      {sub === 'people' && <div className="wrap stack" style={{ gap: 16 }}>{shops.map((sh) => <ShopPeople key={sh.id} shop={sh} profile={profile} />)}</div>}
+      {sub === 'people' && <div className="wrap stack" style={{ gap: 16 }}>{shops.map((sh) => <ShopPeople key={sh.id} shop={sh} profile={profile} allShops={allShops || shops} />)}</div>}
       {sub === 'rules' && <div className="wrap stack" style={{ gap: 16 }}>{shops.map((sh) => <RulesBoard key={sh.id} shop={sh} profile={profile} />)}</div>}
     </div>
   );
@@ -34,11 +34,14 @@ export default function StaffTab({ shops, profile }) {
 
 // ---------- الموظفين: ميعاد كل واحد ويوم إجازته ومرتبه ----------
 export const PAY_TYPES = { monthly: 'مرتب شهري', daily: 'يومية', hourly: 'بالساعة' };
+const rateStr = (r) => (Math.round(r * 100) / 100).toLocaleString('ar-EG');
+// ساعات بكسر عشري للحسابات (99.3 ساعة) علشان الضرب يبقى واضح
+const hDec = (h) => (Math.round(h * 10) / 10).toLocaleString('ar-EG');
 const money = (n) => (n || n === 0 ? `${Number(n).toLocaleString('ar-EG')} ج` : '—');
 const h12 = (s) => { if (!s) return '—'; const [h, m] = s.split(':').map(Number); const x = h % 12 || 12; return (m ? `${x}:${String(m).padStart(2, '0')}` : String(x)) + (h < 12 ? ' ص' : ' م'); };
-export const payStr = (p) => !p?.type ? 'مش متحدد' : `${PAY_TYPES[p.type]} ${money(p.amount)}${p.perOrder ? ` + ${money(p.perOrder)} للأوردر` : ''}`;
+export const payStr = (p) => !p?.type ? 'مش متحدد' : p.type === 'joker' ? `يومية ${money(p.amount)} لـ ${p.dayHours} ساعات · الساعة ${rateStr(jokerRate(p))} ج` : `${PAY_TYPES[p.type]} ${money(p.amount)}${p.perOrder ? ` + ${money(p.perOrder)} للأوردر` : ''}`;
 
-function ShopPeople({ shop, profile }) {
+function ShopPeople({ shop, profile, allShops }) {
   const toast = useToast();
   const own = isOwner(profile);
   const [pub, setPub] = useState(null);
@@ -46,7 +49,7 @@ function ShopPeople({ shop, profile }) {
   const [pay, setPay] = useState(null);
   const [edit, setEdit] = useState(null);
   const [month, setMonth] = useState(null);
-  const anyFlex = !!sched && Object.values(sched.people || {}).some((x) => x?.flex);
+  const anyFlex = !!sched && Object.values(sched.people || {}).some((x) => x?.flex || x?.joker);
   // تسجيلات الشهر ده (يوم يوم، علشان ميحتاجش index) لحساب ساعات المرنين
   useEffect(() => {
     if (!anyFlex) return undefined;
@@ -65,8 +68,12 @@ function ShopPeople({ shop, profile }) {
     ...(pub.cashiers || []).map((p) => ({ ...p, kind: 'cashier' })),
     ...(pub.workers || []).map((p) => ({ ...p, kind: 'worker' })),
   ].filter((p, i, a) => p.uid && !p.disabled && a.findIndex((x) => x.uid === p.uid) === i);
-  const save = async (p, s, py) => {
-    await saveSched(profile, shop.id, p, s);
+  const save = async (p, s, py, jk) => {
+    const was = sched.people?.[p.uid];
+    if (jk) { await saveJoker(profile, { person: p, ...jk }); return; }
+    // كان جوكر ورجع عادي: يتشال من الفروع التانية
+    if (was?.joker && was.shops) await saveJoker(profile, { person: p, home: shop.id, shops: {}, removed: Object.keys(was.shops).filter((x) => x !== shop.id), names: {}, daily: 0, dayHours: 0 });
+    await saveSched(profile, shop.id, p, { ...s, joker: false });
     if (own && py) {
       await setDoc(doc(db, 'staffPay', shop.id), { shopId: shop.id, people: { [p.uid]: py } }, { merge: true });
       await logPlan(profile, shop.id, `غيّر مرتب ${p.name}: ${payStr(py)}`, '');
@@ -84,15 +91,17 @@ function ShopPeople({ shop, profile }) {
               <span className="chips" style={{ gap: 8, alignItems: 'center' }}>
                 <strong>{p.name}</strong>
                 <span className="badge tiny">{ROLE_LABEL[p.kind]}</span>
+                {p.joker && p.joker !== shop.id && <span className="badge tiny">🃏 من {nameOf(allShops, p.joker)}</span>}
               </span>
               <span className="small muted" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                {s.flex ? <span>⏳ مرن · {s.hours} {Number(s.hours) === 1 ? 'ساعة' : 'ساعات'} في اليوم</span> : <>
+                {s.joker ? <span>🃏 جوكر · {Object.entries(s.shops || { [shop.id]: s.hours }).map(([id, h]) => `${nameOf(allShops, id)}${Number(h) ? ` ${h} س` : ''}`).join(' · ')}</span> : s.flex ? <span>⏳ مرن · {s.hours} {Number(s.hours) === 1 ? 'ساعة' : 'ساعات'} في اليوم</span> : <>
                   <span>🕒 {s.start ? <bdi>{h12(s.start)} – {h12(s.end)}</bdi> : 'مالوش ميعاد'}</span>
                   <span>🌴 {s.dayOff != null && s.dayOff !== '' ? WEEKDAYS[s.dayOff] : 'مفيش'}</span>
                 </>}
                 {own && <span>💰 {payStr(pay.people?.[p.uid])}</span>}
                 <span style={{ color: 'var(--blue)' }}>تعديل</span>
               </span>
+              {s.joker && <JokerBar m={month ? jokerMonth({ uid: p.uid, records: month.filter((r) => r.uid === p.uid), day: todayKey(), sched, dayDocs: {}, rules: null, pay: pay.people?.[p.uid] }) : null} own={own} />}
               {s.flex && <FlexBar m={month ? flexMonth(month.filter((r) => r.uid === p.uid), todayKey(), Number(s.hours) || 0) : null} pay={own ? pay.people?.[p.uid] : null} />}
             </button>
           );
@@ -100,8 +109,8 @@ function ShopPeople({ shop, profile }) {
         {people.length === 0 && <span className="muted">مفيش حد في الفرع ده لسه</span>}
       </div>
       <span className="tiny muted">إضافة كاشير أو عامل جديد بتبقى من «الإعداد». هنا بتظبط ميعاده وإجازته{own ? ' ومرتبه' : ''}.{own ? ' المرتبات بتبان لصاحب المحل بس.' : ''}</span>
-      {edit && <PersonModal p={edit} s={sched.people?.[edit.uid]} pay={pay.people?.[edit.uid]} own={own} onClose={() => setEdit(null)}
-        onSave={(s, py) => save(edit, s, py).then(() => { toast('اتحفظ'); setEdit(null); }).catch((e) => { console.error(e); toast('مش قادرين نحفظ، اتأكد من النت', 'err'); })} />}
+      {edit && <PersonModal p={edit} s={sched.people?.[edit.uid]} pay={pay.people?.[edit.uid]} own={own} shop={shop} allShops={allShops} profile={profile} onClose={() => setEdit(null)}
+        onSave={(s, py, jk) => save(edit, s, py, jk).then(() => { toast('اتحفظ'); setEdit(null); }).catch((e) => { console.error(e); toast('مش قادرين نحفظ، اتأكد من النت', 'err'); })} />}
     </section>
   );
 }
@@ -129,15 +138,78 @@ export function FlexBar({ m, pay }) {
   );
 }
 
-function PersonModal({ p, s, pay, own, onSave, onClose }) {
+const nameOf = (shops, id) => shops?.find((x) => x.id === id)?.name || 'فرع تاني';
+
+// الجوكر في الفرع ده: اشتغل كام ساعة هنا الشهر ده (ومن المطلوب لو ليه ساعات مطلوبة هنا)
+function JokerBar({ m, own }) {
+  if (!m) return <span className="tiny muted" style={{ width: '100%' }}>بنحسب ساعات الشهر…</span>;
+  if (m.hours) return <span className="stack" style={{ width: '100%', gap: 2 }}><FlexBar m={m} />{own && m.rate > 0 && <span className="tiny muted">المحسوب هنا لحد دلوقتي: {hDec(m.paidH)} ساعة × {rateStr(m.rate)} = {Math.round(m.gross).toLocaleString('ar-EG')} ج{m.over > 0 ? ` · ${hDec(m.over)} ساعة زيادة عن المطلوب مش محسوبة` : ''}</span>}</span>;
+  return <span className="small" style={{ width: '100%' }}>اشتغل هنا <strong>{hDec(m.worked)}</strong> ساعة الشهر ده{own && m.rate > 0 ? ` · ${Math.round(m.gross).toLocaleString('ar-EG')} ج` : ''}</span>;
+}
+
+// حساب الجوكر في كل فروعه الشهر ده + الإجمالي (صاحب المحل بس)
+function JokerMonth({ uid, shopIds, allShops }) {
+  const [rows, setRows] = useState(null);
+  useEffect(() => {
+    let dead = false;
+    const today = todayKey();
+    const days = monthDays(today);
+    const upTo = days.filter((d) => d <= today);
+    const chunks = [days.slice(0, 16), [...days.slice(16), nextDay(days[days.length - 1])]];
+    Promise.all(shopIds.map(async (id) => {
+      const [recs, dd, sc, ru, py] = await Promise.all([
+        Promise.all(chunks.map((ch) => getDocs(query(collection(db, 'attendance'), where('shopId', '==', id), where('uid', '==', uid), where('day', 'in', ch))).then((q) => q.docs.map((x) => ({ id: x.id, ...x.data() }))))).then((a) => a.flat()),
+        Promise.all(upTo.map((d) => getDoc(doc(db, 'attDays', `${id}_${d}`)).then((x) => [d, x.data()]).catch(() => [d, null]))).then((a) => Object.fromEntries(a.filter((x) => x[1]))),
+        getDoc(doc(db, 'attSched', id)).then((x) => x.data() || {}),
+        getDoc(doc(db, 'attRules', id)).then((x) => x.data() || null).catch(() => null),
+        getDoc(doc(db, 'staffPay', id)).then((x) => x.data()?.people?.[uid] || null).catch(() => null),
+      ]);
+      return { id, m: jokerMonth({ uid, records: recs, day: today, sched: sc, dayDocs: dd, rules: ru, pay: py }) };
+    })).then((r) => { if (!dead) setRows(r); }).catch((e) => { console.error(e); if (!dead) setRows([]); });
+    return () => { dead = true; };
+  }, [uid, shopIds.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!rows) return <span className="tiny muted">بنحسب الشهر في كل الفروع…</span>;
+  const tot = rows.reduce((a, { m }) => a + m.net, 0);
+  const r0 = (n) => Math.round(n).toLocaleString('ar-EG');
+  return (
+    <div className="stack" style={{ gap: 6, background: 'rgba(255,255,255,.75)', borderRadius: 14, padding: 10 }}>
+      <strong className="small">🧮 حسابه الشهر ده لحد النهارده</strong>
+      {rows.map(({ id, m }) => (
+        <div key={id} className="stack" style={{ gap: 2, borderBottom: '1px solid rgba(0,0,0,.06)', paddingBottom: 6 }}>
+          <span className="small" style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><strong>{nameOf(allShops, id)}</strong><strong>{r0(m.net)} ج</strong></span>
+          <span className="tiny muted">اشتغل {hDec(m.worked)} ساعة{m.hours ? ` من ${hDec(m.target)} مطلوبة (${m.hours} س × ${m.days} يوم)` : ''} · المحسوب {hDec(m.paidH)} ساعة × {rateStr(m.rate)} ج = {r0(m.gross)} ج</span>
+          {m.over > 0 && <span className="tiny muted">{hDec(m.over)} ساعة زيادة عن المطلوب هنا: مش محسوبة ومش أوفر تايم</span>}
+          {m.hours > 0 && m.worked < m.dueSoFar - 0.01 && <span className="tiny" style={{ color: '#e53935' }}>متأخر {hDec(m.dueSoFar - m.worked)} ساعة عن المطلوب لحد النهارده</span>}
+          {m.ded.map((x) => <span key={x.day} className="tiny" style={{ color: '#e53935' }}>{x.day.slice(5)}: {x.txt} = −{r0(x.money)} ج</span>)}
+        </div>
+      ))}
+      <span className="small" style={{ display: 'flex', justifyContent: 'space-between' }}><strong>الإجمالي</strong><strong>{r0(tot)} ج</strong></span>
+      <span className="tiny muted">الساعات المفتوحة (لسه منصرفش) مش محسوبة. كل فرع بيتحسب لوحده.</span>
+    </div>
+  );
+}
+
+function PersonModal({ p, s, pay, own, shop, allShops, profile, onSave, onClose }) {
   const [flex, setFlex] = useState(!!s?.flex);
+  const [joker, setJoker] = useState(!!s?.joker);
+  const home = s?.home || p.joker || shop.id;
+  const [jShops, setJShops] = useState(() => s?.shops || { [shop.id]: s?.hours || 0 });
+  const [jPay, setJPay] = useState({ daily: pay?.type === 'joker' ? pay.amount : '', dayHours: pay?.type === 'joker' ? pay.dayHours : 8 });
+  const [q, setQ] = useState('');
+  // الفروع اللي ينفع يشتغل فيها: فروع صاحب المحل (والإدارة بتشوف الكل)
+  const cand = (allShops || []).filter((x) => isAdminRole(profile.role) || (profile.shopIds || []).includes(x.id));
   const [hours, setHours] = useState(s?.hours ?? 4);
   const [f, setF] = useState({ start: s?.start || '', end: s?.end || '', dayOff: s?.dayOff ?? null });
-  const [py, setPy] = useState({ type: pay?.type || 'monthly', amount: pay?.amount ?? '', perOrder: pay?.perOrder ?? '' });
+  const [py, setPy] = useState({ type: PAY_TYPES[pay?.type] ? pay.type : 'monthly', amount: PAY_TYPES[pay?.type] ? pay.amount ?? '' : '', perOrder: pay?.perOrder ?? '' });
   const [busy, setBusy] = useState(false);
   const go = () => {
     setBusy(true);
     const payOut = own ? { type: py.type, amount: Number(py.amount) || 0, perOrder: Number(py.perOrder) || 0 } : null;
+    if (joker) {
+      const removed = Object.keys(s?.shops || {}).filter((x) => !(x in jShops));
+      onSave(null, null, { home, shops: Object.fromEntries(Object.entries({ ...jShops, [home]: jShops[home] ?? 0 }).map(([k, v]) => [k, Number(v) || 0])), removed, names: Object.fromEntries(cand.map((x) => [x.id, x.name])), daily: jPay.daily, dayHours: jPay.dayHours }).finally(() => setBusy(false));
+      return;
+    }
     onSave(flex ? { flex: true, hours: Number(hours) || 0, start: '', end: '', dayOff: null } : { flex: false, start: f.start, end: f.end, dayOff: f.dayOff }, payOut).finally(() => setBusy(false));
   };
   const unit = { monthly: 'في الشهر', daily: 'في اليوم', hourly: 'في الساعة' }[py.type];
@@ -145,16 +217,49 @@ function PersonModal({ p, s, pay, own, onSave, onClose }) {
     <Modal title={`${p.name} · ${ROLE_LABEL[p.kind]}`} onClose={onClose} width={460}>
       <div className="stack" style={{ gap: 12 }}>
         <div className="chips" style={{ gap: 6 }}>
-          <button type="button" className={'btn sm ' + (!flex ? '' : 'soft')} onClick={() => setFlex(false)}>🕒 بميعاد</button>
-          <button type="button" className={'btn sm ' + (flex ? '' : 'soft')} onClick={() => setFlex(true)}>⏳ مرن (عدد ساعات)</button>
+          <button type="button" className={'btn sm ' + (!flex && !joker ? '' : 'soft')} onClick={() => { setFlex(false); setJoker(false); }}>🕒 بميعاد</button>
+          <button type="button" className={'btn sm ' + (flex && !joker ? '' : 'soft')} onClick={() => { setFlex(true); setJoker(false); }}>⏳ مرن (عدد ساعات)</button>
+          {own && <button type="button" className={'btn sm ' + (joker ? '' : 'soft')} onClick={() => setJoker(true)}>🃏 جوكر (كذا فرع)</button>}
         </div>
-        {flex && (
+        {joker && (
+          <>
+            <span className="tiny muted">الجوكر بيشتغل في كذا فرع وبياخد بالساعة: كل ساعة اشتغلها في أي فرع بتتحسب له هناك. لو حطيته في «📅 الجدول» يوم في فرع، يلتزم بالميعاد ده ويتحسب عليه التأخير والغياب بقواعد الفرع ده. لو كاتب له «ساعات مطلوبة» في فرع، بيتحاسب على الشهر هناك، والزيادة في فرع مبتعوّضش فرع تاني ومش أوفر تايم.</span>
+            <strong className="small">بيشتغل في</strong>
+            {cand.length > 8 && <input className="input" placeholder="دوّر على فرع" value={q} onChange={(e) => setQ(e.target.value)} />}
+            <div className="stack" style={{ gap: 6, maxHeight: 260, overflowY: 'auto' }}>
+              {cand.filter((x) => x.id === home || x.id in jShops || !q || String(x.name).includes(q)).map((x) => {
+                const on = x.id === home || x.id in jShops;
+                return (
+                  <div key={x.id} style={{ display: 'flex', gap: 8, alignItems: 'center', background: on ? 'rgba(46,158,91,.08)' : 'rgba(0,0,0,.03)', borderRadius: 10, padding: '6px 10px' }}>
+                    <label style={{ display: 'flex', gap: 8, alignItems: 'center', flex: 1, minWidth: 0 }}>
+                      <input type="checkbox" checked={on} disabled={x.id === home} onChange={(e) => setJShops((o) => { const n = { ...o }; if (e.target.checked) n[x.id] = 0; else delete n[x.id]; return n; })} />
+                      <span className="small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.name}{x.id === home ? ' (فرعه)' : ''}</span>
+                    </label>
+                    {on && <>
+                      <input type="number" step="0.5" min="0" className="input" dir="ltr" style={{ width: 62, padding: '0 8px' }} value={jShops[x.id] ?? 0} onChange={(e) => setJShops((o) => ({ ...o, [x.id]: e.target.value }))} />
+                      <span className="tiny muted" style={{ whiteSpace: 'nowrap' }}>س مطلوبة/يوم</span>
+                    </>}
+                  </div>
+                );
+              })}
+            </div>
+            <span className="tiny muted">«0» = مش مطلوب منه ساعات في الفرع ده، أي ساعة يشتغلها هناك بتتحسب.</span>
+            <strong className="small">الفلوس</strong>
+            <div className="chips" style={{ gap: 10, alignItems: 'flex-end' }}>
+              <label className="field" style={{ width: 130 }}>اليومية (ج)<input type="number" inputMode="decimal" className="input" dir="ltr" value={jPay.daily} onChange={(e) => setJPay({ ...jPay, daily: e.target.value })} /></label>
+              <label className="field" style={{ width: 130 }}>ساعات اليوم<input type="number" step="0.5" inputMode="decimal" className="input" dir="ltr" value={jPay.dayHours} onChange={(e) => setJPay({ ...jPay, dayHours: e.target.value })} /></label>
+              <span className="small" style={{ paddingBottom: 10 }}>الساعة = <strong>{Number(jPay.dayHours) > 0 ? rateStr((Number(jPay.daily) || 0) / Number(jPay.dayHours)) : '—'} ج</strong></span>
+            </div>
+            {s?.joker && <JokerMonth uid={p.uid} shopIds={Object.keys(s.shops || { [shop.id]: 0 })} allShops={allShops} />}
+          </>
+        )}
+        {flex && !joker && (
           <>
             <label className="field" style={{ width: 200 }}>كام ساعة في اليوم<input type="number" step="0.5" min="0.5" inputMode="decimal" className="input" dir="ltr" value={hours} onChange={(e) => setHours(e.target.value)} /></label>
             <span className="tiny muted">ييجي في أي وقت، ويقدر يحضر وينصرف أكتر من مرة في اليوم. المطلوب منه في الشهر = الساعات دي × أيام الشهر كلها ({Number(hours) || 0} × 30 = {(Number(hours) || 0) * 30} ساعة في شهر 30 يوم). لو مكمّلش يتخصم الناقص، والساعة = المرتب ÷ ساعات الشهر. مفيش عليه تأخير ولا غياب.</span>
           </>
         )}
-        {!flex && <>
+        {!flex && !joker && <>
         <strong className="small">الميعاد العادي</strong>
         <div className="chips" style={{ gap: 10 }}>
           <label className="field" style={{ width: 125 }}>من<input type="time" className="input" dir="ltr" value={f.start} onChange={(e) => setF({ ...f, start: e.target.value })} /></label>
@@ -167,7 +272,7 @@ function PersonModal({ p, s, pay, own, onSave, onClose }) {
         </div>
         <span className="tiny muted">لو عاوز تبدّل الإجازة أو تغيّر الميعاد يوم واحد بس، اعملها من «📅 الجدول».</span>
         </>}
-        {own && (
+        {own && !joker && (
           <>
             <strong className="small">المرتب</strong>
             <div className="chips" style={{ gap: 6 }}>
@@ -179,7 +284,7 @@ function PersonModal({ p, s, pay, own, onSave, onClose }) {
             </div>
           </>
         )}
-        <button type="button" className="btn" disabled={busy || (flex ? !(Number(hours) > 0) : (f.start && !f.end) || (!f.start && f.end))} onClick={go}>{busy ? 'لحظة…' : 'حفظ'}</button>
+        <button type="button" className="btn" disabled={busy || (joker ? !(Number(jPay.daily) > 0 && Number(jPay.dayHours) > 0) : flex ? !(Number(hours) > 0) : (f.start && !f.end) || (!f.start && f.end))} onClick={go}>{busy ? 'لحظة…' : 'حفظ'}</button>
       </div>
     </Modal>
   );

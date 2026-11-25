@@ -26,7 +26,7 @@ export const isVoid = (r) => r.fixState === 'void';
 export function schedFor(uid, day, sched, dayDoc) {
   const o = dayDoc?.sched?.[uid];
   const s = o || sched?.people?.[uid];
-  if (!o && s?.flex) return null; // مرن: مالوش ميعاد، بس ليه عدد ساعات (flexHours)
+  if (!o && (s?.flex || s?.joker)) return null; // مرن أو جوكر: مالوش ميعاد عادي، بس ليه عدد ساعات (flexHours). الجوكر لو اتحط في الجدول يوم يلتزم بيه
   if (!s || s.off) return o?.off ? { off: true } : null;
   if (!o && s.dayOff != null && s.dayOff !== '' && Number(s.dayOff) === weekday(day)) return { off: true };
   if (!s.start || !s.end) return null;
@@ -37,7 +37,17 @@ export function schedFor(uid, day, sched, dayDoc) {
 }
 
 // مرن = عدد ساعات في اليوم من غير ميعاد ثابت (null لو بميعاد)
-export const flexHours = (uid, sched) => { const p = sched?.people?.[uid]; return p?.flex ? Number(p.hours) || 0 : null; };
+// الجوكر بيرجّع الساعات المطلوبة منه في الفرع ده (0 = مش مطلوب منه حاجة هنا، كل ساعة بيشتغلها بتتحسب له)
+export const flexHours = (uid, sched) => { const p = sched?.people?.[uid]; return p?.flex || p?.joker ? Number(p.hours) || 0 : null; };
+export const isJoker = (uid, sched) => !!sched?.people?.[uid]?.joker;
+const hrs = (h) => (h === 1 ? 'ساعة' : h === 2 ? 'ساعتين' : `${h} ساعات`);
+// الكلام اللي بيظهر جنب اسمه لما ميبقاش ليه ميعاد النهارده
+export function freeLabel(uid, sched) {
+  const p = sched?.people?.[uid];
+  if (p?.joker) return `🃏 جوكر${Number(p.hours) ? ` · مطلوب ${hrs(Number(p.hours))} هنا في اليوم` : ''}`;
+  if (p?.flex) return `⏳ مرن · ${hrs(Number(p.hours) || 0)} في اليوم`;
+  return null;
+}
 // فترات الشغل: كل حضور وبعده أول انصراف. open = لسه منصرفش (بنحسبها لحد دلوقتي في الرسم بس)
 export function pairsOf(sorted, now = Date.now()) {
   const out = []; let cur = null;
@@ -76,7 +86,8 @@ export function computeDay({ uid, day, records, sched, dayDoc, now = Date.now() 
   const pairs = pairsOf(rs.filter((r) => r.day === day || (r.kind === 'out' && r.ms < nextFirstIn)), now);
   const flexH = flexHours(uid, sched);
   const out = { pairs, workedMin: pairs.reduce((a, [x, y, open]) => a + (open ? 0 : Math.round((y - x) / MIN)), 0), flex: flexH, sched: s, firstIn, lastOut, late: 0, earlyIn: 0, earlyLeave: 0, stayLate: 0, extra: 0, short: 0, decision: null, pending: false, absent: false, noOut: false, forgotIn: false };
-  if (flexH && !s) return out; // المرن مبيتحسبش عليه تأخير ولا غياب، بيتحسب بمجموع ساعاته في الشهر
+  out.joker = isJoker(uid, sched);
+  if (flexH != null && !s) return out; // المرن مبيتحسبش عليه تأخير ولا غياب، بيتحسب بمجموع ساعاته في الشهر
   if (!firstIn) {
     if (s && !s.off) {
       out.forgotIn = now > s.start + FORGOT_MIN * MIN && now < s.end;
@@ -132,4 +143,29 @@ export const deductStr = (d) => (!d ? '' : d.unit === 'day' ? (d.v === 0.5 ? 'ن
 export function otHours(minutes, rules) {
   const h = minutes / 60;
   return rulesOf(rules).otMode === 'firstNormal' ? Math.min(h, 1) + Math.max(0, h - 1) * 2 : h * 2;
+}
+
+// ---------- الجوكر: شغال في كذا فرع، وبياخد بالساعة ----------
+// attSched/{shopId}.people[uid] = { joker: true, hours: المطلوب منه في الفرع ده في اليوم (0 = مش مطلوب), shops: {shopId: hours} }
+// staffPay/{shopId}.people[uid] = { type: 'joker', amount: اليومية, dayHours: ساعات اليوم } ← الساعة = اليومية ÷ ساعات اليوم
+// كل فرع بيتحسب لوحده: الساعات اللي اشتغلها هنا × سعر الساعة. لو مطلوب منه ساعات هنا، اللي زيادة عنها في الفرع ده مبتتحسبش
+// (ومبتعوّضش فرع تاني ومش أوفر تايم). الأيام اللي اتحط فيها في الجدول هنا بيتحسب عليه التأخير والغياب بقواعد الفرع ده.
+export const jokerRate = (pay) => (pay?.type === 'joker' && Number(pay.dayHours) > 0 ? Number(pay.amount) / Number(pay.dayHours) : 0);
+export function jokerMonth({ uid, records, day, sched, dayDocs, rules, pay, now = Date.now() }) {
+  const days = monthDays(day);
+  const hours = flexHours(uid, sched) || 0;
+  const m = flexMonth(records, day, hours, now);
+  const rate = jokerRate(pay), daily = Number(pay?.amount) || 0;
+  const ded = [];
+  days.filter((d) => d <= todayKey(new Date(now))).forEach((d) => {
+    const dd = dayDocs?.[d];
+    if (!dd?.sched?.[uid]) return; // مش متحط في الجدول اليوم ده هنا
+    const c = computeDay({ uid, day: d, records: records.filter((r) => r.day === d || r.day === nextDay(d)), sched, dayDoc: dd, now });
+    if (c.absent) { const n = Number(rulesOf(rules).absentDays) || 0; if (n) ded.push({ day: d, txt: `غايب · خصم ${deductStr({ v: n, unit: 'day' })}`, money: n * daily }); }
+    else if (c.late > 0) { const x = lateDeduct(c.late, rules); if (x) ded.push({ day: d, txt: `اتأخر ${minStr(c.late)} · خصم ${deductStr(x)}`, money: x.unit === 'day' ? x.v * daily : x.v * rate }); }
+  });
+  const paidH = hours ? Math.min(m.worked, m.target) : m.worked;
+  const gross = paidH * rate;
+  const minus = ded.reduce((a, x) => a + x.money, 0);
+  return { ...m, hours, rate, paidH, over: Math.max(0, m.worked - paidH), gross, ded, minus, net: gross - minus };
 }
