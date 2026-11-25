@@ -93,20 +93,21 @@ async function write(person, rec) {
   saveLast(person.uid, rec.kind);
   return { sent: res === 'ok', atMs: rec.atLocalMs };
 }
-const base = (person, kind, shop, photo, deviceId) => ({
+const base = (person, kind, shop, photo, deviceId, claimAtMs) => ({
+  ...(claimAtMs ? { claimAtMs } : {}),
   uid: person.uid, name: person.name || '', shopId: shop.shopId, shopName: shop.name || '',
   kind, at: serverTimestamp(), atLocalMs: Date.now(), day: todayKey(), photo: photo || null, deviceId: deviceId || '',
 });
 
 // بالرقم السري (احتياطي): يتأكد من الرقم من غير ما يغيّر مين فاتح التطبيق، ويسجّل السبب.
-export async function punch({ person, pin, kind, shop, photo, deviceId, fallback }) {
+export async function punch({ person, pin, kind, shop, photo, deviceId, fallback, claimAtMs }) {
   await verifyCashierPin(person, pin);
-  return write(person, { ...base(person, kind, shop, photo, deviceId), method: 'pin', fallback: fallback || 'chose-pin' });
+  return write(person, { ...base(person, kind, shop, photo, deviceId, claimAtMs), method: 'pin', fallback: fallback || 'chose-pin' });
 }
 
 // بالوش: الجهاز اتعرّف عليه وعمل الحركتين.
-export async function punchFace({ person, kind, shop, photo, deviceId, faceDist, live }) {
-  return write(person, { ...base(person, kind, shop, photo, deviceId), method: 'face', faceDist: Math.round(faceDist * 1000) / 1000, live });
+export async function punchFace({ person, kind, shop, photo, deviceId, faceDist, live, claimAtMs }) {
+  return write(person, { ...base(person, kind, shop, photo, deviceId, claimAtMs), method: 'face', faceDist: Math.round(faceDist * 1000) / 1000, live });
 }
 
 // ───── تسجيل الوش (خطوة 2) ─────

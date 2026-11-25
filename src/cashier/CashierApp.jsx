@@ -21,7 +21,7 @@ import { captureDocument } from '../DocCamera.jsx';
 import { PhoneShotListener } from '../phoneShot.jsx';
 import { PhoneJardListener } from '../phoneJard.jsx';
 import { NotifyBell, feed } from '../notify.jsx';
-import AttendanceModal from '../Attendance.jsx';
+import AttendanceModal, { ForgotStrip } from '../Attendance.jsx';
 
 export default function CashierApp({ profile }) {
   const toast = useToast();
@@ -36,6 +36,15 @@ export default function CashierApp({ profile }) {
   const [askLogout, setAskLogout] = useState(false);
   const [pinOpen, setPinOpen] = useState(false);
   const [attOpen, setAttOpen] = useState(false);
+  // مواعيد الحضور: تتحفظ على الجهاز علشان «نسي يسجّل؟» و«جيت الساعة كام؟» يشتغلوا حتى من غير نت
+  useEffect(() => {
+    if (!shopId || !pub?.attendance) return undefined;
+    const put = (k, v) => { try { const d = JSON.parse(localStorage.getItem('mdq-device-shop') || 'null'); if (d) localStorage.setItem('mdq-device-shop', JSON.stringify({ ...d, [k]: v })); } catch { /* ignore */ } };
+    const a = onSnapshot(doc(db, 'attSched', shopId), (x) => put('sched', x.data() || {}), () => {});
+    const day = todayKey();
+    const b = onSnapshot(doc(db, 'attDays', `${shopId}_${day}`), (x) => put('todayDoc', { ...(x.data() || {}), day }), () => {});
+    return () => { a(); b(); };
+  }, [shopId, pub?.attendance]);
   const [pickReg, setPickReg] = useState(null);
   const pending = usePendingTransfers(shopId);
   const attention = useAttention(profile.id);
@@ -47,7 +56,9 @@ export default function CashierApp({ profile }) {
         .map((c) => ({ uid: c.uid, name: c.name, username: c.username, color: c.color || null, photo: pub.photos?.[c.uid] || c.photo || null }));
       const workers = (pub.workers || []).filter((w) => !w.disabled && w.username)
         .map((w) => ({ uid: w.uid, name: w.name, username: w.username, color: w.color || null, photo: pub.photos?.[w.uid] || null }));
-      localStorage.setItem('mdq-device-shop', JSON.stringify({ shopId: shop.id, name: pub.name || shop.name || '', logo: shop.logo || null, cashiers, workers, attendance: !!pub.attendance, savedAt: Date.now() }));
+      const prev = (() => { try { return JSON.parse(localStorage.getItem('mdq-device-shop') || 'null'); } catch { return null; } })();
+      const keep = prev?.shopId === shop.id ? { sched: prev.sched, todayDoc: prev.todayDoc } : {};
+      localStorage.setItem('mdq-device-shop', JSON.stringify({ ...keep, shopId: shop.id, name: pub.name || shop.name || '', logo: shop.logo || null, cashiers, workers, attendance: !!pub.attendance, savedAt: Date.now() }));
     } catch { /* storage full: the normal login still works */ }
   }, [shop?.id, shop?.logo, pub]); // eslint-disable-line react-hooks/exhaustive-deps
   // Notifications for the cashier: shift closed by the accountant, reopened for editing, a message.
@@ -183,6 +194,7 @@ export default function CashierApp({ profile }) {
           }} />
       )}
       {top}
+      {pub?.attendance && <ForgotStrip onOpen={() => setAttOpen(true)} />}
       {themeOpen && <ThemePicker value={theme} onChange={setTheme} onClose={() => setThemeOpen(false)} />}
       {!done && !(mine && screen === 'handover' && !showFollow && !histOpen) && (
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center', padding: '10px 16px 0' }}>

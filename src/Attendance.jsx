@@ -3,6 +3,8 @@ import { Avatar, Icon, Modal } from './ui.jsx';
 import { CONSENT_TEXT, FALLBACK, KIND_LABEL, hasSession, lastPunch, myFace, nextKind, punch, punchFace, saveFace, snapPhoto } from './attendance.js';
 import { ACTIONS, MATCH, bestDist, distance, detectFaces, eyesOf, flatten, loadFace, pickActions, unflatten, yawOf } from './face.js';
 import { verifyCashierPin } from './sessions.js';
+import { FORGOT_MIN, schedFor } from './attDay.js';
+import { todayKey } from './lib';
 
 // شاشة «حضور / انصراف» على جهاز الفرع (كمبيوتر الكاشير + كاميرا).
 // الخطوات: اختار اسمك ← حضور ولا انصراف ← الكاميرا شايفاك وانت بتكتب رقمك السري ← بعد آخر رقم بناخد صورة ونسجّل.
@@ -90,15 +92,18 @@ export default function AttendanceModal({ device, onClose }) {
   const whoRef = useRef(null);
   const pick = (p) => {
     whoRef.current = p.uid;
-    setWho(p); setMsg(''); setPin(''); setKind(null); setDone(null); setOther(false);
+    setWho(p); setMsg(''); setPin(''); setKind(null); setDone(null); setOther(false); setAsk(null); setClaim(null);
     const l = lastPunch(p.uid); setSuggest(l?.kind === 'in' ? 'out' : 'in');
     nextKind(p).then((k) => { if (whoRef.current === p.uid) setSuggest(k); }).catch(() => {});
   };
   const [suggest, setSuggest] = useState('in');
   const [enroll, setEnroll] = useState(null); // null | consent | capture
   const [usePin, setUsePin] = useState(null); // سبب التسجيل بالرقم السري بدل الوش
-  const back = () => { setEnroll(null); setUsePin(null); if (kind) { setKind(null); setPin(''); setMsg(''); } else { setWho(null); } };
-  const reset = () => { setDone(null); setWho(null); setKind(null); setPin(''); setEnroll(null); setUsePin(null); };
+  const [ask, setAsk] = useState(null); // «انت لسه جاي؟» لما يسجّل حضور بعد ميعاده بربع ساعة: { start }
+  const [claim, setClaim] = useState(null); // الوقت اللي قال إنه جه فيه (ms)
+  const [claimHM, setClaimHM] = useState('');
+  const back = () => { setEnroll(null); setUsePin(null); setAsk(null); setClaim(null); if (kind) { setKind(null); setPin(''); setMsg(''); } else { setWho(null); } };
+  const reset = () => { setDone(null); setWho(null); setKind(null); setPin(''); setEnroll(null); setUsePin(null); setAsk(null); setClaim(null); };
   // تسجيل الوش: نبدأ نحمّل الموديلات من بدري علشان ميستناش
   useEffect(() => { if (kind) loadFace().catch(() => {}); }, [kind]);
 
@@ -109,12 +114,20 @@ export default function AttendanceModal({ device, onClose }) {
     return () => clearTimeout(t);
   }, [done]);
 
+  // حضور بعد الميعاد بربع ساعة: نسأله الأول «انت لسه جاي؟»
+  const chooseKind = (k) => {
+    if (k === 'in' && who) {
+      const s = schedFor(who.uid, todayKey(), device?.sched, device?.todayDoc?.day === todayKey() ? device.todayDoc : null);
+      if (s && !s.off && Date.now() > s.start + FORGOT_MIN * 60000) { setAsk({ start: s.start, startHM: s.startHM }); setClaimHM(s.startHM); return; }
+    }
+    setKind(k);
+  };
   const go = async (p) => {
     setBusy(true); setMsg('');
     const photo = cam === 'ok' ? snapPhoto(video.current) : null;
     try {
       if (kind === 'enroll') { await verifyCashierPin(who, p); setPin(''); setEnroll('consent'); setBusy(false); return; }
-      const r = await punch({ person: who, pin: p, kind, shop: device, photo, deviceId: devId(), fallback: usePin });
+      const r = await punch({ person: who, pin: p, kind, shop: device, photo, deviceId: devId(), fallback: usePin, claimAtMs: kind === 'in' ? claim : null });
       setDone({ ...r, photo, kind, name: who.name, method: 'pin' });
     } catch (e) {
       setMsg(ERR[e.code] || 'حصلت مشكلة، جرّب تاني');
@@ -197,6 +210,7 @@ export default function AttendanceModal({ device, onClose }) {
         {done.photo ? <img src={done.photo} alt="" style={{ width: 160, borderRadius: 20 }} /> : <Avatar name={done.name} color={who?.color} size={110} />}
         <span style={{ fontSize: 46 }}>✅</span>
         <h2 className="h2">اتسجّل {KIND_LABEL[done.kind]} {done.name.split(' ')[0]} الساعة <bdi>{t(done.atMs)}</bdi></h2>
+        {claim && done.kind === 'in' && <span className="badge warn" style={{ whiteSpace: 'normal' }}>⏳ قلت إنك جيت الساعة <bdi>{t(claim)}</bdi> · مستني موافقة صاحب الشغل</span>}
         {done.method === 'face' ? <span className="badge">✓ الجهاز اتعرّف على وشّك</span>
           : usePin && usePin !== 'chose-pin' && <span className="badge warn" style={{ whiteSpace: 'normal' }}>اتسجّل بالرقم السري ({FALLBACK[usePin]}) ⚠️ والمدير هيراجعه</span>}
         {!done.sent && <span className="badge warn" style={{ whiteSpace: 'normal' }}>مفيش نت دلوقتي: التسجيل محفوظ على الجهاز وهيتبعت لوحده لما النت يرجع، وهيتعلّم ⚠️ للمراجعة.</span>}
@@ -219,16 +233,36 @@ export default function AttendanceModal({ device, onClose }) {
         {people.length === 0 && <span className="muted">لسه مفيش أسامي على الجهاز ده. الكاشير يدخل مرة بالنت والأسامي هتظهر.</span>}
       </div>
     );
+  } else if (!kind && ask) {
+    body = (
+      <div className="stack" style={{ alignItems: 'center', gap: 16, textAlign: 'center', maxWidth: 520, margin: '0 auto' }}>
+        <h2 className="h2">ميعادك كان الساعة <bdi>{t(ask.start)}</bdi></h2>
+        <span style={{ fontSize: 20 }}>انت لسه جاي دلوقتي؟</span>
+        <button type="button" className="btn" style={{ minWidth: 220, height: 60, fontSize: 20 }} onClick={() => { setClaim(null); setAsk(null); setKind('in'); }}>أيوه، لسه جاي</button>
+        <div className="stack" style={{ gap: 8, alignItems: 'center', background: 'rgba(255,255,255,.8)', borderRadius: 18, padding: 14 }}>
+          <span>لأ، جيت بدري ونسيت أسجّل. جيت الساعة كام؟</span>
+          <input type="time" className="input" dir="ltr" style={{ width: 150 }} value={claimHM} onChange={(e) => setClaimHM(e.target.value)} />
+          <button type="button" className="btn soft" onClick={() => {
+            const [h, m] = (claimHM || '').split(':').map(Number);
+            const d = new Date(); d.setHours(h || 0, m || 0, 0, 0);
+            if (!claimHM || d.getTime() > Date.now()) return;
+            setClaim(d.getTime()); setAsk(null); setKind('in');
+          }}>كمّل</button>
+          <span className="tiny muted">الوقت ده هيروح لصاحب الشغل يوافق عليه. لحد ما يوافق، هيتحسب وقت تسجيلك دلوقتي.</span>
+        </div>
+        <button type="button" className="link" onClick={back}>رجوع</button>
+      </div>
+    );
   } else if (!kind) {
     body = (
       <div className="stack" style={{ alignItems: 'center', gap: 16 }}>
         <Avatar name={who.name} photo={who.photo} color={who.color || '#B39DFF'} size={96} />
         <h2 className="h2">أهلًا يا {who.name.split(' ')[0]}</h2>
-        <button type="button" className="btn" style={{ minWidth: 220, height: 72, fontSize: 26 }} onClick={() => setKind(suggest)}>
+        <button type="button" className="btn" style={{ minWidth: 220, height: 72, fontSize: 26 }} onClick={() => chooseKind(suggest)}>
           {suggest === 'in' ? '👋 ' : '🏠 '}{KIND_LABEL[suggest]}
         </button>
         {other ? (
-          <button type="button" className="btn soft" style={{ minWidth: 150, height: 52 }} onClick={() => setKind(suggest === 'in' ? 'out' : 'in')}>
+          <button type="button" className="btn soft" style={{ minWidth: 150, height: 52 }} onClick={() => chooseKind(suggest === 'in' ? 'out' : 'in')}>
             {suggest === 'in' ? '🏠 ' : '👋 '}{KIND_LABEL[suggest === 'in' ? 'out' : 'in']}
           </button>
         ) : <button type="button" className="link small" onClick={() => setOther(true)}>عايز تسجّل {KIND_LABEL[suggest === 'in' ? 'out' : 'in']}؟</button>}
@@ -243,7 +277,7 @@ export default function AttendanceModal({ device, onClose }) {
         <FaceCheck key={who.uid + kind} who={who} kind={kind} video={video} cam={cam} onBack={back}
           onFallback={(why) => { setUsePin(why); setPin(''); setMsg(''); }}
           onMatch={async ({ dist, live, photo }) => {
-            const r = await punchFace({ person: who, kind, shop: device, photo, deviceId: devId(), faceDist: dist, live });
+            const r = await punchFace({ person: who, kind, shop: device, photo, deviceId: devId(), faceDist: dist, live, claimAtMs: kind === 'in' ? claim : null });
             setDone({ ...r, photo, kind, name: who.name, method: 'face' });
           }} />
       </div>
@@ -444,6 +478,30 @@ function FaceCheck({ who, kind, video, cam, onMatch, onFallback, onBack }) {
       )}
       <button type="button" className="link" onClick={() => onFallback('chose-pin')}>مش راضي يتعرّف عليّا؟ سجّل بالرقم السري</button>
       <button type="button" className="link" onClick={onBack}>رجوع</button>
+    </div>
+  );
+}
+
+// شريط على شاشة الكاشير: مين ميعاده بدأ من أكتر من ربع ساعة ولسه مسجلش حضور على الجهاز ده.
+export function ForgotStrip({ onOpen }) {
+  const [, tick] = useState(0);
+  useEffect(() => { const i = setInterval(() => tick((x) => x + 1), 60000); return () => clearInterval(i); }, []);
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem('mdq-device-shop') || 'null'); } catch { /* ignore */ }
+  if (!d?.attendance || !d.sched) return null;
+  const day = todayKey();
+  const now = Date.now();
+  const late = peopleOf(d).filter((p) => {
+    const s = schedFor(p.uid, day, d.sched, d.todayDoc?.day === day ? d.todayDoc : null);
+    if (!s || s.off || now < s.start + FORGOT_MIN * 60000 || now > s.end) return false;
+    const lp = lastPunch(p.uid);
+    return !(lp && lp.kind === 'in' && lp.atMs > s.start - 3 * 3600e3);
+  });
+  if (!late.length) return null;
+  return (
+    <div className="spread" style={{ background: 'var(--warn-soft)', color: '#6B4500', padding: '8px 16px', gap: 10, flexWrap: 'wrap' }}>
+      <span>⏰ ميعادهم بدأ ولسه مسجلوش حضور: <strong>{late.map((p) => p.name).join('، ')}</strong></span>
+      <button type="button" className="btn sm" onClick={onOpen}>حضور / انصراف</button>
     </div>
   );
 }

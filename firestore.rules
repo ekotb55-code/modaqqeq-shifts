@@ -19,6 +19,9 @@ service cloud.firestore {
     function reviewerOf(shopId) {
       return isAdmin() || (inShop(shopId) && me().role in ['reviewer', 'accountant']);
     }
+    // الحضور: صاحب الشغل (والإدارة) بس اللي يعدّل الأوقات. المدير يقرر الساعات الزيادة ويغيّر الميعاد.
+    function ownerOf(shopId) { return isAdmin() || (inShop(shopId) && me().role == 'owner'); }
+    function bossOf(shopId) { return isAdmin() || (inShop(shopId) && me().role in ['owner', 'manager']); }
     function shiftData(shiftId) { return get(/databases/$(database)/documents/shifts/$(shiftId)).data; }
 
     // Shop name, logo and cashier list — only that shop's people and Modaqqeq admins can see it.
@@ -245,9 +248,22 @@ service cloud.firestore {
         && request.resource.data.kind in ['in', 'out']
         && request.resource.data.at == request.time
         && (request.resource.data.photo == null || (request.resource.data.photo is string && request.resource.data.photo.size() < 150000))
-        && request.resource.data.keys().hasOnly(['uid', 'name', 'shopId', 'shopName', 'kind', 'at', 'atLocalMs', 'day', 'method', 'photo', 'deviceId', 'fallback', 'faceDist', 'live']);
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'shopId', 'shopName', 'kind', 'at', 'atLocalMs', 'day', 'method', 'photo', 'deviceId', 'fallback', 'faceDist', 'live', 'claimAtMs'])
+        && (!('claimAtMs' in request.resource.data) || request.resource.data.claimAtMs is int);
+      // صاحب الشغل يضيف تسجيل بإيده للي نسي يسجّل خالص (والوقت اللي اختاره في fixAtMs)
+      allow create: if ownerOf(request.resource.data.shopId)
+        && request.resource.data.method == 'manual' && request.resource.data.fixState == 'ok'
+        && request.resource.data.fixBy == request.auth.uid
+        && request.resource.data.kind in ['in', 'out']
+        && request.resource.data.at == request.time
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'shopId', 'shopName', 'kind', 'at', 'atLocalMs', 'day', 'method', 'photo', 'deviceId', 'fixAtMs', 'fixState', 'fixReason', 'fixBy', 'fixByName', 'fixedAt']);
       allow read: if (signedIn() && resource.data.uid == request.auth.uid) || staffOf(resource.data.shopId);
-      allow update, delete: if isTopAdmin();
+      // التعديل (الوقت، الإلغاء، الموافقة على «جيت الساعة كام») لصاحب الشغل بس، والأصل بيفضل زي ما هو.
+      allow update: if ownerOf(resource.data.shopId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fixAtMs', 'fixState', 'fixReason', 'fixBy', 'fixByName', 'fixedAt'])
+        && request.resource.data.fixState in ['ok', 'void', 'rejected']
+        && request.resource.data.fixBy == request.auth.uid;
+      allow delete: if isTopAdmin();
     }
 
     // بصمة الوش (أرقام مش صورة) + صورة صغيرة للمراجعة + موافقة الشخص على التصوير.
@@ -265,6 +281,23 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approved', 'approvedBy', 'approvedAt']);
       allow delete: if staffOf(resource.data.shopId) || (signedIn() && request.auth.uid == uid);
       allow read: if (signedIn() && request.auth.uid == uid) || inShop(resource.data.shopId) || staffOf(resource.data.shopId);
+    }
+
+    // مواعيد الحضور العادية لكل شخص في الفرع. جهاز الفرع بيقراها علشان «نسي يسجّل؟» و«جيت الساعة كام؟».
+    match /attSched/{shopId} {
+      allow read: if inShop(shopId) || staffOf(shopId);
+      allow write: if bossOf(shopId) && request.resource.data.shopId == shopId;
+    }
+    // يوم الحضور: تغيير ميعاد ليوم واحد + قرار الساعات الزيادة (أوفر تايم / تبديل / رفض).
+    match /attDays/{id} {
+      allow read: if inShop(resource.data.shopId) || staffOf(resource.data.shopId);
+      allow write: if bossOf(request.resource.data.shopId) && id == request.resource.data.shopId + '_' + request.resource.data.day;
+    }
+    // سجل تعديلات الحضور: بيتكتب بس، محدش يعدّله ولا يمسحه.
+    match /attLog/{id} {
+      allow create: if bossOf(request.resource.data.shopId) && request.resource.data.by == request.auth.uid;
+      allow read: if staffOf(resource.data.shopId);
+      allow update, delete: if false;
     }
 
     // Login & activity log. Everyone writes only lines about himself; nobody edits or deletes.
