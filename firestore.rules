@@ -32,9 +32,9 @@ service cloud.firestore {
       allow update: if inShop(shopId)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['photos'])
         && request.resource.data.get('photos', {}).diff(resource.data.get('photos', {})).affectedKeys().hasOnly([request.auth.uid]);
-      // الجوكر: صاحب المحل بيضيف شخص من فروعه التانية لقايمة العمال هنا (علشان يظهر على جهاز الحضور)
+      // الجوكر: صاحب المحل بيضيف شخص من فروعه التانية لقايمة العمال هنا (علشان يظهر على جهاز الحضور)، ويقفل الحضور على الأجهزة المعتمدة
       allow update: if ownerOf(shopId)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['workers']);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['workers', 'attLock']);
     }
 
     match /shops/{shopId} {
@@ -252,6 +252,28 @@ service cloud.firestore {
 
     // الحضور والانصراف: كل واحد بيسجّل لنفسه بس (uid = هو) في فرعه، والوقت لازم يبقى وقت السيرفر.
     // مفيش تعديل ولا مسح غير من إدارة مدقق (التعديل بإذن صاحب الشغل وسجل التعديلات في خطوة جاية).
+    // الفرع قافل الحضور على أجهزته المعتمدة: لازم مع التسجيل مستند attProof بنفس الرقم فيه مفتاح جهاز متسجل للفرع ده
+    function devOk(shopId, id) {
+      return !get(/databases/$(database)/documents/shopsPublic/$(shopId)).data.get('attLock', false)
+        || (existsAfter(/databases/$(database)/documents/attProof/$(id))
+          && exists(/databases/$(database)/documents/attDevices/$(shopId + '_' + getAfter(/databases/$(database)/documents/attProof/$(id)).data.key)));
+    }
+    // أجهزة الحضور المعتمدة لكل فرع: صاحب المحل بيعتمدها ويشيلها
+    match /attDevices/{id} {
+      allow read: if ownerOf(resource.data.shopId);
+      allow create: if ownerOf(request.resource.data.shopId)
+        && request.resource.data.key is string && request.resource.data.key.size() >= 20
+        && id == request.resource.data.shopId + '_' + request.resource.data.key
+        && request.resource.data.by == request.auth.uid;
+      allow delete: if ownerOf(resource.data.shopId);
+    }
+    // مفتاح الجهاز اللي اتسجل منه كل تسجيل حضور: بيتكتب بس، ومحدش يقراه غير الإدارة
+    match /attProof/{id} {
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.key is string && request.resource.data.key.size() < 100
+        && request.resource.data.keys().hasOnly(['uid', 'shopId', 'key']);
+      allow read: if isAdmin();
+    }
     match /attendance/{id} {
       allow create: if hasProfile() && request.resource.data.uid == request.auth.uid
         && request.resource.data.shopId in me().shopIds
@@ -259,7 +281,8 @@ service cloud.firestore {
         && request.resource.data.at == request.time
         && (request.resource.data.photo == null || (request.resource.data.photo is string && request.resource.data.photo.size() < 150000))
         && request.resource.data.keys().hasOnly(['uid', 'name', 'shopId', 'shopName', 'kind', 'at', 'atLocalMs', 'day', 'method', 'photo', 'deviceId', 'fallback', 'faceDist', 'live', 'claimAtMs'])
-        && (!('claimAtMs' in request.resource.data) || request.resource.data.claimAtMs is int);
+        && (!('claimAtMs' in request.resource.data) || request.resource.data.claimAtMs is int)
+        && devOk(request.resource.data.shopId, id);
       // صاحب الشغل يضيف تسجيل بإيده للي نسي يسجّل خالص (والوقت اللي اختاره في fixAtMs)
       allow create: if ownerOf(request.resource.data.shopId)
         && request.resource.data.method == 'manual' && request.resource.data.fixState == 'ok'

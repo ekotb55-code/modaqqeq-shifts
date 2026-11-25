@@ -1,5 +1,5 @@
 import { getAuth } from 'firebase/auth';
-import { addDoc, collection, doc, getDoc, getDocs, query, setDoc, serverTimestamp, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, setDoc, serverTimestamp, where, writeBatch } from 'firebase/firestore';
 import { dbOf, sessionApp } from './firebase';
 import { todayKey } from './lib';
 import { markPending, verifyCashierPin } from './sessions.js';
@@ -86,7 +86,14 @@ export const FALLBACK = {
 async function write(person, rec) {
   const a = await sessionOf(person);
   if (!a) { const e = new Error('no session'); e.code = 'offline-first'; throw e; }
-  const p = addDoc(collection(dbOf(a), 'attendance'), rec);
+  // مع كل تسجيل بنبعت «مفتاح الجهاز» في مستند لوحده (attProof) محدش يقدر يقراه، والقواعد بتتأكد إن الجهاز معتمد للفرع
+  const db = dbOf(a);
+  const ref = doc(collection(db, 'attendance'));
+  const b = writeBatch(db);
+  b.set(ref, rec);
+  const key = devKey();
+  if (key) b.set(doc(db, 'attProof', ref.id), { uid: rec.uid, shopId: rec.shopId, key });
+  const p = b.commit();
   // ثانيتين ونص بس: لو السيرفر رد يبقى تمام، ولو لأ يبقى مستني النت (محفوظ على الجهاز ويتبعت بعدين).
   const res = await Promise.race([p.then(() => 'ok', (e) => e), new Promise((r) => setTimeout(() => r('wait'), 2500))]);
   if (res !== 'ok' && res !== 'wait') { const e = new Error('save'); e.code = res?.code || 'save-failed'; throw e; }
@@ -132,3 +139,27 @@ export async function saveFace({ person, shop, desc, photo }) {
   return res === 'ok';
 }
 const devIdOf = () => { try { return localStorage.getItem('mdq-dev') || ''; } catch { return ''; } };
+
+// ───── أجهزة الحضور المعتمدة ─────
+// صاحب المحل بيفتح البرنامج على جهاز الفرع ويدوس «اعتمد الجهاز ده». الجهاز بياخد مفتاح سري (في المتصفح بس)،
+// والمفتاح بيتسجل في attDevices/{shopId}_{key}. لو الفرع «قافل الحضور على الأجهزة المعتمدة» (shopsPublic.attLock)
+// القواعد بترفض أي تسجيل من جهاز مفتاحه مش متسجل للفرع ده. مسح بيانات المتصفح = المفتاح بيروح ولازم يتعتمد تاني.
+const DEV_KEY = 'mdq-att-key';
+const DEV_OK = 'mdq-att-ok';
+export const devKey = () => { try { return localStorage.getItem(DEV_KEY) || ''; } catch { return ''; } };
+export function ensureDevKey() {
+  let k = devKey();
+  if (!k) {
+    const a = new Uint8Array(18); crypto.getRandomValues(a);
+    k = Array.from(a, (x) => x.toString(16).padStart(2, '0')).join('');
+    localStorage.setItem(DEV_KEY, k);
+  }
+  return k;
+}
+const okMap = () => { try { return JSON.parse(localStorage.getItem(DEV_OK) || '{}'); } catch { return {}; } };
+export const approvedHere = (shopId) => !!okMap()[shopId] && !!devKey();
+export function markApproved(shopId, on) {
+  const m = okMap();
+  if (on) m[shopId] = Date.now(); else delete m[shopId];
+  try { localStorage.setItem(DEV_OK, JSON.stringify(m)); } catch { /* ignore */ }
+}
