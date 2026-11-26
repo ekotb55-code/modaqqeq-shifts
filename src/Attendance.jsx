@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Avatar, Icon, Modal } from './ui.jsx';
 import { CONSENT_TEXT, FALLBACK, KIND_LABEL, approvedHere, hasSession, lastPunch, myFace, nextKind, punch, punchFace, saveFace, snapPhoto } from './attendance.js';
-import { ACTIONS, MATCH, bestDist, distance, detectFaces, eyesOf, flatten, loadFace, pickActions, unflatten, yawOf } from './face.js';
+import { ACTIONS, MATCH, bestDist, distance, detectFaces, detectLite, eyesOf, spareAction, speak, flatten, loadFace, pickActions, unflatten, yawOf } from './face.js';
 import { verifyCashierPin } from './sessions.js';
 import { FORGOT_MIN, schedFor } from './attDay.js';
 import { todayKey } from './lib';
@@ -431,7 +431,7 @@ function FaceCheck({ who, kind, video, cam, onMatch, onFallback, onBack }) {
         if (!face.approved) { onFallback('not-approved'); return; }
         const refs = unflatten(face.desc);
         // 1) هو ولا لأ؟
-        setNote('بص للكاميرا على طول');
+        setNote('بص للكاميرا على طول'); speak('بص للكاميرا');
         let me = null;
         let dist = 9;
         while (!dead && Date.now() < until && !me) {
@@ -451,22 +451,36 @@ function FaceCheck({ who, kind, video, cam, onMatch, onFallback, onBack }) {
         const base = { eyes: eyesOf(me.landmarks), yaw: yawOf(me.landmarks) };
         // 2) حركتين عشوائي، والوش لازم يفضل هو نفسه طول الوقت
         const list = pickActions();
-        setActs(list);
+        setActs([...list]);
+        let spare = 1; // لو حركة منفعتش (الموبايل مشافهاش) نجرب حركة تانية مرة واحدة قبل الرقم السري
         for (let i = 0; i < list.length && !dead; i++) {
-          setStep(i); setNote(ACTIONS[list[i]].say);
+          setStep(i); setNote(ACTIONS[list[i]].say); speak(ACTIONS[list[i]].say);
           let ok = false;
-          const actUntil = Math.min(until, Date.now() + 10000);
+          const act = ACTIONS[list[i]];
+          const actUntil = Math.min(until + 10000, Date.now() + 10000);
           while (!dead && Date.now() < actUntil && !ok) {
+            if (act.lite) {
+              // التغميض: صور سريعة من غير بصمة، وبعدها نتأكد إنه نفس الشخص
+              const fs = await detectLite(video.current);
+              if (fs.length === 1 && act.ok(fs[0], base)) {
+                const t = Date.now() + 3000;
+                while (!dead && Date.now() < t && !ok) { const g = await detectFaces(video.current); if (g.length === 1 && bestDist(g[0].descriptor, refs) < MATCH + 0.1) ok = true; else await sleep(100); }
+                if (!ok) setNote('بص للكاميرا تاني…');
+              } else if (fs.length > 1) setNote('لازم تبقى لوحدك قدام الكاميرا');
+              else await sleep(40);
+              continue;
+            }
             const fs = await detectFaces(video.current);
             // الوش وهو لافف بيبعد شوية عن البصمة، فبنسمح بفرق أكبر سنة
             const lim = MATCH + (['right', 'left'].includes(list[i]) ? 0.2 : 0.1);
-            if (fs.length === 1 && bestDist(fs[0].descriptor, refs) < lim && ACTIONS[list[i]].ok(fs[0], base)) ok = true;
+            if (fs.length === 1 && bestDist(fs[0].descriptor, refs) < lim && act.ok(fs[0], base)) ok = true;
             else if (fs.length > 1) setNote('لازم تبقى لوحدك قدام الكاميرا');
             else await sleep(120);
           }
           if (dead) return;
+          if (!ok && spare > 0) { spare -= 1; list[i] = spareAction(list); setActs([...list]); i -= 1; continue; }
           if (!ok) { onFallback('face-failed'); return; }
-          setNote('تمام ✓');
+          setNote('تمام ✓'); speak('تمام');
           await sleep(400);
         }
         if (dead) return;

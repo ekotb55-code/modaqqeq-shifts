@@ -11,7 +11,8 @@ export function loadFace() {
     loading = (async () => {
       const f = await import('@vladmandic/face-api');
       await f.tf.ready();
-      const url = './face-models';
+      // تليفون الحضور بيفتح من att/ فالموديلات فوقه بفولدر
+      const url = location.pathname.includes('/att/') ? '../face-models' : './face-models';
       await Promise.all([
         f.nets.tinyFaceDetector.loadFromUri(url),
         f.nets.faceLandmark68Net.loadFromUri(url),
@@ -31,6 +32,14 @@ export async function detectFaces(video) {
   if (!video || !video.videoWidth) return [];
   return f.detectAllFaces(video, new f.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 }))
     .withFaceLandmarks().withFaceExpressions().withFaceDescriptors();
+}
+
+// أخف وأسرع (ملامح بس من غير بصمة): للحركات اللي بتحصل بسرعة زي التغميض، علشان الموبايل ميفوّتهاش بين صورة والتانية.
+// والعين المقفولة بتقلل ثقة الكاشف في الوش، فبنقبل ثقة أقل هنا.
+export async function detectLite(video) {
+  const f = await loadFace();
+  if (!video || !video.videoWidth) return [];
+  return f.detectAllFaces(video, new f.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.3 })).withFaceLandmarks();
 }
 
 export const distance = (a, b) => {
@@ -65,12 +74,18 @@ export function eyesOf(landmarks) { const p = landmarks.positions; return (ear(p
 // base = قيم الوش وهو باصص عادي (العين واللفّة) علشان نقارن بيها.
 // اللفّة: yawOf سالب لما الشخص يلف ناحية يمينه (الصورة مش معكوسة: يمينه = شمال الصورة).
 export const ACTIONS = {
-  blink: { say: 'غمّض عينيك ثانية', ok: (f, b) => eyesOf(f.landmarks) < Math.min(0.2, b.eyes * 0.7) },
+  // التغميض: بنقارن بفتحة عينه هو وهو باصص عادي (العين بتقفل لو قلّت ربع أو أكتر)، مش برقم ثابت
+  blink: { say: 'غمّض عينيك ثانيتين', lite: true, ok: (f, b) => eyesOf(f.landmarks) < Math.max(0.2, b.eyes * 0.75) },
   right: { say: 'لِف وشّك ناحية اليمين', ok: (f, b) => yawOf(f.landmarks) < b.yaw - 0.3 },
   left: { say: 'لِف وشّك ناحية الشمال', ok: (f, b) => yawOf(f.landmarks) > b.yaw + 0.3 },
   smile: { say: 'ابتسم', ok: (f) => (f.expressions?.happy || 0) > 0.7 },
 };
 // حركتين مختلفتين عشوائي (مش يمين وشمال مع بعض)
+// حركة بديلة لو الأولى منفعتش (مش من اللي اتطلبت قبل كده)
+export function spareAction(used) {
+  const keys = Object.keys(ACTIONS).filter((k) => !used.includes(k) && k !== 'blink');
+  return keys[Math.floor(Math.random() * keys.length)] || 'smile';
+}
 export function pickActions() {
   const keys = Object.keys(ACTIONS);
   const a = keys[Math.floor(Math.random() * keys.length)];
@@ -79,3 +94,20 @@ export function pickActions() {
 }
 export const MATCH = 0.5; // أقل من كده = نفس الشخص
 export const bestDist = (desc, refs) => Math.min(...refs.map((r) => distance(desc, r)));
+
+// التعليمات بالصوت (صوت الموبايل نفسه بالعربي) علشان العامل ينفّذ على طول من غير ما يقرا الشاشة
+let voice = null;
+export function speak(text) {
+  try {
+    const ss = window.speechSynthesis;
+    if (!ss) return;
+    if (!voice) { const vs = ss.getVoices(); voice = vs.find((v) => v.lang === 'ar-EG') || vs.find((v) => /^ar/i.test(v.lang)) || null; }
+    ss.cancel();
+    const u = new SpeechSynthesisUtterance(String(text).replace(/[✓…]/g, ''));
+    u.lang = voice?.lang || 'ar-EG';
+    if (voice) u.voice = voice;
+    u.rate = 1.05;
+    ss.speak(u);
+  } catch { /* مفيش صوت: الكلام على الشاشة كفاية */ }
+}
+try { window.speechSynthesis?.getVoices(); window.speechSynthesis?.addEventListener?.('voiceschanged', () => { voice = null; }); } catch { /* ignore */ }
