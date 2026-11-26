@@ -35,6 +35,9 @@ service cloud.firestore {
       // الجوكر: صاحب المحل بيضيف شخص من فروعه التانية لقايمة العمال هنا (علشان يظهر على جهاز الحضور)، ويقفل الحضور على الأجهزة المعتمدة
       allow update: if ownerOf(shopId)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['workers', 'attLock']);
+      // المدير بيعتمد «تليفون الحضور» ويقفل الحضور عليه
+      allow update: if bossOf(shopId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['attLock']);
     }
 
     match /shops/{shopId} {
@@ -260,12 +263,12 @@ service cloud.firestore {
     }
     // أجهزة الحضور المعتمدة لكل فرع: صاحب المحل بيعتمدها ويشيلها
     match /attDevices/{id} {
-      allow read: if ownerOf(resource.data.shopId);
-      allow create: if ownerOf(request.resource.data.shopId)
+      allow read: if bossOf(resource.data.shopId);
+      allow create: if bossOf(request.resource.data.shopId)
         && request.resource.data.key is string && request.resource.data.key.size() >= 20
         && id == request.resource.data.shopId + '_' + request.resource.data.key
         && request.resource.data.by == request.auth.uid;
-      allow delete: if ownerOf(resource.data.shopId);
+      allow delete: if bossOf(resource.data.shopId);
     }
     // مفتاح الجهاز اللي اتسجل منه كل تسجيل حضور: بيتكتب بس، ومحدش يقراه غير الإدارة
     match /attProof/{id} {
