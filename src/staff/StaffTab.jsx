@@ -357,6 +357,7 @@ function RulesBoard({ shop, profile }) {
 }
 
 // ---------- أجهزة الحضور: الحضور والانصراف من جهاز الفرع بس ----------
+const phoneLink = (() => { try { return location.origin + location.pathname.replace(/[^/]*$/, '') + 'att.html'; } catch { return 'att.html'; } })();
 const dateStr = (ms) => (ms ? new Date(ms).toLocaleDateString('ar-EG', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
 function DevicesBoard({ shop, profile }) {
   const toast = useToast();
@@ -375,9 +376,10 @@ function DevicesBoard({ shop, profile }) {
   const lock = !!pub.attLock;
   const sname = pub.name || shop.name;
   const approve = async () => {
+    if (list.length && !window.confirm(`الفرع ليه جهاز واحد بس. «${list.map((d) => d.name).join('، ')}» هيتشال والجهاز ده يبقى مكانه. موافق؟`)) return;
     setBusy(true);
     try {
-      await approveDevice(profile, shop, name.trim());
+      await approveDevice(profile, shop, name.trim(), list);
       if (!lock && list.length === 0) await setAttLock(profile, shop, true);
       toast(!lock && list.length === 0 ? `الجهاز ده اتعتمد، والحضور في ${sname} بقى من الأجهزة المعتمدة بس` : 'الجهاز ده اتعتمد');
       bump((x) => x + 1);
@@ -403,7 +405,7 @@ function DevicesBoard({ shop, profile }) {
         ) : (
           <>
             <strong>الجهاز اللي انت فاتح منه دلوقتي مش معتمد للحضور في {sname}</strong>
-            <span className="tiny muted">لو ده كمبيوتر الفرع (أو اللابتوب اللي بتجرب عليه)، سمّيه ودوس اعتمد. بعد كده الكاشير يفتح البرنامج عليه عادي، والحضور يشتغل منه.</span>
+            <span className="tiny muted">الأسهل: تليفون الحضور (اللينك تحت). أو لو ده الجهاز اللي في الفرع، سمّيه ودوس اعتمد. الفرع ليه جهاز واحد بس، فاعتماد جهاز جديد بيشيل القديم.</span>
             <div className="chips" style={{ gap: 8, alignItems: 'flex-end' }}>
               <label className="field" style={{ flex: '1 1 180px' }}>اسم الجهاز<input className="input" value={name} onChange={(e) => setName(e.target.value)} /></label>
               <button type="button" className="btn" disabled={busy || !name.trim()} onClick={approve}>{busy ? 'لحظة…' : `✅ اعتمد الجهاز ده لـ ${sname}`}</button>
@@ -411,13 +413,21 @@ function DevicesBoard({ shop, profile }) {
           </>
         )}
       </div>
+      <div className="stack" style={{ gap: 4, background: 'rgba(20,121,211,.08)', borderRadius: 14, padding: 12 }}>
+        <strong>📱 تليفون الحضور</strong>
+        <span className="tiny muted">افتح اللينك ده على تليفون الفرع، وادخل بحسابك واختار {sname}. بعدها من قايمة المتصفح اختار «إضافة إلى الشاشة الرئيسية»، والتليفون هيفتح على الحضور والانصراف بس بكاميرته.</span>
+        <span className="chips" style={{ gap: 8, alignItems: 'center' }}>
+          <bdi dir="ltr" className="small" style={{ wordBreak: 'break-all' }}>{phoneLink}</bdi>
+          <button type="button" className="btn sm soft" onClick={() => navigator.clipboard?.writeText(phoneLink).then(() => toast('اتنسخ'), () => {})}>انسخ</button>
+        </span>
+      </div>
       <label style={{ ...row, justifyContent: 'flex-start', cursor: 'pointer' }}>
         <input type="checkbox" style={{ width: 20, height: 20 }} checked={lock} onChange={(e) => toggle(e.target.checked)} />
         <span className="stack" style={{ gap: 0 }}><strong>الحضور والانصراف من الأجهزة المعتمدة بس</strong>
           <span className="tiny muted">{lock ? 'أي جهاز تاني (موبايل أو كمبيوتر في البيت) هيقول «الجهاز ده مش معتمد».' : 'دلوقتي أي جهاز الكاشير فاتح عليه البرنامج يقدر يسجّل حضور.'}</span></span>
       </label>
       <div className="stack" style={{ gap: 6 }}>
-        <strong className="small">الأجهزة المعتمدة ({list.length})</strong>
+        <strong className="small">الجهاز المعتمد (جهاز واحد بس لكل فرع)</strong>
         {list.map((d) => (
           <div key={d.id} style={row}>
             <span className="stack" style={{ gap: 0 }}>

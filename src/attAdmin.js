@@ -108,8 +108,10 @@ export async function saveJoker(profile, { person, home, shops, removed, names, 
 }
 
 // ───── أجهزة الحضور (صاحب المحل) ─────
-export async function approveDevice(profile, shop, name) {
+// جهاز واحد بس لكل فرع: اعتماد جهاز جديد بيشيل أي جهاز تاني (others = الأجهزة القديمة من القايمة)
+export async function approveDevice(profile, shop, name, others = []) {
   const key = ensureDevKey();
+  for (const d of others.filter((x) => x.key !== key)) await deleteDoc(doc(db, 'attDevices', d.id));
   await setDoc(doc(db, 'attDevices', `${shop.id}_${key}`), { shopId: shop.id, key, name: name || 'جهاز الفرع', ua: String(navigator.userAgent || '').slice(0, 160), ...me(profile), at: serverTimestamp(), atLocalMs: Date.now() });
   markApproved(shop.id, true);
   await log(profile, shop.id, 'device', `اعتمد جهاز «${name || 'جهاز الفرع'}» للحضور`, { day: todayKey() });

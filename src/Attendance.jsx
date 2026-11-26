@@ -79,7 +79,8 @@ function useCamera(on) {
   return [video, state, cams, camId, setCamId, attach];
 }
 
-export default function AttendanceModal({ device, onClose }) {
+// kiosk = «تليفون الحضور»: مفيش زرار قفل، الشاشة دايماً مفتوحة على الحضور والانصراف
+export default function AttendanceModal({ device, onClose, kiosk }) {
   const people = peopleOf(device);
   const [who, setWho] = useState(null);
   const [kind, setKind] = useState(null);
@@ -181,7 +182,7 @@ export default function AttendanceModal({ device, onClose }) {
         <span style={{ fontSize: 46 }}>🔒</span>
         <h2 className="h2">الجهاز ده مش معتمد</h2>
         <span className="muted">الحضور والانصراف في {device.name || 'الفرع ده'} بيتسجل من أجهزة الفرع المعتمدة بس. لو ده جهاز الفرع، صاحب المحل يدخل بحسابه على الجهاز ده ويدوس «اعتمد الجهاز ده» من «👥 الموظفين ← 🖥️ الأجهزة».</span>
-        <button type="button" className="btn soft" onClick={onClose}>رجوع</button>
+        {!kiosk && <button type="button" className="btn soft" onClick={onClose}>رجوع</button>}
       </div>
     );
   } else if (done?.enrolled) {
@@ -321,7 +322,7 @@ export default function AttendanceModal({ device, onClose }) {
     );
   }
   return (
-    <Modal title="حضور / انصراف" icon="clock" color="#B6F000" onClose={onClose} width={760}>
+    <Modal title={kiosk ? device?.name || 'حضور / انصراف' : 'حضور / انصراف'} icon="clock" color="#B6F000" onClose={kiosk ? null : onClose} width={760}>
       {body}
     </Modal>
   );
