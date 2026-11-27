@@ -6,7 +6,7 @@ import { todayKey } from '../lib';
 import { approvedHere, ensureDevKey, markApproved } from '../attendance.js';
 import AttendanceModal from '../Attendance.jsx';
 
-// «تليفون الحضور»: صفحة لوحدها (att.html) بتتثبت على تليفون الفرع وتفتح على الحضور والانصراف بس بكاميرا الموبايل.
+// «تليفون الحضور»: تطبيق لوحده (att/) بتتثبت على تليفون الفرع وتفتح على الحضور والانصراف بس بكاميرا الموبايل.
 // أول مرة: صاحب المحل أو المدير يدخل بحسابه هنا ويختار الفرع ← التليفون ياخد مفتاح ويتعتمد، وأي جهاز تاني للفرع ده
 // بيتشال (تليفون واحد بس لكل فرع)، والحضور يتقفل على الجهاز المعتمد. بعدها حسابه بيخرج والتليفون يفضل للحضور بس.
 
@@ -130,7 +130,7 @@ function Setup({ current, onCancel, onDone }) {
   return (
     <div className="wrap stack" style={{ gap: 16, maxWidth: 460, margin: '0 auto', padding: '24px 16px' }}>
       <div className="stack" style={{ alignItems: 'center', gap: 6, textAlign: 'center' }}>
-        <img src="./icon-192.png" alt="" style={{ width: 72, height: 72, borderRadius: 18 }} />
+        <img src="./icon.png" alt="" style={{ width: 72, height: 72, borderRadius: 18 }} />
         <h1 className="h2">تليفون الحضور والانصراف</h1>
         <span className="muted small">{current ? `التليفون ده معتمد دلوقتي لـ ${current.name}.` : 'التليفون ده لسه مش متظبط.'} صاحب المحل أو المدير يدخل هنا مرة واحدة ويختار الفرع. بعد كده التليفون ده بيفتح على الحضور والانصراف بس، وهيبقى الجهاز الوحيد اللي ينفع يتسجل منه حضور في الفرع ده.</span>
       </div>

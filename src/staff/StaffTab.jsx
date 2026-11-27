@@ -357,7 +357,7 @@ function RulesBoard({ shop, profile }) {
 }
 
 // ---------- أجهزة الحضور: الحضور والانصراف من جهاز الفرع بس ----------
-const phoneLink = (() => { try { return location.origin + location.pathname.replace(/[^/]*$/, '') + 'att.html'; } catch { return 'att.html'; } })();
+const phoneLink = (() => { try { return location.origin + location.pathname.replace(/[^/]*$/, '') + 'att/'; } catch { return 'att/'; } })();
 const dateStr = (ms) => (ms ? new Date(ms).toLocaleDateString('ar-EG', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
 function DevicesBoard({ shop, profile }) {
   const toast = useToast();
