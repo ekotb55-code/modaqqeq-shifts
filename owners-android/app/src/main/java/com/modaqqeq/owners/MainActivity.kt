@@ -64,6 +64,7 @@ class MainActivity : Activity() {
                     page == "transfers" -> refreshTransfers(true)
                     page == "purchases" -> refreshPurchases(true)
                     page == "purchase" -> { purDetail = null; render() }
+                    page == "loads" || page == "load" -> refreshLoads(true)
                     else -> refreshHome(true)
                 }
             }
@@ -75,6 +76,13 @@ class MainActivity : Activity() {
     // الشباك العايم أو إشعار فاتورة المشتريات: يفتح الفاتورة (أو صفحة المشتريات)، بعد القفل لو التطبيق مقفول
     override fun onNewIntent(i: Intent) { super.onNewIntent(i); openFrom(i); render() }
     private fun openFrom(i: Intent?) {
+        // إشعار «طلب تحميل/تفريغ اتعتمد»
+        i?.getStringExtra("openLoad")?.let { lid ->
+            i.removeExtra("openLoad")
+            if (Account.mode(this) != "user") return
+            if (lid == "*") page = "loads" else { luId = lid; page = "load" }
+            refreshLoads(false); return
+        }
         val id = i?.getStringExtra("openPurchase") ?: return
         i.removeExtra("openPurchase")
         if (Account.mode(this) != "user") return
@@ -105,7 +113,7 @@ class MainActivity : Activity() {
     private fun refreshHome(say: Boolean) {
         if (loadingHome) return
         loadingHome = true; render()
-        bg({ Home.load(this).also { if ("purchases" in Home.cards(this)) runCatching { Purchases.load(this) } } }) { e -> loadingHome = false; homeErr = e; if (say && e == null) toast("اتحدّثت ✓"); render() }
+        bg({ Home.load(this).also { if ("purchases" in Home.cards(this)) runCatching { Purchases.load(this) }; if ("loads" in Home.cards(this)) runCatching { Loads.load(this) } } }) { e -> loadingHome = false; homeErr = e; if (say && e == null) toast("اتحدّثت ✓"); render() }
     }
 
     private fun bg(work: () -> String?, done: (String?) -> Unit) {
@@ -137,10 +145,11 @@ class MainActivity : Activity() {
         root.alpha = 0.3f; root.animate().alpha(1f).setDuration(180).start()
     }
     @Deprecated("back")
-    private val SUB = mapOf("menu" to "home", "purchase" to "purchases", "shift" to "shifts", "shifts" to "home", "expenses" to "home", "diffs" to "home", "reviews" to "home", "wallets" to "home",
+    private val SUB = mapOf("menu" to "home", "purchase" to "purchases", "loads" to "home", "load" to "loads", "shift" to "shifts", "shifts" to "home", "expenses" to "home", "diffs" to "home", "reviews" to "home", "wallets" to "home",
         "set_account" to "menu", "set_link" to "menu", "set_screen" to "menu", "set_users" to "menu")
     private var shiftBack = "shifts"
     private val SUB_TITLE = mapOf("menu" to ("الإعدادات" to "اختار القسم"), "purchase" to ("فاتورة مشتريات" to "كل اللي متسجّل عليها"),
+        "loads" to ("🚚 التحميل والتفريغ" to "طلبات المناديب وحالتها"), "load" to ("طلب تحميل / تفريغ" to "الشيت وصورة السيستم جنب بعض"),
         "shift" to ("الوردية" to "استلم كام، دلوقتي فيها كام، وكل عملياتها"), "shifts" to ("الورديات" to "النهارده والمفتوحة"), "expenses" to ("المصروفات" to "كل مصروفات النهارده لايف"),
         "diffs" to ("العجز والزيادة" to "ورديات الشهر ده"), "reviews" to ("مراجعات النهارده" to "الورديات اللي المحاسب راجعها"), "wallets" to ("رصيد المحافظ" to "رسايل كل محفظة النهارده"),
         "set_account" to ("👤 الأكونت" to "الصورة والقفل والخروج"), "set_link" to ("🔗 الربط" to "الصلاحيات والمحافظ والسجل"), "set_screen" to ("🎨 الشاشة" to "الشكل والكروت والتنبيهات"), "set_users" to ("👥 الأكونتات" to "مديرين لفروعك"))
@@ -173,7 +182,7 @@ class MainActivity : Activity() {
     }
 
     private fun renderInner() {
-        swipe?.isRefreshing = loadingHome || loadingTr || loadingPur
+        swipe?.isRefreshing = loadingHome || loadingTr || loadingPur || loadingLu
         root.removeAllViews()
         val mode0 = Account.mode(this)
         swipe?.isEnabled = mode0 != "user" || (unlocked && Lock.has(this))
@@ -214,7 +223,7 @@ class MainActivity : Activity() {
             }, LinearLayout.LayoutParams(0, -2, 1f))
         }
         if (SUB_TITLE[page] == null) root.addView(tabs)
-        when (page) { "transfers" -> transfers(); "purchases" -> purchasesPage(); "purchase" -> purchaseDetail(); "shifts" -> shiftsPage(); "shift" -> shiftDetail(); "expenses" -> expensesPage(); "diffs" -> diffsPage(); "reviews" -> reviewsPage(); "wallets" -> walletsPage(); else -> home() }
+        when (page) { "transfers" -> transfers(); "purchases" -> purchasesPage(); "purchase" -> purchaseDetail(); "loads" -> loadsPage(); "load" -> loadDetail(); "shifts" -> shiftsPage(); "shift" -> shiftDetail(); "expenses" -> expensesPage(); "diffs" -> diffsPage(); "reviews" -> reviewsPage(); "wallets" -> walletsPage(); else -> home() }
     }
 
     // ── الهيدر الثابت فوق: بلون الثيم، العلامة واسم التطبيق، وفلتر الفروع ──
@@ -531,6 +540,7 @@ class MainActivity : Activity() {
             invShops.forEach { s -> val id = s.optString("id"); inv.addView(check("📍 " + s.optString("name"), id !in offS) { v -> InvoiceWatch.setShop(this, id, v) }) }
         }
         if (!Settings.canDrawOverlays(this)) inv.addView(text("⚠️ إذن «الشباك العايم» مقفول على الموبايل ده، فهينزلك إشعار عادي بداله. فعّله من 🔗 الربط.", 12f, "#B3261E", true).apply { setPadding(dp(4), dp(10), dp(4), 0) })
+        inv.addView(check("🚚 طلب تحميل أو تفريغ اتعتمد (الشيت وصورة السيستم)", Loads.notifyOn(this)) { v -> Loads.setNotify(this, v) })
         val at = InvoiceWatch.lastCheck(this)
         inv.addView(text(if (at == 0L) "لسه مشيّكش · أول مرة بيحفظ الفواتير اللي موجودة من غير ما ينبّه" else "آخر مرة شيّك من " + ago(at.toDouble()), 11.5f, FAINT).apply { setPadding(dp(4), dp(10), dp(4), 0) })
         root.addView(inv)
@@ -730,6 +740,15 @@ class MainActivity : Activity() {
             tiles += tile("🛒 مشتريات النهارده", if (pd == null) "—" else money.format(pl.sumOf { it.optDouble("total") }) + " ج",
                 if (pd == null) "دوس ↻ علشان تتجاب" else if (pl.isEmpty()) "مفيش فواتير اترفعت النهارده" else "${pl.size} فاتورة" + if (wait > 0) " · $wait لسه مدخلتش السيستم" else " · كلها اتدخلت ✓",
                 "#FFC400", "").apply { setOnClickListener { go("purchases") } }
+        }
+        if ("loads" in chosen && Loads.ever(this)) {
+            val ld = Loads.cached(this)
+            val today = Home.dayKey(System.currentTimeMillis())
+            val ll = objs(j(ld, "list")).filter { it.optString("date") == today }
+            val open = ll.count { it.optString("status") != "done" }
+            tiles += tile("🚚 التحميل والتفريغ", if (ld == null) "—" else "${ll.size} طلب",
+                if (ld == null) "دوس ↻ علشان تتجاب" else if (ll.isEmpty()) "مفيش طلبات النهارده" else if (open > 0) "$open لسه ما اتعتمدتش" else "كلها اتعتمدت ✓",
+                "#1565D8", "").apply { setOnClickListener { go("loads") } }
         }
         tiles.chunked(2).forEach { pair ->
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, dp(10), 0, 0) }
@@ -1191,6 +1210,129 @@ class MainActivity : Activity() {
             box.alpha = 0f; box.animate().alpha(1f).setDuration(180).start()
             root.addView(box)
         }
+    }
+
+    // ── التحميل والتفريغ (مناديب التوزيع) ──
+    private var loadingLu = false
+    private var luErr: String? = null
+    private var luId = ""
+    private val luImgs = HashMap<String, android.graphics.Bitmap?>()
+    private val luBad = HashSet<String>()
+    private fun refreshLoads(say: Boolean) {
+        if (loadingLu) return
+        loadingLu = true; if (page == "loads" || page == "load") render()
+        bg({ Loads.load(this) }) { e -> loadingLu = false; luErr = e; if (say && e == null) toast("اتحدّثت ✓"); render() }
+    }
+    private fun luTime(t: String): String {
+        val m = Regex("^(\\d{1,2}):(\\d{2})").find(t) ?: return t
+        val h = m.groupValues[1].toInt(); return "${if (h % 12 == 0) 12 else h % 12}:${m.groupValues[2]} ${if (h < 12) "ص" else "م"}"
+    }
+    private fun luDay(d: String): String {
+        val now = System.currentTimeMillis()
+        return when (d) { Home.dayKey(now) -> "النهارده"; Home.dayKey(now - 86_400_000) -> "امبارح"; else -> Regex("^\\d{4}-(\\d{2})-(\\d{2})$").find(d)?.let { "${it.groupValues[2].toInt()}/${it.groupValues[1].toInt()}" } ?: d }
+    }
+    private fun loadsPage() {
+        val data = Loads.cached(this)
+        if (data == null) { emptyCard(luErr ?: "بنجيب طلبات التحميل والتفريغ…"); if (!loadingLu && luErr == null) refreshLoads(false); if (luErr != null) root.addView(button("جرّب تاني", false) { luErr = null; refreshLoads(true) }); return }
+        val at = data.optLong("at")
+        root.addView(text("آخر تحديث " + SimpleDateFormat("h:mm a", Locale.forLanguageTag("ar-EG-u-nu-latn")).format(Date(at)) + (luErr?.let { " · ⚠️ $it" } ?: "") + " · اسحب لتحت علشان تحدّث", 11.5f, MUTED).apply { setPadding(dp(4), dp(10), dp(4), 0) })
+        val days = Loads.days(this)
+        filterRow(listOf(dropChip(listOf("1" to "النهارده", "2" to "من امبارح", "7" to "آخر 7 أيام", "30" to "آخر 30 يوم"), days.toString()) { val d = it.toInt(); Loads.setDays(this, d); refreshLoads(false) }))
+        val list = objs(j(data, "list"))
+        if (list.isEmpty()) { emptyCard("مفيش طلبات تحميل ولا تفريغ في الفترة دي"); return }
+        val multiShop = list.map { it.optString("shop") }.distinct().size > 1
+        var lastDay = ""
+        list.forEach { x ->
+            val d = x.optString("date")
+            if (d != lastDay) { lastDay = d; root.addView(text(luDay(d), 12.5f, MUTED, true).apply { setPadding(dp(6), dp(12), dp(6), 0) }) }
+            val isL = x.optString("type") == "load"
+            val box = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(10), dp(12), dp(10)); background = round(CARD, 18)
+                layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) }
+                setOnClickListener { luId = x.optString("id"); go("load") }
+            }
+            val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
+            line.addView(TextView(this).apply {
+                text = if (isL) "⬆" else "⬇"; textSize = 15f; setTypeface(typeface, Typeface.BOLD); setTextColor(Color.WHITE); gravity = Gravity.CENTER
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor(if (isL) "#2E7D32" else "#E65100")) }
+                layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply { marginEnd = dp(10) }
+            })
+            val mid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, -2, 1f) }
+            mid.addView(text(Loads.typeName(x) + " · " + x.optString("driver"), 14.5f, INK, true).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
+            mid.addView(text(listOfNotNull(x.optString("truck").takeIf { it.isNotBlank() }, luTime(x.optString("t")), "${x.optJSONArray("lines")?.length() ?: 0} صنف",
+                if (multiShop) x.optString("shop") else null).joinToString(" · "), 11.5f, MUTED).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
+            line.addView(mid)
+            val (sl, sb, sf) = Loads.look(x.optString("status"))
+            line.addView(pill(sl, sb, sf, 10.5f))
+            box.addView(line)
+            root.addView(box)
+        }
+    }
+    private fun loadDetail() {
+        val x = objs(j(Loads.cached(this), "list")).firstOrNull { it.optString("id") == luId }
+        if (x == null) { emptyCard(if (loadingLu) "بنجيب الطلب…" else "الطلب ده مش موجود في الفترة المختارة"); return }
+        val isL = x.optString("type") == "load"
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(14), dp(16), dp(14))
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(Color.parseColor(if (isL) "#1B5E20" else "#BF360C"), Color.parseColor(if (isL) "#43A047" else "#FF8A3D"))).apply { cornerRadius = dp(24).toFloat() }
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) }
+            addView(text("🚚 " + Loads.typeName(x) + " · " + x.optString("driver"), 20f, "#FFFFFF", true))
+            addView(text(listOfNotNull(x.optString("truck").takeIf { it.isNotBlank() }, x.optString("shop").takeIf { it.isNotBlank() }, luDay(x.optString("date")) + " " + luTime(x.optString("t")),
+                "طلب ${x.optString("no")}").joinToString(" · "), 12.5f, "#E6FFFFFF"))
+            val (sl, _, _) = Loads.look(x.optString("status"))
+            addView(pill(sl, "#FFFFFF", ON_LIGHT, 12f).apply { (layoutParams as LinearLayout.LayoutParams).topMargin = dp(8) })
+        })
+        // المراحل
+        val info = card()
+        fun kv(k: String, v: String) { if (v.isBlank()) return
+            info.addView(LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, dp(5), 0, dp(5))
+                addView(text(k, 13f, MUTED).apply { layoutParams = LinearLayout.LayoutParams(dp(130), -2) })
+                addView(text(v, 13.5f, INK, true).apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1f) }) }) }
+        fun who(n: String, t: String) = listOf(n, luTime(t)).filter { it.isNotBlank() }.joinToString(" · ")
+        kv("بعته المندوب", luTime(x.optString("t")))
+        kv("استلمه الدعم", who(x.optString("recvBy"), x.optString("recvT")))
+        kv(if (isL) "رفع الكمية" else "سجّل التفريغ", who(x.optString("upBy"), x.optString("upT")))
+        if (x.optString("status") == "done") kv("اعتمدته الجودة", who(x.optString("qaBy"), x.optString("doneT")))
+        if (info.childCount > 0) root.addView(info)
+        // الشيت وصورة السيستم جنب بعض
+        val lines = objs(x.optJSONArray("lines") ?: JSONArray())
+        val sheet = card().apply {
+            addView(text((if (isL) "📋 شيت التحميل" else "📋 شيت التفريغ") + " (${lines.size})", 15f, INK, true))
+            lines.forEachIndexed { i, l ->
+                val r = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, dp(7), 0, dp(7)) }
+                r.addView(text("${i + 1}", 12f, MUTED).apply { layoutParams = LinearLayout.LayoutParams(dp(24), -2) })
+                r.addView(text(l.optString("n") + if (l.optBoolean("extra")) "  (رجع زيادة)" else "", 13.5f, INK, true).apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1f) })
+                val q = if (isL) money.format(l.optDouble("qty")) + " " + l.optString("u")
+                    else (if (l.optBoolean("extra")) "" else "حمّل ${money.format(l.optDouble("loaded"))} · ") + "رجع ${money.format(l.optDouble("ret"))}" +
+                        (if (l.optBoolean("extra")) "" else " · اتباع ${money.format(l.optDouble("loaded") - l.optDouble("ret"))}")
+                r.addView(text(q, 12.5f, if (isL) INK else MUTED, isL))
+                addView(r)
+                addView(View(this@MainActivity).apply { setBackgroundColor(col(LINE)); layoutParams = LinearLayout.LayoutParams(-1, dp(1)) })
+            }
+        }
+        val shotId = x.optString("shot")
+        val sys = card().apply {
+            addView(text("🖥 فاتورة السيستم", 15f, INK, true))
+            when {
+                shotId.isBlank() -> addView(text("الدعم لسه مرفعش صورة السيستم", 12.5f, MUTED))
+                shotId in luBad -> addView(text("مقدرناش نجيب الصورة · اسحب لتحت وجرّب تاني", 12f, "#B3261E"))
+                !luImgs.containsKey(shotId) -> {
+                    luImgs[shotId] = null; addView(text("بتتحمّل…", 12f, MUTED))
+                    bg({ val b = runCatching { Loads.image(this@MainActivity, shotId) }.getOrNull(); luImgs[shotId] = b; if (b == null) luBad.add(shotId); null }) { if (page == "load") render() }
+                }
+                else -> luImgs[shotId]?.let { bmp ->
+                    addView(ImageView(this@MainActivity).apply { setImageBitmap(bmp); adjustViewBounds = true; clipToOutline = true; background = round(SOFT, 14)
+                        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) } })
+                } ?: addView(text("بتتحمّل…", 12f, MUTED))
+            }
+            if (x.optString("status") == "qa") addView(text("الصورة دي لسه عند الجودة بتتراجع", 11.5f, "#5B2A9E").apply { setPadding(0, dp(6), 0, 0) })
+        }
+        // الموبايل بالعرض أو تابلت: جنب بعض، والموبايل العادي: تحت بعض
+        if (resources.configuration.screenWidthDp >= 600) {
+            root.addView(LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+                addView(sheet, LinearLayout.LayoutParams(0, -2, 1f).apply { topMargin = dp(12) })
+                addView(sys, LinearLayout.LayoutParams(0, -2, 1f).apply { topMargin = dp(12); marginStart = dp(10) }) })
+        } else { root.addView(sheet); root.addView(sys) }
     }
 
     // تقرير الفاتورة: كل اللي متسجّل عليها

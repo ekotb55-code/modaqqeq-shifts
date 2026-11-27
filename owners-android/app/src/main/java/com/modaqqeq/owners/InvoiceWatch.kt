@@ -32,7 +32,7 @@ object InvoiceWatch {
 
     fun schedule(c: Context) {
         val wm = WorkManager.getInstance(c)
-        if (Account.mode(c) != "user" || (!newOn(c) && !priceOn(c))) { wm.cancelUniqueWork("invoices"); return }
+        if (Account.mode(c) != "user" || (!newOn(c) && !priceOn(c) && !Loads.notifyOn(c))) { wm.cancelUniqueWork("invoices"); return }
         val req = PeriodicWorkRequestBuilder<InvoiceWorker>(15, TimeUnit.MINUTES)
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build()
         wm.enqueueUniquePeriodicWork("invoices", ExistingPeriodicWorkPolicy.KEEP, req)
@@ -123,6 +123,7 @@ object InvoiceWatch {
 class InvoiceWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         runCatching { InvoiceWatch.check(applicationContext) }
+        runCatching { Loads.watch(applicationContext) }   // طلبات التحميل والتفريغ اللي اتعتمدت
         Result.success()
     }
 }

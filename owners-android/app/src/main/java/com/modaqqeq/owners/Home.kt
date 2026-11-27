@@ -23,8 +23,15 @@ object Home {
         "open" to "🧾 الورديات",
         "balances" to "🏦 رصيد المحافظ",
         "purchases" to "🛒 مشتريات النهارده",
+        "loads" to "🚚 التحميل والتفريغ (لو عندك مناديب)",
     )
-    fun cards(c: Context): Set<String> = prefs(c).getStringSet("cards", null) ?: CARDS.map { it.first }.toSet()
+    // الكروت الجديدة بتظهر لوحدها مرة واحدة حتى لو كان اختار كروته قبل كده
+    fun cards(c: Context): Set<String> {
+        val p = prefs(c)
+        val saved = p.getStringSet("cards", null) ?: return CARDS.map { it.first }.toSet()
+        if (!p.getBoolean("added_loads", false)) { val v = saved + "loads"; p.edit().putStringSet("cards", v).putBoolean("added_loads", true).apply(); return v }
+        return saved
+    }
     fun setCards(c: Context, v: Set<String>) = prefs(c).edit().putStringSet("cards", v).apply()
     fun shortageMin(c: Context) = prefs(c).getInt("shortMin", 50)
     fun longHours(c: Context) = prefs(c).getInt("longH", 12)
