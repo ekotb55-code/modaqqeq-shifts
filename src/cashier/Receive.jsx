@@ -8,6 +8,8 @@ import { clearRemoteDraft, isDesktop, saveRemoteDraft, useRemoteDraft } from '..
 import { MAIN_REG, WALLETS, vaultsOf, colsFor, machineGroupsOf, machinePhotoLabel, walletModeOf, walletModesOf, billsTotal, emptyBills, fmt, lastOf, num, openKey, regName, timeStr, todayKey } from '../lib';
 import { Bills, MachineRows, SideBox } from './parts.jsx';
 import { logAct } from '../activity.js';
+import { receiveGapItems, gapCash } from '../staff/ReceiveGaps.jsx';
+import { pushEvent } from '../cloud.js';
 import { takePhoto } from '../phoneShot.jsx';
 import { photoSrc, setPhoto as addPhotoDoc } from '../cloud.js';
 
@@ -177,7 +179,20 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
         day: todayKey(now), month: todayKey(now).slice(0, 7), openedAt: serverTimestamp(), openedAtLocal: now.toISOString(), receive,
       });
       b.update(doc(db, 'shops', shop.id), { [openKey(reg)]: { id: shiftRef.id, cashierUid: profile.id, cashierName: profile.name, openedAt: now.toISOString() } });
+      // عدّ غير اللي اتسلّم؟ طلب «فرق استلام» للمحاسب: لو اعتمده، تسليم الوردية اللي قبل يتعدّل ونتيجتها تتحسب من جديد
+      const gap = receiveGapItems({ last, bills, prevBills, side, prevSide, machines, vis, mvals, prevMachines, walletKeys, wallets, prevWallets });
+      if (gap.length) {
+        b.set(doc(db, 'receiveGaps', shiftRef.id), {
+          shopId: shop.id, status: 'pending', items: gap, fromShiftId: last.shiftId, fromCashier: last.cashierName || '', fromUid: last.cashierUid || '',
+          toShiftId: shiftRef.id, toCashier: profile.name, toUid: profile.id, atMs: now.getTime(), createdAt: serverTimestamp(),
+        });
+      }
       const p = b.commit();
+      if (gap.length) {
+        const cash = gapCash(gap);
+        p.then(() => pushEvent({ type: 'dispute', shopId: shop.id, shiftId: shiftRef.id, to: 'staff', title: `فرق في استلام ${profile.name} من ${last.cashierName || ''}`,
+          body: `${gap.map((x) => `${x.label}: ${fmt(x.from)} ← ${fmt(x.to)}`).join(' · ')}${cash ? ` · ${cash > 0 ? '+' : ''}${fmt(cash)} ج` : ''} · اعتمده أو ارفضه من «المراجعة»` })).catch(() => {});
+      }
       // Photos go after the shift so the security rules can see who owns it.
       p.then(() => Promise.all([...Object.entries(photos).map(([i, data]) => {
         const pb = writeBatch(db);
@@ -264,7 +279,7 @@ export default function Receive({ shop, reg = MAIN_REG, profile, onStarted, edit
           <span className="ic"><Icon d="check" size={18} stroke={3} /></span>{busy ? 'لحظة…' : editShift ? 'حفظ التعديل' : 'تمام، استلمت'}
         </button>
         <span className="small muted" style={{ textAlign: 'center' }}>
-          {changed || sideChanged || mChanged || wChanged ? `عدّلت ${changed + (sideChanged ? 1 : 0) + mChanged + wChanged} رقم · هيتسجل فرق في الاستلام ويوصل للمحاسب` : last ? `كل الأرقام زي ما ${last.cashierName} سلّمها` : ''}
+          {changed || sideChanged || mChanged || wChanged ? `عدّلت ${changed + (sideChanged ? 1 : 0) + mChanged + wChanged} رقم · هيتسجل فرق في الاستلام ويروح طلب للمحاسب يعدّل تسليم اللي قبلك` : last ? `كل الأرقام زي ما ${last.cashierName} سلّمها` : ''}
         </span>
       </div>
     </div>

@@ -165,6 +165,13 @@ service cloud.firestore {
     }
 
     // Shortages (عجز) and overages (زيادة) per cashier.
+    // فرق الاستلام: الكاشير اللي استلم بيعمله، والمحاسب/الإدارة بيعتمده أو يرفضه
+    match /receiveGaps/{id} {
+      allow read: if reviewerOf(resource.data.shopId) || (signedIn() && resource.data.toUid == request.auth.uid);
+      allow create: if inShop(request.resource.data.shopId) && request.resource.data.toUid == request.auth.uid
+        && request.resource.data.status == 'pending' && id == request.resource.data.toShiftId;
+      allow update: if reviewerOf(resource.data.shopId) && request.resource.data.status in ['approved', 'rejected'];
+    }
     match /ledger/{id} {
       allow read: if staffOf(resource.data.shopId) || (signedIn() && resource.data.cashierUid == request.auth.uid);
       allow create: if reviewerOf(request.resource.data.shopId);

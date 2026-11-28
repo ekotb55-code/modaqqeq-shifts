@@ -11,6 +11,7 @@ import Statements from './Statements.jsx';
 import ForceClose from './ForceClose.jsx';
 import ShiftChat from '../ShiftChat.jsx';
 import { DeletedList, entryTitle } from '../cashier/Dash.jsx';
+import { ReceiveGapsCard } from './ReceiveGaps.jsx';
 import { logAct } from '../activity.js';
 import { photoSrc, pushEvent } from '../cloud.js';
 
@@ -83,6 +84,7 @@ export default function Review({ profile, shops }) {
     <div className="wrap">
       <div className="row">
         <aside className="side" style={{ flex: '1 1 300px', maxWidth: 420 }} data-tour="queue">
+          {['admin', 'support', 'accountant', 'reviewer'].includes(profile?.role) && <ReceiveGapsCard shops={shops} profile={profile} />}
           <h2 style={{ fontSize: 18, fontWeight: 700 }}>الورديات <span className="muted" style={{ fontWeight: 500 }}>· {sorted.length}</span></h2>
           {shops.length === 0 && <div className="card empty">لسه مفيش محلات مربوطة بحسابك</div>}
           {shops.length > 0 && sorted.length === 0 && <div className="card empty">مفيش ورديات مستنية مراجعة</div>}
